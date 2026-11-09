@@ -426,7 +426,7 @@ export async function runFounder({ context, page, origin, map, record, section, 
   assert.equal((await decision(id, barista.id, beforeShift.receipt.id)).serviceStale, true, "The old shift receipt must become stale");
 
   await expand(page, "Create a variant");
-  await exact(page, "Extra grinder price (₹)").fill(String(base.extraGrinder));
+  await page.getByLabel(/Extra grinder price \(₹\)/).fill(String(base.extraGrinder));
   await button(page, "Add grinder variant").click();
   const grinder = await poll("grinder variant", async () => (await scenarios()).find((row) => row.label === "Extra grinder"));
   await poll("grinder selected as B", async () => await pairPicker.inputValue() === grinder.id);
