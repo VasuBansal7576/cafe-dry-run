@@ -221,6 +221,12 @@ function turnQuoteSources({
     const scope = chatFigureBasisSchema.safeParse(payload?.chatFigureBasis);
     if (!scope.success) continue;
     const basis = scope.data;
+    if (
+      basis.latestRun &&
+      (name === "get-simulation" || payload?.chatFigures !== null)
+    ) {
+      latestRuns.set(basis.latestRun.scenarioId, basis.latestRun.id);
+    }
     if (payload?.chatFigures === null) {
       if (basis.receiptId) staleReceipts.add(basis.receiptId);
       else for (const id of basis.runIds ?? []) staleRuns.add(id);
@@ -236,8 +242,6 @@ function turnQuoteSources({
     }
     if (name === "run-simulation" && basis.scenarios[0] && basis.runIds?.[0]) {
       latestRuns.set(basis.scenarios[0].id, basis.runIds[0]);
-    } else if (basis.latestRun) {
-      latestRuns.set(basis.latestRun.scenarioId, basis.latestRun.id);
     }
     sources.push({ index, basis, quotes: quoteTexts(payload?.chatFigures) });
   }

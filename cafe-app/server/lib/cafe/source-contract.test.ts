@@ -222,7 +222,7 @@ it("revokes old quotes after a shared input edit while keeping quotes across unr
   ).toBeDefined();
 });
 
-it("revokes a solo runway when a scenario read reveals a later service run without a revision edit", async () => {
+it("revokes a solo runway when a current read reveals a later service run without a revision edit", async () => {
   const { scenario } = await createScenario.run(
     { label: "Freshness test" },
     owner,
@@ -253,6 +253,30 @@ it("revokes a solo runway when a scenario read reveals a later service run witho
   expect(
     await check(cash, [original, tool("list-scenarios", listed)]),
   ).toBeDefined();
+  const historical = await getSimulation.run(
+    { id: scenario.id, runId: run.id, includePlayback: false },
+    owner,
+  );
+  const historicalTool = tool("get-simulation", historical);
+  expect(historical.run).toMatchObject({ id: run.id, stale: false });
+  expect(await check(cash, [original, historicalTool])).toBeUndefined();
+
+  const current = await getSimulation.run(
+    { id: scenario.id, includePlayback: false },
+    owner,
+  );
+  const currentTool = tool("get-simulation", current);
+  expect(current.run).toMatchObject({ id: next.id, stale: false });
+  expect(await check(cash, [original, currentTool])).toBeDefined();
+  expect(
+    await check(cash, [original, currentTool, historicalTool]),
+  ).toBeDefined();
+  expect(
+    await check(historical.chatFigures!.waitP50!.text, [
+      currentTool,
+      historicalTool,
+    ]),
+  ).toBeUndefined();
 });
 
 it("keeps complete scenario quotes visible within Agent-Native's real list cutoff", async () => {

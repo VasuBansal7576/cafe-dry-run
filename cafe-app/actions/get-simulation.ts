@@ -120,7 +120,12 @@ export default defineAction({
       stale,
     };
     return {
-      chatFigureBasis: serviceFigureBasis(run),
+      chatFigureBasis: {
+        ...serviceFigureBasis(run),
+        ...(runId === undefined && {
+          latestRun: { scenarioId: id, id: run.id },
+        }),
+      },
       chatFigures: stale ? null : serviceChatFigures(row.summary, row.label),
       run,
     };
