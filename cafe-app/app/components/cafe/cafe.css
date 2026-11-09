@@ -863,7 +863,7 @@
   .cafe-receipt {
     grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
     gap: 14px;
-    padding: 12px;
+    padding: 12px 12px 0;
     font-size: 11px;
     line-height: 1.4;
     box-shadow: none;
