@@ -137,10 +137,33 @@ it("allows exact returned map names without authorizing other numbers from the m
       tool("set-spot", numbered),
     ]),
   ).toBeUndefined();
+  const numberedResult = tool("set-spot", numbered);
+  for (const text of [
+    "It is Beginest Harbor 1 metres away.",
+    "It is Beginest Harbor 1 METRES away.",
+    "It is Beginest Harbor 1\u00a0metres away.",
+    "It is **Beginest Harbor 1**\u202fＭＥＴＲＥＳ away.",
+    "It is a Beginest Harbor 1‑metre walk.",
+    "Beginest Harbor 1 drink per order.",
+  ])
+    expect(await check(text, [numberedResult]), text).toBeDefined();
+
+  const secure = await setSpot.run(
+    {
+      id: scenario.id,
+      expectedSpotRevision: numbered.spotRevision,
+      location: { placeName: "56 Secure" },
+    },
+    owner,
+  );
+  const secureResult = tool("set-spot", secure);
   expect(
-    await check("It is Beginest Harbor 1 metres away.", [
-      tool("set-spot", numbered),
+    await check("The pin is at 56 Secure and the coverage is partial.", [
+      secureResult,
     ]),
+  ).toBeUndefined();
+  expect(
+    await check("56 Secure Customers on Saturdays.", [secureResult]),
   ).toBeDefined();
 });
 

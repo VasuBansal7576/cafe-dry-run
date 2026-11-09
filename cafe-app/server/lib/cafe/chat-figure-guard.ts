@@ -44,6 +44,8 @@ const implicitNumber =
   /\b(?:couple of|(?:first|second)[ -]place|(?:a|an) (?:second|minute|hour|day|week|month|year|rupee)(?=\s+(?:of|faster|slower|less|more|off|per|each|longer|shorter)\b|[.,;!?)\n]|$)|a k rupees|double(?![- ]check\b)|doubled|tripl(?:e|ed))\b/iu;
 const approximateMeasure =
   /\b(?:(?:several|a few|few)\s+(?:seconds|minutes|hours|days|weeks|months|years|rupees|orders|customers)|(?:under|over|about|within|less than|more than|at least|at most|around)\s+(?:a|an)\s+(?:second|minute|hour|day|week|month|year|rupee|order|customer))\b/iu;
+const adjacentPlaceQuantity =
+  /^[\s\p{Cf}\p{Pd}*_\x60~]+(?:m|km|ft|mi|feet|metres?|meters?|kilometres?|kilometers?|miles?|seconds?|minutes?|hours?|days?|weeks?|months?|years?|rupees?|inr|percent|orders?|customers?|drinks?|coffees?|beverages?|cups?|servings?|seats?|visitors?|pedestrians?|passers[ -]by|times)(?![\p{L}\p{N}])/iu;
 
 function object(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -401,22 +403,22 @@ function hasUnsupportedNumber(
     );
   }
   if (siteNames.size) {
-    const quantitySuffix =
-      "(?![ \\t*_\\x60~]+(?:m|km|ft|metres?|meters?|kilometres?|kilometers?|miles?|seconds?|minutes?|hours?|rupees?|orders?|customers?)\\b)";
     const literals = [...siteNames]
       .sort((a, b) => b.length - a.length)
-      .map(
-        (name) =>
-          escapeRegex(name) + (/\p{N}$/u.test(name) ? quantitySuffix : ""),
-      );
+      .map(escapeRegex);
     remainder = remainder.replace(
       new RegExp(
-        "(?<![\\p{L}\\p{N}])(?:" +
+        "(?<![\\p{L}\\p{N}\\p{Sc}+−±-])(?:" +
           literals.join("|") +
           ")(?![\\p{L}\\p{N}%/]|[.,]\\p{N})",
         "gu",
       ),
-      " ",
+      (name: string, offset: number, draft: string) => {
+        const suffix = draft.slice(offset + name.length).normalize("NFKC");
+        return /\p{N}/u.test(name) && adjacentPlaceQuantity.test(suffix)
+          ? name
+          : " ";
+      },
     );
   }
   remainder = remainder
