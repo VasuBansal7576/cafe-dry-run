@@ -19,6 +19,7 @@ import viewScreen from "../../../actions/view-screen.js";
 import {
   calibratePlaybackClock,
   playbackBounds,
+  precisePlaybackClock,
 } from "../../../shared/cafe/playback-position.js";
 import migrate from "../../plugins/db.js";
 
@@ -71,12 +72,39 @@ async function select(
 
 it("keeps a reliable playhead calibration when a clock response is held in transit", () => {
   const initial = calibratePlaybackClock(undefined, 100, 120, 5_110);
-  expect(initial).toEqual({ offset: 5_000, earliestOffset: 4_990 });
-  expect(calibratePlaybackClock(initial, 200, 2_060, 5_210)).toBe(initial);
-  expect(calibratePlaybackClock(undefined, 200, 2_060, 5_210)).toBeUndefined();
+  expect(initial).toEqual({
+    offset: 5_000.5,
+    earliestOffset: 4_990,
+    latestOffset: 5_011,
+  });
+  expect(calibratePlaybackClock(initial, 200, 2_060, 5_210)).toEqual(initial);
+  expect(calibratePlaybackClock(initial, 200, 2_060, 7_050)).toEqual(initial);
   expect(calibratePlaybackClock(initial, 300, 330, 5_305)).toEqual({
+    offset: 4_998,
+    earliestOffset: 4_990,
+    latestOffset: 5_006,
+  });
+});
+
+it("uses healthy slower reads and narrows the estimate when latency switches directions", () => {
+  expect(calibratePlaybackClock(undefined, 100, 435, 5_267)).toEqual({
     offset: 5_000,
-    earliestOffset: 4_975,
+    earliestOffset: 4_832,
+    latestOffset: 5_168,
+  });
+  const requestDelayed = calibratePlaybackClock(undefined, 100, 1_000, 5_995);
+  expect(requestDelayed).toEqual({
+    offset: 5_445.5,
+    earliestOffset: 4_995,
+    latestOffset: 5_896,
+  });
+  expect(precisePlaybackClock(requestDelayed)).toBe(false);
+  const refined = calibratePlaybackClock(requestDelayed, 1_100, 2_000, 6_105);
+  expect(precisePlaybackClock(refined)).toBe(true);
+  expect(refined).toEqual({
+    offset: 5_000.5,
+    earliestOffset: 4_995,
+    latestOffset: 5_006,
   });
 });
 

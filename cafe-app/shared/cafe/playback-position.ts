@@ -32,22 +32,39 @@ export type PlaybackChange =
 export type PlaybackClockCalibration = {
   offset: number;
   earliestOffset: number;
+  latestOffset: number;
 };
-const maximumClockRoundTripMs = 250;
+const preciseClockIntervalMs = 250;
+
+export function precisePlaybackClock(calibration: PlaybackClockCalibration) {
+  return (
+    calibration.latestOffset - calibration.earliestOffset <=
+    preciseClockIntervalMs
+  );
+}
 
 export function calibratePlaybackClock(
   previous: PlaybackClockCalibration | undefined,
   sentAt: number,
   receivedAt: number,
   sampledAtMs: number,
-) {
-  if (receivedAt - sentAt > maximumClockRoundTripMs) return previous;
-  const earliestOffset = sampledAtMs - receivedAt;
-  const latestOffset = sampledAtMs - sentAt;
-  const offset = previous?.offset ?? (earliestOffset + latestOffset) / 2;
+): PlaybackClockCalibration {
+  const earliest = sampledAtMs - receivedAt;
+  const latest = sampledAtMs + 1 - sentAt;
+  if (previous) {
+    const earliestOffset = Math.max(previous.earliestOffset, earliest);
+    const latestOffset = Math.min(previous.latestOffset, latest);
+    if (earliestOffset <= latestOffset)
+      return {
+        offset: (earliestOffset + latestOffset) / 2,
+        earliestOffset,
+        latestOffset,
+      };
+  }
   return {
-    offset: Math.max(earliestOffset, Math.min(latestOffset, offset)),
-    earliestOffset,
+    offset: (earliest + latest) / 2,
+    earliestOffset: earliest,
+    latestOffset: latest,
   };
 }
 

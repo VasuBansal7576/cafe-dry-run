@@ -38,6 +38,7 @@ import {
   playbackFrame,
   playbackSpeeds,
   playbackSpeedSchema,
+  precisePlaybackClock,
   restorePlayback,
   type PlaybackChange,
   type PlaybackClockCalibration,
@@ -161,6 +162,7 @@ type PlaybackBoard = { run: ServiceRun; label?: string };
 type PlaybackEdit = {
   change: PlaybackChange;
   when: number;
+  effectiveAtMs?: number;
   bootstrap?: true;
   observedClockRevision?: number;
 };
@@ -215,46 +217,44 @@ export function Playback({
   const savedPosition = useQuery({
     queryKey,
     queryFn: async ({ signal }) => {
-      const readOptions = {
-        method: "GET" as const,
-        signal: AbortSignal.any([
-          signal,
-          AbortSignal.timeout(playbackReadTimeout),
-        ]),
-      };
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const sentAt = performance.now();
-        const {
-          selection,
-          playback: incoming,
-          sampledAtMs,
-        } = await callAction("get-playback-clock", {}, readOptions);
-        const receivedAt = performance.now();
-        const previous = queryClient.getQueryData<{
-          playback: PlaybackState | null;
-          calibration: PlaybackClockCalibration;
-        }>(queryKey);
-        const calibration = calibratePlaybackClock(
+      const sentAt = performance.now();
+      const {
+        selection,
+        playback: incoming,
+        sampledAtMs,
+      } = await callAction(
+        "get-playback-clock",
+        {},
+        {
+          method: "GET",
+          signal: AbortSignal.any([
+            signal,
+            AbortSignal.timeout(playbackReadTimeout),
+          ]),
+        },
+      );
+      const receivedAt = performance.now();
+      const previous = queryClient.getQueryData<{
+        playback: PlaybackState | null;
+        calibration: PlaybackClockCalibration;
+      }>(queryKey);
+      return {
+        navigationReady:
+          selection?.scenarioId === identity.scenarioId &&
+          selection.comparisonScenarioId === identity.comparisonScenarioId,
+        calibration: calibratePlaybackClock(
           previous?.calibration,
           sentAt,
           receivedAt,
           sampledAtMs,
-        );
-        if (!calibration) continue;
-        return {
-          navigationReady:
-            selection?.scenarioId === identity.scenarioId &&
-            selection.comparisonScenarioId === identity.comparisonScenarioId,
-          calibration,
-          receivedAt,
-          playback:
-            (previous?.playback?.clockRevision ?? 0) >
-            (incoming?.clockRevision ?? 0)
-              ? (previous?.playback ?? null)
-              : incoming,
-        };
-      }
-      throw new Error("Couldn’t synchronize the Saturday clock.");
+        ),
+        receivedAt,
+        playback:
+          (previous?.playback?.clockRevision ?? 0) >
+          (incoming?.clockRevision ?? 0)
+            ? (previous?.playback ?? null)
+            : incoming,
+      };
     },
     staleTime: Infinity,
     refetchOnMount: "always",
@@ -301,6 +301,7 @@ export function Playback({
   const [mountedAt] = useState(() => performance.now());
   const [localNow, setLocalNow] = useState(mountedAt);
   const { calibration, receivedAt = mountedAt } = savedPosition.data ?? {};
+  const preciseClock = calibration && precisePlaybackClock(calibration);
   const clockAt = (local: number) =>
     Math.max(0, Math.floor(local + (calibration?.offset ?? 0)));
   const now = clockAt(Math.max(localNow, receivedAt));
@@ -351,6 +352,10 @@ export function Playback({
       : base,
   );
   const { second, speed, playing } = playbackFrame(current, end, now);
+  const approximateTime =
+    !preciseClock &&
+    (playing || (edits.length > 0 && playbackFrame(base, end, now).playing));
+  const clockText = formatClock(second);
   const playbackReady = navigationReady && loadedClock !== null && !pauseOnLoad;
   const playbackUnavailable =
     (!navigationReady &&
@@ -368,7 +373,12 @@ export function Playback({
   function enqueue(change: PlaybackChange) {
     if (!playbackReady) return;
     const local = performance.now();
-    const edit = { change, when: clockAt(local) };
+    const when = clockAt(local);
+    const edit = {
+      change,
+      when,
+      ...(preciseClock ? { effectiveAtMs: when } : {}),
+    };
     setLocalNow(local);
     setFailure(null);
     setQueue((pending) => {
@@ -411,6 +421,7 @@ export function Playback({
           ? {
               change: { playing: false },
               when: mountedClock,
+              ...(preciseClock ? { effectiveAtMs: mountedClock } : {}),
               bootstrap: true,
               observedClockRevision: loadedClock.revision,
             }
@@ -447,7 +458,7 @@ export function Playback({
           ?.clockRevision ??
         0,
       returnPlayback: true as const,
-      effectiveAtMs: edit.when,
+      effectiveAtMs: edit.effectiveAtMs,
     };
     const action =
       "at" in edit.change
@@ -524,7 +535,10 @@ export function Playback({
       <div className="cafe-clock">
         <p>
           <span className="cafe-kicker">First simulated Saturday</span>
-          <strong>{formatClock(second)}</strong>
+          <strong>
+            {approximateTime ? "≈ " : ""}
+            {clockText}
+          </strong>
         </p>
         <div className="cafe-controls">
           <button
@@ -581,11 +595,15 @@ export function Playback({
             value={second}
             disabled={!playbackReady}
             aria-describedby={playbackReady ? undefined : playbackStatusId}
-            aria-valuetext={`${formatClock(second)}:${String(second % 60).padStart(2, "0")}`}
+            aria-valuetext={
+              approximateTime
+                ? `About ${clockText}`
+                : `${clockText}:${String(second % 60).padStart(2, "0")}`
+            }
             onChange={(event) => enqueue({ at: Number(event.target.value) })}
           />
         </label>
-        {(!playbackReady || failure?.scope === scope) && (
+        {(!playbackReady || failure?.scope === scope || approximateTime) && (
           <span
             className="cafe-playback-status"
             id={playbackStatusId}
@@ -595,7 +613,9 @@ export function Playback({
               ? "Couldn’t load the saved playback position."
               : failure?.scope === scope
                 ? failure.message
-                : "Loading saved playback position…"}
+                : playbackReady
+                  ? "Approximate playback time. Pause to see the saved frame."
+                  : "Loading saved playback position…"}
           </span>
         )}
       </div>
