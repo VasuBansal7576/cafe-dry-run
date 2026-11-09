@@ -34,7 +34,7 @@ import {
   pairedRunId,
   pairedRunVersion,
 } from "./service-run-identity.js";
-import { serviceRunSchema } from "./service-run.js";
+import { serviceRunSchema, type ServiceRun } from "./service-run.js";
 
 export const decisionScopeSchema = z.object({
   aId: z.string().uuid().describe("Scenario shown as A."),
@@ -209,6 +209,7 @@ export async function saveDecision(
       : null;
     const baseline = inputs.get(baselineId)?.scenario ?? scenarioConflict();
     let settings: DecisionParameters;
+    let soloSummary: ServiceRun["summary"] | undefined;
     let matchedReceipt: DecisionReceipt | undefined;
     let savedCustomers = defaultSavedCustomers;
     let assumptionRevision = 0;
@@ -331,10 +332,11 @@ export async function saveDecision(
           "invalid_scenario",
         );
       }
+      soloSummary = run.summary;
       settings = {
-        seed: run.summary.seed,
-        demandLevel: run.summary.demandLevel,
-        runCount: run.summary.runCount,
+        seed: soloSummary.seed,
+        demandLevel: soloSummary.demandLevel,
+        runCount: soloSummary.runCount,
       };
     }
 
@@ -353,6 +355,14 @@ export async function saveDecision(
       scenarioRevision: a.revision,
       arrivalSource,
       ...calculated.serviceA,
+      summary: soloSummary
+        ? {
+            ...soloSummary,
+            arrivalProvenance:
+              soloSummary.arrivalProvenance ??
+              calculated.serviceA.summary.arrivalProvenance,
+          }
+        : calculated.serviceA.summary,
     });
     const runB =
       b && calculated.serviceB

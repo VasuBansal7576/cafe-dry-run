@@ -385,9 +385,15 @@ it("reruns legacy solo and paired settings with capacity evidence while preservi
       .update(JSON.stringify(parts))
       .digest("hex");
     const id = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+    const summary = structuredClone(row!.summary);
+    if (!paired) {
+      for (const utilization of summary.stats.utilization) {
+        delete utilization.fractionProvenance;
+      }
+    }
     await db
       .update(serviceRuns)
-      .set({ id, playback: { arrivals, timeline, stats } })
+      .set({ id, summary, playback: { arrivals, timeline, stats } })
       .where(eq(serviceRuns.id, service.id));
     return id;
   }
@@ -436,8 +442,10 @@ it("reruns legacy solo and paired settings with capacity evidence while preservi
   expect
     .soft(await currentPlaybackBounds(ownerEmail, pairTarget(pair)))
     .toMatchObject({ start });
-  expect(await readRun(a.id)).toMatchObject({ id: soloId, stale: false });
-  expect((await readRun(a.id)).playback?.capacity).toBeUndefined();
+  const earlierSolo = await readRun(a.id);
+  expect(earlierSolo).toMatchObject({ id: soloId, stale: false });
+  expect(earlierSolo.playback?.capacity).toBeUndefined();
+  expect(oldSoloCash.receipt.a.service.summary).toEqual(earlierSolo.summary);
   expect(
     (await getComparison.run({ aId: a.id }, owner)).decision,
   ).toMatchObject({
