@@ -8,7 +8,10 @@ import {
 import { getDb } from "../../db/index.js";
 import { scenarios, serviceRuns } from "../../db/schema.js";
 import { readDecision } from "./decision-store.js";
-import { pairedRunId, soloRunId } from "./service-run-identity.js";
+import {
+  matchesPairedRunId,
+  matchesSoloRunId,
+} from "./service-run-identity.js";
 
 async function readPlaybackRun(owner: string, id: string, runId: string) {
   const source = alias(scenarios, "playback_arrival_source");
@@ -64,7 +67,7 @@ export async function currentPlaybackBounds(
     const a = await readPlaybackRun(owner, aId, runId);
     if (
       a?.latestRunId !== runId ||
-      soloRunId({ id: aId, revision: a.revision }, a.summary) !== runId
+      !matchesSoloRunId(runId, { id: aId, revision: a.revision }, a.summary)
     )
       return;
     return playbackBounds(a.summary.hours, [a.lastEvent]);
@@ -85,16 +88,18 @@ export async function currentPlaybackBounds(
   ]);
   if (!a || !b) return;
   if (
-    pairedRunId(
+    !matchesPairedRunId(
+      runId,
       { id: aId, revision: a.revision },
       { id: a.sourceId, revision: a.sourceRevision },
       a.summary,
-    ) !== runId ||
-    pairedRunId(
+    ) ||
+    !matchesPairedRunId(
+      comparisonRunId,
       { id: bId, revision: b.revision },
       { id: b.sourceId, revision: b.sourceRevision },
       b.summary,
-    ) !== comparisonRunId
+    )
   )
     return;
   return playbackBounds(a.summary.hours, [a.lastEvent, b.lastEvent]);

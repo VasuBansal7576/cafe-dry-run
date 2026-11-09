@@ -20,6 +20,7 @@ import {
   configureShop,
   setDemand,
 } from "./full-action-fixtures.js";
+import { currentPlaybackBounds } from "./playback-position.js";
 import { illustrative } from "./provenance.js";
 import type { ServiceRun } from "./service-run.js";
 
@@ -418,7 +419,23 @@ it("reruns legacy solo and paired settings with capacity evidence while preservi
   const readRun = async (id: string, runId?: string) =>
     (await getSimulation.run({ id, runId, includePlayback: true }, owner)).run!;
   const pairedIds = ({ a, b }: typeof pair) => [a.service.id, b!.service.id];
+  const ownerEmail = owner.userEmail;
+  const soloTarget = { scenarioId: a.id, runId: soloId };
+  const pairTarget = (receipt: typeof pair) => ({
+    ...soloTarget,
+    runId: receipt.a.service.id,
+    comparisonScenarioId: b.id,
+    comparisonRunId: receipt.b!.service.id,
+    receiptId: receipt.id,
+  });
+  const start = a.demand.opensAt.value;
 
+  expect
+    .soft(await currentPlaybackBounds(ownerEmail, soloTarget))
+    .toMatchObject({ start });
+  expect
+    .soft(await currentPlaybackBounds(ownerEmail, pairTarget(pair)))
+    .toMatchObject({ start });
   expect(await readRun(a.id)).toMatchObject({ id: soloId, stale: false });
   expect((await readRun(a.id)).playback?.capacity).toBeUndefined();
   expect(
@@ -455,6 +472,9 @@ it("reruns legacy solo and paired settings with capacity evidence while preservi
     owner,
   );
   expect(pairedIds(cashOnly.receipt)).toEqual(oldPairIds);
+  expect
+    .soft(await currentPlaybackBounds(ownerEmail, pairTarget(cashOnly.receipt)))
+    .toMatchObject({ start });
   expect(cashOnly.receipt.b?.finance.rent).toEqual(updatedB.finance.rent);
   expect(await storedRuns(oldIds)).toEqual(originalRows);
 
@@ -509,6 +529,13 @@ it("reruns legacy solo and paired settings with capacity evidence while preservi
     owner,
   );
   expect(pairedIds(after.receipt)).toEqual(newPairIds);
+  expect(
+    await currentPlaybackBounds(ownerEmail, pairTarget(after.receipt)),
+  ).toMatchObject({ start });
+  expect(
+    await currentPlaybackBounds(ownerEmail, pairTarget(cashOnly.receipt)),
+  ).toBeUndefined();
+  expect(await currentPlaybackBounds(ownerEmail, soloTarget)).toBeUndefined();
   await expect(
     computeRunway.run(
       {
@@ -538,6 +565,9 @@ it("reruns legacy solo and paired settings with capacity evidence while preservi
     serviceStale: true,
     cashStale: true,
   });
+  expect(
+    await currentPlaybackBounds(ownerEmail, pairTarget(after.receipt)),
+  ).toBeUndefined();
   expect((await readRun(a.id, soloId)).stale).toBe(true);
   expect((await readRun(b.id, oldPairIds[1])).stale).toBe(true);
   expect((await readRun(b.id, newPairIds[1])).stale).toBe(true);
