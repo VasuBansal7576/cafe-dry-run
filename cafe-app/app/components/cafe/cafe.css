@@ -52,7 +52,7 @@
 .cafe-workspace button {
   cursor: pointer;
 }
-.cafe-workspace button:disabled {
+.cafe-workspace button:is(:disabled, [aria-disabled="true"]) {
   opacity: 0.62;
   cursor: default;
 }
@@ -157,9 +157,12 @@
   border-bottom-color: var(--cafe-signal);
   color: var(--cafe-ink);
 }
-.cafe-rail a:hover,
+.cafe-rail a[href]:hover,
 .cafe-rail a span {
   color: var(--cafe-signal);
+}
+.cafe-rail a[aria-disabled="true"] span {
+  color: inherit;
 }
 .cafe-rail a span {
   font: 11px var(--cafe-mono);

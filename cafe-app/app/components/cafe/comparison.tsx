@@ -401,7 +401,7 @@ function PairedWorkspace({
   }
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || !saved.data?.arrivalSource) return;
     compare.mutate({
       a: scenarioVersion(a),
       b: scenarioVersion(b),
@@ -494,7 +494,7 @@ function PairedWorkspace({
             </label>
             <button
               className="cafe-primary"
-              disabled={busy || !saved.data?.arrivalSource}
+              aria-disabled={busy || !saved.data?.arrivalSource}
             >
               {currentPair && compare.isPending
                 ? "Comparing Saturdays…"
@@ -552,6 +552,11 @@ function PairedWorkspace({
         b={b}
         decision={decision}
         pending={busy}
+        serviceRequirement={
+          !decision || decision.serviceStale
+            ? "Run a fresh Saturday comparison to compute paired runway."
+            : null
+        }
         error={switchEdit ? null : compute.error}
         onCompute={() => refresh()}
       />
@@ -567,12 +572,33 @@ function SingleWorkspace({
   controls: ReactNode;
 }) {
   const saved = useActionQuery("get-comparison", { aId: scenario.id });
+  const latest = useActionQuery(
+    "get-simulation",
+    { id: scenario.id, includePlayback: "true" },
+    { enabled: !!scenario.latestRunId },
+  );
   const compute = useActionMutation("compute-runway");
   const previous = saved.data?.decision;
   const decision = previous ? staleAgainst(previous, scenario) : previous;
+  const run = latest.data?.run;
+  const readyRun =
+    !latest.error &&
+    run &&
+    !run.stale &&
+    run.id === scenario.latestRunId &&
+    run.scenarioRevision === scenario.revision
+      ? run
+      : null;
+  const serviceRequirement = readyRun
+    ? null
+    : latest.error
+      ? "Could not verify the saved Saturday simulation. Try loading it again in Service test."
+      : scenario.latestRunId && latest.isPending
+        ? "Checking the saved Saturday simulation…"
+        : "Run a fresh Saturday simulation to compute runway.";
   return (
     <>
-      <ServiceTest scenario={scenario} controls={controls} />
+      <ServiceTest scenario={scenario} controls={controls} latest={latest} />
       {saved.error && (
         <p className="cafe-notice" role="alert">
           {actionErrorMessage(saved.error) ?? "Could not load saved runway."}
@@ -582,12 +608,13 @@ function SingleWorkspace({
         a={scenario}
         decision={decision}
         pending={compute.isPending}
+        serviceRequirement={serviceRequirement}
         error={compute.error}
         onCompute={() => {
-          if (scenario.latestRunId)
+          if (readyRun)
             compute.mutate({
               ...scenarioVersion(scenario),
-              runId: scenario.latestRunId,
+              runId: readyRun.id,
             });
         }}
       />

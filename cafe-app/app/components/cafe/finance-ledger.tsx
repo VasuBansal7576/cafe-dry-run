@@ -797,6 +797,7 @@ export function FinanceLedger({
   b,
   decision,
   pending,
+  serviceRequirement,
   error,
   onCompute,
 }: {
@@ -804,10 +805,12 @@ export function FinanceLedger({
   b?: Scenario;
   decision: StoredDecision | null | undefined;
   pending: boolean;
+  serviceRequirement: string | null;
   error: Error | null;
   onCompute: () => void;
 }) {
-  const needsService = b ? !decision || decision.serviceStale : !a.latestRunId;
+  const requirementId = useId();
+  const disabled = pending || !!serviceRequirement;
   return (
     <section
       id="cash-ledger"
@@ -829,8 +832,11 @@ export function FinanceLedger({
       <div className="cafe-controls cafe-ledger-controls">
         <button
           className="cafe-primary"
-          disabled={pending || needsService}
-          onClick={onCompute}
+          aria-disabled={disabled}
+          aria-describedby={serviceRequirement ? requirementId : undefined}
+          onClick={() => {
+            if (!disabled) onCompute();
+          }}
         >
           {pending
             ? "Calculating cash…"
@@ -838,12 +844,8 @@ export function FinanceLedger({
               ? "Refresh cash projection"
               : "Compute runway"}
         </button>
-        {needsService && (
-          <p>
-            {b
-              ? "Run a fresh Saturday comparison to compute paired runway."
-              : "Run a Saturday simulation to compute runway."}
-          </p>
+        {serviceRequirement && (
+          <p id={requirementId}>{serviceRequirement}</p>
         )}
         {error && (
           <p className="cafe-notice" role="alert">

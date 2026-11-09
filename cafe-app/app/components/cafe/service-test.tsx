@@ -461,15 +461,12 @@ function StationBoard({
 export function ServiceTest({
   scenario,
   controls,
+  latest,
 }: {
   scenario: Scenario;
   controls?: ReactNode;
+  latest: ReturnType<typeof useActionQuery<undefined, "get-simulation">>;
 }) {
-  const latest = useActionQuery(
-    "get-simulation",
-    { id: scenario.id, includePlayback: "true" },
-    { enabled: !!scenario.latestRunId },
-  );
   const simulate = useActionMutation("run-simulation");
   const run = latest.data?.run;
   const stale =
@@ -479,6 +476,7 @@ export function ServiceTest({
   const [level, setLevel] = useState<(typeof demandLevels)[number]>("base");
   function submit(event: FormEvent) {
     event.preventDefault();
+    if (simulate.isPending) return;
     simulate.mutate({
       id: scenario.id,
       expectedRevision: scenario.revision,
@@ -555,7 +553,7 @@ export function ServiceTest({
               onChange={(event) => setCount(event.target.value)}
             />
           </label>
-          <button className="cafe-primary" disabled={simulate.isPending}>
+          <button className="cafe-primary" aria-disabled={simulate.isPending}>
             {simulate.isPending
               ? "Running Saturday…"
               : stale

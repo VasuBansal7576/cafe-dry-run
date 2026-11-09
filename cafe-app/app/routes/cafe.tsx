@@ -26,6 +26,13 @@ import type { Scenario } from "../../server/lib/cafe/scenario-store.js";
 
 import "@/components/cafe/cafe.css";
 
+const documentLabels: Record<CafeDocument, string> = {
+  "opening-file": "Opening file",
+  "site-demand": "Site & demand",
+  "service-test": "Service test",
+  "cash-ledger": "Cash ledger",
+};
+
 export default function CafeRoute() {
   const query = useActionQuery("list-scenarios", {});
   const location = useLocation();
@@ -39,6 +46,7 @@ export default function CafeRoute() {
     ? query.data?.scenarios.find(({ id }) => id === selected)
     : query.data?.scenarios[0];
   const hasScenario = !!scenario;
+  const currentDocument = hasScenario ? activeDocument : "opening-file";
   const workspace = useRef<HTMLDivElement>(null);
   const documentRail = useRef<HTMLElement>(null);
   const lastFragment = useRef<{
@@ -96,6 +104,7 @@ export default function CafeRoute() {
   useLayoutEffect(() => {
     const { hash } = location;
     const previous = lastFragment.current;
+    if (!hasScenario) reportScroll("opening-file");
     if (!hash || previous?.location === location) return;
     let id: string;
     try {
@@ -108,6 +117,8 @@ export default function CafeRoute() {
     if (!target || !workspace.current?.contains(target)) return;
     lastFragment.current = { location, id };
     target.scrollIntoView();
+    const visible = cafeDocuments.find((name) => name === id);
+    if (visible) reportScroll(visible);
     const focused = document.activeElement;
     if (
       focused === document.body ||
@@ -115,7 +126,7 @@ export default function CafeRoute() {
     ) {
       target.focus({ preventScroll: true });
     }
-  }, [hasScenario, location]);
+  }, [hasScenario, location, reportScroll]);
 
   useEffect(() => {
     const node = workspace.current;
@@ -193,39 +204,28 @@ export default function CafeRoute() {
         className="cafe-rail"
         aria-label="Café Dry Run documents"
       >
-        <a
-          href="#opening-file"
-          aria-current={
-            activeDocument === "opening-file" ? "location" : undefined
-          }
-        >
-          <span>00</span> Opening file
-        </a>
-        <a
-          href="#site-demand"
-          aria-current={
-            activeDocument === "site-demand" ? "location" : undefined
-          }
-        >
-          <span>01</span> Site & demand
-        </a>
-        <a
-          href="#service-test"
-          aria-current={
-            activeDocument === "service-test" ? "location" : undefined
-          }
-        >
-          <span>02</span> Service test
-        </a>
-        <a
-          href="#cash-ledger"
-          aria-current={
-            activeDocument === "cash-ledger" ? "location" : undefined
-          }
-        >
-          <span>03</span> Cash ledger
-        </a>
+        {cafeDocuments.map((name, index) => {
+          const available = hasScenario || name === "opening-file";
+          return (
+            <a
+              key={name}
+              href={available ? `#${name}` : undefined}
+              role={available ? undefined : "link"}
+              tabIndex={available ? undefined : 0}
+              aria-current={currentDocument === name ? "location" : undefined}
+              aria-disabled={available ? undefined : true}
+              aria-describedby={available ? undefined : "cafe-documents-help"}
+            >
+              <span>{String(index).padStart(2, "0")}</span> {documentLabels[name]}
+            </a>
+          );
+        })}
       </nav>
+      {!hasScenario && (
+        <p id="cafe-documents-help" className="sr-only">
+          Open or start a scenario to use this document.
+        </p>
+      )}
       <OpeningFile
         action={
           scenario ? (
