@@ -130,6 +130,7 @@ it("accepts only the latest ordered pair and inclusive late-event bounds", async
     owner,
   );
   const { receipt } = compared;
+  if (!("a" in receipt)) throw new Error("Expected a full comparison receipt");
   const first = receipt.a.service.id;
   const second = receipt.b!.service.id;
   const identity = {
@@ -181,6 +182,7 @@ it("accepts only the latest ordered pair and inclusive late-event bounds", async
     },
     owner,
   );
+  if (!("a" in cash.receipt)) throw new Error("Expected a full cash receipt");
   expect(cash.receipt.a.service.id).toBe(first);
   expect(cash.receipt.b?.service.id).toBe(second);
   await expect(
