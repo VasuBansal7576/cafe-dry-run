@@ -419,6 +419,11 @@ try {
       ? stripVTControlCharacters(error.message).split("\n").slice(0, 4).join(" ")
       : error.name;
   if (founderMode) {
+    const source = error.stack?.match(/founder\.mjs:(\d+):(\d+)/);
+    if (source) evidence.assertionLocation = `founder.mjs:${source[1]}:${source[2]}`;
+    if (typeof error.actual === "number" && typeof error.expected === "number") {
+      evidence.numericAssertion = { actual: error.actual, expected: error.expected };
+    }
     evidence.detail = safeMessage;
     if (page && evidence.journeys?.length && phase !== "live demo requirements") {
       await screenshot(page, "failure.png").catch(() => {});
