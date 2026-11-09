@@ -9,7 +9,12 @@ import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { ComparisonWorkspace } from "@/components/cafe/comparison";
 import { scenarioVersion } from "@/components/cafe/finance-ledger";
 import { OpeningFile } from "@/components/cafe/opening-file";
-import { DemandForm, ShopForm, sourceLabels } from "@/components/cafe/scenario-inputs";
+import { Stamp } from "@/components/cafe/provenance-stamp";
+import {
+  DemandForm,
+  ShopForm,
+  sourceLabels,
+} from "@/components/cafe/scenario-inputs";
 import { SiteMap } from "@/components/cafe/site-map";
 import {
   cafeDocuments,
@@ -262,19 +267,27 @@ export default function CafeRoute() {
         </p>
       )}
       {!!query.data && query.data.scenarios.length > 1 && (
-        <label className="cafe-picker">
-          Scenario
+        <div className="cafe-picker">
+          <label htmlFor="cafe-scenario-picker">Scenario</label>
           <select
+            id="cafe-scenario-picker"
             value={scenario?.id ?? ""}
             onChange={(event) => selectScenario(event.currentTarget.value)}
           >
             {query.data.scenarios.map(({ id, demand, label }) => (
               <option value={id} key={id}>
-                {label} · {demand.hourly.base.value}/hr · {sourceLabels[demand.hourly.base.source.tag]}
+                {label} · {demand.hourly.base.value}/hr ·{" "}
+                {sourceLabels[demand.hourly.base.source.tag]}
               </option>
             ))}
           </select>
-        </label>
+          {scenario && (
+            <p className="cafe-picker-demand">
+              Base demand · {scenario.demand.hourly.base.value}/hr{" "}
+              <Stamp tag={scenario.demand.hourly.base.source.tag} />
+            </p>
+          )}
+        </div>
       )}
       {scenario && (
         <section aria-label="Your scenario" key={scenario.id}>
