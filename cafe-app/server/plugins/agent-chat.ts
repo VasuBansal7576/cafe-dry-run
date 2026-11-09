@@ -7,7 +7,10 @@ import {
 
 import actionsRegistry from "../../.generated/actions-registry.js";
 import { guardCafeFigures } from "../lib/cafe/chat-figure-guard.js";
-import { holdCafeDrafts } from "../lib/cafe/guarded-chat-stream.js";
+import {
+  holdCafeDrafts,
+  isCafeChatActionAllowed,
+} from "../lib/cafe/guarded-chat-stream.js";
 import {
   searchConversationReferences,
   validateConversationReferences,
@@ -32,11 +35,13 @@ const INITIAL_TOOL_NAMES = [
   "navigate",
   "hello",
   "provider-api-request",
-  "ask-question",
 ];
 
 export default createAgentChatPlugin({
   appId: "cafe-app",
+  resolveActionSurface: ({ availableActionNames }) => ({
+    allowedActionNames: availableActionNames.filter(isCafeChatActionAllowed),
+  }),
   mentionProviders: {
     chats: {
       label: "composerSources.group",

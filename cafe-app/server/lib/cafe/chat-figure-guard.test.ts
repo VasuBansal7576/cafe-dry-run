@@ -67,6 +67,11 @@ it.each([
   "This result is for November second.",
   "I would add two hundred chairs.",
   "The grinder cuts waits in half.",
+  "The grinder triples throughput.",
+  "Doubling the rate makes the queue shorter.",
+  "The new layout halves the wait.",
+  "The additional staff quadrupled throughput.",
+  "Throughput increased threefold.",
   "The p99 wait is 215.17 seconds.",
   "The median wait is 215.2 seconds.",
   "The median wait is 215.17 minutes.",
@@ -95,6 +100,7 @@ it("accepts ordinary qualitative references to the better one", async () => {
   expect(await check("The grinder is the better one.")).toBeUndefined();
   expect(await check("I would add a second barista.")).toBeUndefined();
   expect(await check("I can double-check the comparison.")).toBeUndefined();
+  expect(await check("I am double-checking the comparison.")).toBeUndefined();
 });
 
 it("uses successful current action results, never numbers from the founder or stale payloads", async () => {

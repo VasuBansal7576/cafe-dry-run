@@ -41,7 +41,9 @@ const numberWord =
 const writtenDate =
   /\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+(?:first|second)\b/iu;
 const implicitNumber =
-  /\b(?:couple of|(?:first|second)[ -]place|(?:a|an) (?:second|minute|hour|day|week|month|year|rupee)(?=\s+(?:of|faster|slower|less|more|off|per|each|longer|shorter)\b|[.,;!?)\n]|$)|a k rupees|double(?![- ]check\b)|doubled|tripl(?:e|ed))\b/iu;
+  /\b(?:couple of|(?:first|second)[ -]place|(?:a|an) (?:second|minute|hour|day|week|month|year|rupee)(?=\s+(?:of|faster|slower|less|more|off|per|each|longer|shorter)\b|[.,;!?)\n]|$)|a k rupees)\b/iu;
+const multiplicativeNumber =
+  /\b(?!double[- ]check(?:s|ed|ing)?\b)(?:(?:doubl|tripl|trebl|quadrupl|quintupl|sextupl|septupl|octupl|nonupl|decupl|halv)(?:e[ds]?|ing)|quarter(?:ed|ing)|(?:two|three|four|five|six|seven|eight|nine|ten|hundred|thousand|million|billion|dozen)[ -]?fold)\b/iu;
 const approximateMeasure =
   /\b(?:(?:several|a few|few)\s+(?:seconds|minutes|hours|days|weeks|months|years|rupees|orders|customers)|(?:under|over|about|within|less than|more than|at least|at most|around)\s+(?:a|an)\s+(?:second|minute|hour|day|week|month|year|rupee|order|customer))\b/iu;
 const adjacentPlaceQuantity =
@@ -443,6 +445,7 @@ function hasUnsupportedNumber(
     numberWord.test(remainder) ||
     writtenDate.test(remainder) ||
     implicitNumber.test(remainder) ||
+    multiplicativeNumber.test(remainder) ||
     approximateMeasure.test(remainder)
   );
 }

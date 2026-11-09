@@ -26,7 +26,11 @@ function heldStream(
     model: engine.defaultModel,
     systemPrompt: "",
     messages: [],
-    tools: [],
+    tools: ["list-scenarios", "ask-question"].map((name) => ({
+      name,
+      description: name,
+      inputSchema: { type: "object" },
+    })),
     abortSignal: signal,
   });
 }
@@ -54,6 +58,11 @@ it("preserves live tool progress and signed tool history without publishing draf
       yield { type: "text-delta", text: "Unverified draft" };
       yield { type: "thinking-delta", text: reasoning.text };
       yield { type: "tool-input-start", id: tool.id, name: tool.name };
+      yield {
+        type: "tool-input-delta",
+        id: tool.id,
+        text: "Unverified argument prose",
+      };
       yield tool;
       yield {
         type: "assistant-content",
@@ -68,6 +77,13 @@ it("preserves live tool progress and signed tool history without publishing draf
     name: tool.name,
   });
   expect(events).toContainEqual(tool);
+  expect(events).toContainEqual({
+    type: "tool-input-delta",
+    id: tool.id,
+    name: tool.name,
+    text: "{}",
+  });
+  expect(JSON.stringify(events)).not.toContain("Unverified argument prose");
   expect(
     events.filter(
       ({ type }) => type === "text-delta" || type === "thinking-delta",
@@ -78,6 +94,49 @@ it("preserves live tool progress and signed tool history without publishing draf
     { type: "stop", reason: "tool_use" },
   ]);
 });
+
+it.each([
+  ["list-scenarios", "ask-question"],
+  ["ask-question", "list-scenarios"],
+  ["ask-question", "ask-question"],
+] as const)(
+  "rejects a disallowed or mismatched tool ID from %s to %s",
+  async (announced, completed) => {
+    const id = "call_forged";
+    const call = {
+      type: "tool-call",
+      id,
+      name: completed,
+      input: { question: "The wait is 999 seconds" },
+    } as const;
+    const events = await collect(
+      heldStream(async function* () {
+        yield { type: "tool-input-start", id, name: announced };
+        yield { type: "tool-input-delta", id, text: "The wait is 999 seconds" };
+        yield call;
+        yield {
+          type: "assistant-content",
+          parts: [
+            call,
+            {
+              type: "tool-result",
+              toolCallId: id,
+              toolName: "list-scenarios",
+              toolInput: "{}",
+              content: "The wait is 999 seconds",
+            },
+          ],
+        };
+        yield { type: "stop", reason: "tool_use" };
+      }),
+    );
+    expect(events.map(({ type }) => type)).toEqual([
+      "assistant-content",
+      "stop",
+    ]);
+    expect(JSON.stringify(events)).not.toContain("999 seconds");
+  },
+);
 
 it("submits the provider's complete assistant content for the final guard", async () => {
   const final = {
