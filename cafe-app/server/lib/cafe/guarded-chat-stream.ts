@@ -15,10 +15,29 @@ import { cafeActionTextCheck } from "./chat-action-text.js";
 import { safeProviderFailure } from "./chat-provider-failure.js";
 
 const guardedEngines = new WeakSet<AgentEngine>();
-const excludedChatTools = new Set([
-  "ask-question",
-  "render-data-widget",
-  "provider-api-request",
+export const cafeChatTools = [
+  "list-scenarios",
+  "create-scenario",
+  "set-spot",
+  "set-demand",
+  "set-pedestrian-count",
+  "tag-source",
+  "configure-shop",
+  "configure-finance",
+  "compare-scenarios",
+  "get-comparison",
+  "compute-runway",
+  "explain-result",
+  "run-simulation",
+  "get-simulation",
+  "view-screen",
+  "navigate",
+  "hello",
+];
+const allowedChatTools = new Set([
+  ...cafeChatTools,
+  "tool-search",
+  "read-attachment",
 ]);
 const draft07 = addFormats(
   new Ajv({ strict: false, ownProperties: true, addUsedSchema: false }),
@@ -43,7 +62,7 @@ type ToolRecord = {
 };
 
 export function isCafeChatActionAllowed(name: string) {
-  return !excludedChatTools.has(name);
+  return allowedChatTools.has(name);
 }
 
 export function holdCafeDrafts(engine: AgentEngine) {

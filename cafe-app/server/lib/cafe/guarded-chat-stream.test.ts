@@ -169,6 +169,39 @@ it("submits the provider's complete assistant content for the final guard", asyn
   ]);
 });
 
+it.each(["run-code", "tool-orchestration", "db-query", "db-exec"])(
+  "rejects %s even if an engine is given its schema",
+  async (name) => {
+    const input = { code: "return 'generic execution'" };
+    const call = { type: "tool-call", id: "call_code", name, input } as const;
+    const events = await collect(
+      heldStream(
+        async function* () {
+          yield { type: "tool-input-start", id: call.id, name };
+          yield call;
+          yield { type: "assistant-content", parts: [call] };
+          yield { type: "stop", reason: "tool_use" };
+        },
+        undefined,
+        [
+          {
+            name,
+            description: name,
+            inputSchema: {
+              type: "object",
+              properties: { code: { type: "string" } },
+            },
+          },
+        ],
+      ),
+    );
+    expect(events.map(({ type }) => type)).toEqual([
+      "assistant-content",
+      "stop",
+    ]);
+  },
+);
+
 it.each(["max_tokens", "aborted", "late_error"] as const)(
   "drops drafts when a model call ends with %s",
   async (mode) => {

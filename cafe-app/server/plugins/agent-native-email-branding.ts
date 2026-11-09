@@ -2,6 +2,7 @@ import { defineAppConfig } from "@agent-native/core/server";
 
 export default defineAppConfig({
   access: { autoCreateDefaultOrg: false },
+  agent: { mode: "production" },
   app: {
     // This name appears in transactional emails. Change it to your product name.
     name: "Café Dry Run",

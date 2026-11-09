@@ -311,16 +311,27 @@ it("revokes old quotes after a shared input edit while keeping quotes across unr
   );
   const stale = await getComparison.run({ aId: a.id, bId: b.id }, owner);
   expect(stale.decision?.cashStale).toBe(true);
+  expect(stale.rerunComparison).toEqual({
+    a: versions(edited.scenario),
+    b: versions(b),
+    ...settings,
+  });
+  expect(
+    (
+      await getComparison.run(
+        { aId: a.id, bId: b.id, receiptId: comparison.receipt.id },
+        owner,
+      )
+    ).rerunComparison,
+  ).toBeUndefined();
   expect(
     await check(quote, [...prefix, tool("set-demand", edited)]),
   ).toBeDefined();
   expect(
     await check(quote, [...prefix, tool("get-comparison", stale)]),
   ).toBeDefined();
-  const rerun = await compareScenarios.run(
-    { a: versions(edited.scenario), b: versions(b), ...settings },
-    owner,
-  );
+  if (!stale.rerunComparison) throw new Error("Missing saved rerun inputs");
+  const rerun = await compareScenarios.run(stale.rerunComparison, owner);
   const afterRerun = [
     ...prefix,
     tool("set-demand", edited),

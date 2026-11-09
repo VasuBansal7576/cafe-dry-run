@@ -160,9 +160,13 @@ it("uses successful current action results, never numbers from the founder or st
   ).toBeUndefined();
 });
 
-it("reads complete leading figures from a truncated action result", async () => {
+it.each([
+  "",
+  '  "rerunComparison": {\n    "seed": 42\n  },\n',
+  '  "rerunComparison": null,\n',
+])("reads complete leading figures from a truncated action result with prefix %j", async (prefix) => {
   const content = `{
-  "decision": {
+${prefix}  "decision": {
     "chatFigureBasis": {
       "scenarios": []
     },

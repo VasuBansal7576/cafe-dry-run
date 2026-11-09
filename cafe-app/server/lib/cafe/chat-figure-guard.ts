@@ -69,9 +69,11 @@ function resultPayload(
 ) {
   if (parsed) return object(parsed.decision) ?? parsed;
   // Core can truncate after these leading fields, before the raw receipt or playback.
-  const leading = content.match(
-    /^\{\n(?: {2}"decision": \{\n)?( {2,4})"chatFigureBasis": (\{[\s\S]*?\n\1\}),\n\1"chatFigures": (null|\{[\s\S]*?\n\1\})(?=,|\n)/,
-  );
+  const leading = content
+    .replace(/^\{\n {2}"rerunComparison": (?:null|\{[\s\S]*?\n {2}\}),\n/, "{\n")
+    .match(
+      /^\{\n(?: {2}"decision": \{\n)?( {2,4})"chatFigureBasis": (\{[\s\S]*?\n\1\}),\n\1"chatFigures": (null|\{[\s\S]*?\n\1\})(?=,|\n)/,
+    );
   return leading?.[2] && leading[3]
     ? {
         chatFigureBasis: parseJson(leading[2]),
