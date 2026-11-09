@@ -864,7 +864,7 @@
     padding: 1px 3px;
     letter-spacing: 0;
   }
-  .cafe-receipt :is(tr, .cafe-receipt-sensitivity, .cafe-cash-chart, footer) {
+  .cafe-receipt :is(p, tr, .cafe-receipt-sensitivity, .cafe-cash-chart, footer) {
     break-inside: avoid;
   }
   .cafe-receipt::after,
