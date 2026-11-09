@@ -69,24 +69,30 @@ const paths = layers.map((kind) => ({
     .join(""),
 }));
 
-const labelWays = [691155646, 59358833, 543470383, 1378838837];
-const labels = labelWays.flatMap((osmId) => {
+const streetMarkers = [
+  { letter: "A", osmId: 1378838837, segment: 4, fraction: 0.25, side: "left" },
+  { letter: "B", osmId: 543470383, segment: 4, fraction: 0.04, side: "right" },
+  { letter: "C", osmId: 107218840, segment: 5, fraction: 0.33, side: "above" },
+  { letter: "D", osmId: 691155646, segment: 0, fraction: 0.57, side: "above" },
+].flatMap(({ letter, osmId, segment, fraction, side }) => {
   const way = features.find((feature) => feature.osmId === osmId);
-  if (!way?.name) return [];
-  const segments = way.points.slice(1).map(([lon, lat], index) => {
-    const [startLon, startLat] = way.points[index]!;
-    return { start: project(startLon, startLat), end: project(lon, lat) };
-  });
-  const length = ({ start, end }: (typeof segments)[number]) =>
-    Math.hypot(end[0] - start[0], end[1] - start[1]);
-  const segment = segments.sort((a, b) => length(b) - length(a))[0];
-  if (!segment) return [];
-  const { start, end } = segment;
-  const x = (start[0] + end[0]) / 2;
-  const y = (start[1] + end[1]) / 2;
-  const angle =
-    Math.atan2(end[1] - start[1], end[0] - start[0]) * (180 / Math.PI);
-  return [{ osmId, name: way.name, x, y, angle: ((angle + 270) % 180) - 90 }];
+  const start = way?.points[segment];
+  const end = way?.points[segment + 1];
+  if (!way?.name || !start || !end) return [];
+  const [lon, lat] = start;
+  const [endLon, endLat] = end;
+  return [
+    {
+      letter,
+      osmId,
+      side,
+      name: way.name,
+      coordinate: {
+        lon: lon + (endLon - lon) * fraction,
+        lat: lat + (endLat - lat) * fraction,
+      },
+    },
+  ];
 });
 
 const arrowSteps = {
@@ -113,6 +119,7 @@ export function SiteMap({
   const instructionId = useId();
   const titleId = useId();
   const mapId = useId();
+  const streetKeyId = useId();
   const photoId = useId();
   const stage = useRef<HTMLDivElement>(null);
   const [showStorefront, setShowStorefront] = useState(false);
@@ -289,16 +296,6 @@ export function SiteMap({
                   vectorEffect="non-scaling-stroke"
                 />
               ))}
-              {labels.map(({ osmId, name, x, y, angle }) => (
-                <text
-                  key={osmId}
-                  x={x}
-                  y={y}
-                  transform={`rotate(${angle} ${x} ${y})`}
-                >
-                  {name}
-                </text>
-              ))}
             </svg>
           </button>
           <div className="cafe-map-compass" aria-hidden="true">
@@ -311,6 +308,18 @@ export function SiteMap({
           >
             100 m
           </div>
+          {streetMarkers.map(({ letter, osmId, side, coordinate }) => (
+            <span
+              key={osmId}
+              className="cafe-map-road-mark"
+              data-osm-way={osmId}
+              data-side={side}
+              style={pointStyle(coordinate)}
+              aria-hidden="true"
+            >
+              <span className="cafe-map-road-badge">{letter}</span>
+            </span>
+          ))}
           {places.map((place, index) => (
             <span
               className="cafe-map-place-dot"
@@ -351,6 +360,17 @@ export function SiteMap({
               </svg>
             </span>
           )}
+        </div>
+        <div className="cafe-map-street-key">
+          <p id={streetKeyId}>Street key</p>
+          <ul aria-labelledby={streetKeyId} role="list">
+            {streetMarkers.map(({ letter, osmId, name }) => (
+              <li key={osmId}>
+                <span className="cafe-map-road-badge">{letter}</span>
+                <span>{name}</span>
+              </li>
+            ))}
+          </ul>
         </div>
         <figcaption>
           <a href={siteMap.attributionUrl}>{siteMap.attribution}</a>

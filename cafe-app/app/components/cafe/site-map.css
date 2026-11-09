@@ -140,17 +140,6 @@
   pointer-events: none;
 }
 
-.cafe-map-surface text {
-  fill: var(--cafe-print, #29241d);
-  stroke: #f3e6cf;
-  stroke-width: 8px;
-  stroke-linejoin: round;
-  paint-order: stroke fill;
-  font: 650 40px var(--cafe-mono, ui-monospace, Menlo, monospace);
-  text-anchor: middle;
-  dominant-baseline: central;
-}
-
 .cafe-map-green {
   fill: #c3b092;
 }
@@ -202,6 +191,111 @@
   border-block-end: 2px solid #6f5c48;
   text-align: center;
   white-space: nowrap;
+}
+
+.cafe-map-road-badge {
+  display: inline-grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border: 1px solid var(--cafe-print, #29241d);
+  background: var(--cafe-receipt, #fff3d9);
+  color: var(--cafe-print, #29241d);
+  font: 700 11px/1 var(--cafe-mono, ui-monospace, Menlo, monospace);
+}
+
+.cafe-map-road-mark {
+  --cafe-road-leader: 9px;
+  position: absolute;
+  pointer-events: none;
+}
+
+.cafe-map-road-mark::before,
+.cafe-map-road-mark::after {
+  position: absolute;
+  background: var(--cafe-print, #29241d);
+  content: "";
+}
+
+.cafe-map-road-mark::after {
+  inset: -2px auto auto -2px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+}
+
+.cafe-map-road-mark:not([data-side="above"])::before {
+  top: -0.5px;
+  width: var(--cafe-road-leader);
+  height: 1px;
+}
+
+.cafe-map-road-mark[data-side="left"]::before {
+  right: 0;
+}
+
+.cafe-map-road-mark[data-side="right"]::before {
+  left: 0;
+}
+
+.cafe-map-road-mark[data-side="above"]::before {
+  bottom: 0;
+  left: -0.5px;
+  width: 1px;
+  height: var(--cafe-road-leader);
+}
+
+.cafe-map-road-mark .cafe-map-road-badge {
+  position: absolute;
+}
+
+.cafe-map-road-mark[data-side="left"] .cafe-map-road-badge {
+  top: 0;
+  right: var(--cafe-road-leader);
+  transform: translateY(-50%);
+}
+
+.cafe-map-road-mark[data-side="right"] .cafe-map-road-badge {
+  top: 0;
+  left: var(--cafe-road-leader);
+  transform: translateY(-50%);
+}
+
+.cafe-map-road-mark[data-side="above"] .cafe-map-road-badge {
+  bottom: var(--cafe-road-leader);
+  transform: translateX(-50%);
+}
+
+.cafe-map-street-key {
+  max-width: 420px;
+  margin-inline: auto;
+  padding-block: 9px;
+  border-block-end: 1px solid #aa987d;
+}
+
+.cafe-map-street-key p {
+  margin-block-end: 6px;
+  font: 700 11px/1.3 var(--cafe-mono, ui-monospace, Menlo, monospace);
+  letter-spacing: 0.105em;
+  text-transform: uppercase;
+}
+
+.cafe-map-street-key ul {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 5px 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cafe-map-street-key li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 5px;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .cafe-map-pin {
