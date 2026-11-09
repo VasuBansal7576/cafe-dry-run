@@ -63,6 +63,7 @@ describe("simulateSaturday", () => {
     });
     expect(baseline.stats.bottleneck).toMatchObject({
       resource: "staff",
+      label: "Barista time",
       longestTaskWaitSeconds: 20,
       totalWaitSeconds: 50,
     });
