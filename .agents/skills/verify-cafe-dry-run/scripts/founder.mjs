@@ -323,7 +323,7 @@ function checkCalendar(side, weekendDemand, served, staffHours) {
   assert.equal(money(result.closingCash[1].value), money(result.closingCash[0].value) + money(result.monthlyCash.value));
 }
 
-export async function runFounder({ context, page, origin, map, record, section, screenshot, capture }) {
+export async function runFounder({ context, page, origin, map, record, section, screenshot, capture, print }) {
   const { scenarios, service, comparison, post } = founderActions(page, origin);
   const find = async (id) => (await scenarios()).find((row) => row.id === id);
   const decision = async (a, b, id) => (await comparison(a, b, id)).decision;
@@ -641,6 +641,30 @@ export async function runFounder({ context, page, origin, map, record, section, 
   });
   assert.deepEqual({ ...fromAction.receipt, id: refreshed.receipt.id }, refreshed.receipt, "The public action must return the same paired cash as the founder control");
   await verifyPublishedPlayback(page, origin, fromAction.receipt.id, runA, runB, pairedFrame.second);
+  const receiptAssumption = receiptPanel.getByRole("region", { name: "Saved-customer assumption" });
+  const checkReceiptSensitivity = async () => {
+    await receiptAssumption.getByText("The switch reverses the cash ordering in this demand case.", { exact: false }).waitFor();
+    for (const [label, measure] of [
+      ["off", on.receipt.delta.monthlyCashSavedCustomersOff],
+      ["on", on.receipt.delta.monthlyCashSavedCustomersOn],
+    ]) {
+      const row = receiptAssumption.locator("dl > div").filter({ hasText: `B minus A monthly cash with switch ${label}` });
+      assert.match(await row.locator("dd").innerText(), new RegExp(measure.tag, "i"));
+      assert((await row.locator("dd").innerText()).includes(signedCash.format(measure.value)));
+    }
+    await receiptAssumption.getByText(new RegExp(`^${on.receipt.savedCustomers.tag}$`, "i")).waitFor();
+  };
+  await checkReceiptSensitivity();
+  for (const width of base.widths) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.emulateMedia({ media: "print" });
+    await checkReceiptSensitivity();
+    assert.equal(await results.isVisible(), false, "Only the receipt should print");
+    assert.equal(await button(receiptPanel, "Print receipt").isVisible(), false);
+    await print(`paired-receipt-${width}.pdf`);
+  }
+  await page.emulateMedia({ media: "screen" });
+  await page.setViewportSize({ width: 1440, height: 900 });
   record("calendar and reversing assumption", {
     offReceipt: direct.receipt.id, onReceipt: on.receipt.id,
     refreshedReceipt: refreshed.receipt.id, actionReceipt: fromAction.receipt.id,

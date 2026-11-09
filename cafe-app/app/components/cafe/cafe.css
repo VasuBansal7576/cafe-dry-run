@@ -547,12 +547,12 @@
 .cafe-customer-assumption label {
   font-weight: 650;
 }
-.cafe-customer-assumption dl {
+.cafe-sensitivity-deltas {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 22px;
 }
-.cafe-customer-assumption dd {
+.cafe-sensitivity-deltas dd {
   font: 15px var(--cafe-mono);
 }
 .cafe-ledger-controls {
@@ -602,6 +602,15 @@
 }
 .cafe-receipt h3 {
   margin-top: 8px;
+}
+.cafe-receipt-sensitivity {
+  display: grid;
+  gap: 8px;
+  padding-block: 10px;
+  border-block: 1px solid var(--receipt-rule);
+}
+.cafe-receipt-sensitivity h4 {
+  font-size: 16px;
 }
 .cafe-receipt table {
   table-layout: fixed;
@@ -760,22 +769,64 @@
   }
 }
 @media print {
-  body * {
-    visibility: hidden;
+  @page {
+    size: A4;
+    margin: 10mm;
   }
-  .cafe-receipt,
-  .cafe-receipt * {
-    visibility: visible;
+  body:has(.cafe-receipt) :not(.cafe-receipt, .cafe-receipt *, :has(.cafe-receipt)) {
+    display: none !important;
+  }
+  html:has(.cafe-receipt),
+  body:has(.cafe-receipt),
+  body :has(.cafe-receipt) {
+    display: block !important;
+    position: static !important;
+    container-type: normal !important;
+    overflow: visible !important;
+    transform: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    width: auto !important;
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: white !important;
   }
   .cafe-receipt {
-    position: absolute;
-    inset: 0;
-    display: block;
-    width: 100%;
-    color: #29241d;
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    gap: 14px;
+    padding: 12px;
+    font-size: 11px;
+    line-height: 1.4;
     box-shadow: none;
+    print-color-adjust: exact;
   }
-  .cafe-receipt button {
+  .cafe-receipt h3 {
+    font-size: 26px;
+  }
+  .cafe-receipt-main,
+  .cafe-cash-chart {
+    gap: 8px;
+  }
+  .cafe-receipt-main tbody tr:first-child td {
+    font-size: 16px;
+  }
+  .cafe-receipt th,
+  .cafe-receipt td {
+    padding: 3px;
+  }
+  .cafe-receipt .cafe-stamp {
+    margin-block: 0;
+    padding: 1px 3px;
+    letter-spacing: 0;
+  }
+  .cafe-receipt :is(tr, .cafe-receipt-sensitivity, .cafe-cash-chart, footer) {
+    break-inside: avoid;
+  }
+  .cafe-receipt::after,
+  .cafe-receipt button,
+  .cafe-receipt details:not([open]) {
     display: none;
   }
 }

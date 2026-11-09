@@ -19,6 +19,12 @@ export const cashFormat = new Intl.NumberFormat("en-IN", {
   currency: "INR",
   maximumFractionDigits: 2,
 });
+export const signedCash = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  signDisplay: "exceptZero",
+  maximumFractionDigits: 2,
+});
 export const countFormat = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 2,
 });
@@ -233,6 +239,59 @@ function Figure({
   );
 }
 
+export function SavedCustomerSensitivity({
+  receipt,
+}: {
+  receipt: DecisionReceipt;
+}) {
+  const { a, b, delta } = receipt;
+  if (!b || !delta) return null;
+  const ordering = delta.higherMonthlyCash;
+  const outcome = (side: "a" | "b" | "tie") =>
+    side === "tie"
+      ? "the shops tie on monthly cash"
+      : `${side === "a" ? `A · ${a.label}` : `B · ${b.label}`} has higher monthly cash`;
+  return (
+    <>
+      <p>
+        With the switch off, weekend sales use the lower completion count for
+        each drink between the shop and the shared baseline. With it on, the
+        shop counts additional completed drinks only if fewer customers left.
+        Weekday assumptions stay separate.
+      </p>
+      <dl
+        className="cafe-sensitivity-deltas"
+        aria-label="Saved-customer cash sensitivity"
+      >
+        {(
+          [
+            ["off", delta.monthlyCashSavedCustomersOff],
+            ["on", delta.monthlyCashSavedCustomersOn],
+          ] as const
+        ).map(([setting, figure]) => (
+          <div key={setting}>
+            <dt>B minus A monthly cash with switch {setting}</dt>
+            <dd>
+              <Figure figure={figure} format={signedCash} />
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {ordering && (
+        <p>
+          With the switch off, {outcome(ordering.off)}. With it on,{" "}
+          {outcome(ordering.on)}.{" "}
+          {ordering.off === ordering.on
+            ? "The ordering stays the same in this demand case."
+            : ordering.off === "tie" || ordering.on === "tie"
+              ? "One setting produces a tie in this demand case."
+              : "The switch reverses the cash ordering in this demand case."}
+        </p>
+      )}
+    </>
+  );
+}
+
 function CashChart({ receipt }: { receipt: DecisionReceipt }) {
   const title = useId();
   const { demandLevel } = receipt.settings;
@@ -348,6 +407,7 @@ function CashChart({ receipt }: { receipt: DecisionReceipt }) {
 function Receipt({ decision }: { decision: StoredDecision }) {
   const {
     receipt,
+    serviceStale,
     cashStale,
     historical,
     assumptionStale,
@@ -462,7 +522,9 @@ function Receipt({ decision }: { decision: StoredDecision }) {
             <strong>Stale cash receipt.</strong>{" "}
             {assumptionStale
               ? `This receipt used an earlier saved-customer assumption. The current setting is ${currentSavedCustomers.enabled ? "on" : "off"}.`
-              : "Refresh the cash projection to use current inputs."}
+              : serviceStale
+                ? "Run a fresh Saturday before using this projection."
+                : "Refresh the cash projection to use current inputs."}
           </p>
         )}
         {historical && <p>Historical receipt</p>}
@@ -598,12 +660,19 @@ function Receipt({ decision }: { decision: StoredDecision }) {
             sample this demand.
           </p>
         )}
-        {b && (
-          <p>
-            Count recovered weekend customers ·{" "}
-            {receipt.savedCustomers.enabled ? "On" : "Off"}{" "}
-            <Stamp tag={receipt.savedCustomers.tag} />
-          </p>
+        {b && receipt.delta && (
+          <section
+            className="cafe-receipt-sensitivity"
+            aria-label="Saved-customer assumption"
+          >
+            <h4>Saved-customer cash sensitivity</h4>
+            <p>
+              Count recovered weekend customers ·{" "}
+              {receipt.savedCustomers.enabled ? "On" : "Off"}{" "}
+              <Stamp tag={receipt.savedCustomers.tag} />
+            </p>
+            <SavedCustomerSensitivity receipt={receipt} />
+          </section>
         )}
         <details>
           <summary>Break-even capture rates</summary>

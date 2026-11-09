@@ -343,8 +343,13 @@ try {
       capture(name, value);
       attach(name);
     };
+    const savePrint = async (name) => {
+      await page.pdf({ path: file(name), preferCSSPageSize: true, printBackground: true });
+      evidence.artifacts.push(name);
+      attach(name);
+    };
     const map = JSON.parse(readFileSync(join(app, "shared/cafe/indiranagar.json"), "utf8"));
-    const expected = await runFounder({ context, page, origin, map, record, section, screenshot: saveImage, capture: saveJson });
+    const expected = await runFounder({ context, page, origin, map, record, section, screenshot: saveImage, capture: saveJson, print: savePrint });
     section("stopped database readback and restart", ["b10"]);
     await page.close();
     page = undefined;

@@ -18,7 +18,9 @@ import type { Scenario } from "../../../server/lib/cafe/scenario-store";
 import {
   countFormat,
   FinanceLedger,
+  SavedCustomerSensitivity,
   scenarioVersion,
+  signedCash,
   Stamp,
 } from "./finance-ledger";
 import { ShopForm } from "./scenario-inputs";
@@ -40,13 +42,6 @@ const signedCount = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 2,
   signDisplay: "exceptZero",
 });
-const signedCash = new Intl.NumberFormat("en-IN", {
-  style: "currency",
-  currency: "INR",
-  signDisplay: "exceptZero",
-  maximumFractionDigits: 2,
-});
-
 function staleAgainst(
   decision: StoredDecision,
   a: Scenario,
@@ -244,8 +239,6 @@ function ComparisonMetrics({
   const { receipt, cashStale } = decision;
   const { a, b, delta, savedCustomers, cashBaseline } = receipt;
   if (!b || !delta) return null;
-  const cashOff = delta.monthlyCashSavedCustomersOff.value;
-  const cashOn = delta.monthlyCashSavedCustomersOn.value;
   const moneyDeltas = [
     ["Monthly staff cost", delta.staffPerMonth],
     ["Monthly cash change", delta.monthlyCash],
@@ -313,35 +306,9 @@ function ComparisonMetrics({
           Count weekend customers who would have left but now place an order
         </label>
         <p>
-          <Stamp tag={savedCustomers.tag} /> · With the switch off, sales use
-          the lower of the shop and baseline completion counts for each drink on
-          each Saturday. With it on, a shop that lost fewer customers also
-          counts its additional completed drinks. Weekday assumptions stay
-          separate.
+          Assumption source <Stamp tag={savedCustomers.tag} />
         </p>
-        <dl>
-          <div>
-            <dt>B minus A monthly cash with switch off</dt>
-            <dd>
-              {signedCash.format(delta.monthlyCashSavedCustomersOff.value)}{" "}
-              <Stamp tag={delta.monthlyCashSavedCustomersOff.tag} />
-            </dd>
-          </div>
-          <div>
-            <dt>B minus A monthly cash with switch on</dt>
-            <dd>
-              {signedCash.format(delta.monthlyCashSavedCustomersOn.value)}{" "}
-              <Stamp tag={delta.monthlyCashSavedCustomersOn.tag} />
-            </dd>
-          </div>
-        </dl>
-        <p>
-          {cashOff * cashOn < 0
-            ? "The switch changes which scenario has higher monthly cash in this demand case."
-            : cashOff !== cashOn && (cashOff === 0 || cashOn === 0)
-              ? "One of the tested settings gives the same monthly cash in both scenarios."
-              : "The switch keeps the same monthly cash ordering in this demand case."}
-        </p>
+        <SavedCustomerSensitivity receipt={receipt} />
       </aside>
     </>
   );
