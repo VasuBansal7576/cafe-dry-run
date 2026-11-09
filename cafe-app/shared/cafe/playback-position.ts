@@ -15,6 +15,7 @@ export const playbackStateSchema = playbackIdentitySchema.extend({
   second: z.number().int().nonnegative(),
   seekId: z.uuid().optional(),
   clockRevision: z.number().int().nonnegative().optional(),
+  commandedAtMs: z.number().int().nonnegative().optional(),
   speed: playbackSpeedSchema.optional(),
   startedAtMs: z.number().int().nonnegative().optional(),
 });
@@ -27,6 +28,28 @@ export type PlaybackChange =
       playing?: boolean | undefined;
       speed?: z.infer<typeof playbackSpeedSchema> | undefined;
     };
+
+export type PlaybackClockCalibration = {
+  offset: number;
+  earliestOffset: number;
+};
+const maximumClockRoundTripMs = 250;
+
+export function calibratePlaybackClock(
+  previous: PlaybackClockCalibration | undefined,
+  sentAt: number,
+  receivedAt: number,
+  sampledAtMs: number,
+) {
+  if (receivedAt - sentAt > maximumClockRoundTripMs) return previous;
+  const earliestOffset = sampledAtMs - receivedAt;
+  const latestOffset = sampledAtMs - sentAt;
+  const offset = previous?.offset ?? (earliestOffset + latestOffset) / 2;
+  return {
+    offset: Math.max(earliestOffset, Math.min(latestOffset, offset)),
+    earliestOffset,
+  };
+}
 
 function samePlaybackRuns(a: PlaybackIdentity, b: PlaybackIdentity) {
   return (
@@ -89,7 +112,7 @@ export function restorePlayback(
   const sameMode = saved.historical === identity.historical;
   if (sameMode && saved.receiptId === identity.receiptId)
     return { state: saved, exact: true };
-  const { startedAtMs, speed } = saved;
+  const { startedAtMs, speed, commandedAtMs } = saved;
   const running = sameMode && startedAtMs !== undefined;
   return {
     state: {
@@ -97,6 +120,7 @@ export function restorePlayback(
       second: running ? saved.second : playbackFrame(saved, end, now).second,
       ...(speed !== undefined ? { speed } : {}),
       ...(running ? { startedAtMs } : {}),
+      ...(running && commandedAtMs !== undefined ? { commandedAtMs } : {}),
     },
     exact: false,
   };

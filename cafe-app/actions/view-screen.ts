@@ -60,6 +60,7 @@ export default defineAction({
           seekId: _,
           startedAtMs: __,
           clockRevision: ___,
+          commandedAtMs: ____,
           ...playback
         } = stored.data;
         const bounds = await currentPlaybackBounds(owner, playback);

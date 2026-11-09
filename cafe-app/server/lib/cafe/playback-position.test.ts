@@ -16,7 +16,10 @@ import setDemand from "../../../actions/set-demand.js";
 import controls from "../../../actions/set-playback-controls.js";
 import seek from "../../../actions/set-playback-position.js";
 import viewScreen from "../../../actions/view-screen.js";
-import { playbackBounds } from "../../../shared/cafe/playback-position.js";
+import {
+  calibratePlaybackClock,
+  playbackBounds,
+} from "../../../shared/cafe/playback-position.js";
 import migrate from "../../plugins/db.js";
 
 const owner = {
@@ -65,6 +68,17 @@ async function select(
     ...(comparisonScenarioId ? { comparisonScenarioId } : {}),
   });
 }
+
+it("keeps a reliable playhead calibration when a clock response is held in transit", () => {
+  const initial = calibratePlaybackClock(undefined, 100, 120, 5_110);
+  expect(initial).toEqual({ offset: 5_000, earliestOffset: 4_990 });
+  expect(calibratePlaybackClock(initial, 200, 2_060, 5_210)).toBe(initial);
+  expect(calibratePlaybackClock(undefined, 200, 2_060, 5_210)).toBeUndefined();
+  expect(calibratePlaybackClock(initial, 300, 330, 5_305)).toEqual({
+    offset: 5_000,
+    earliestOffset: 4_975,
+  });
+});
 
 it("shares the solo position per tab and keeps a late browser update from undoing an agent seek", async () => {
   const { scenario } = await createScenario.run(
@@ -286,14 +300,24 @@ it("plays and pauses a legacy clock using the same actions and preserves its pos
       playback: { second: 30120, speed: 120, playing: true },
     });
     expect(await appStateGet(owner.userEmail, key)).toEqual(started);
-    expect(await set({ playing: true })).toMatchObject({ applied: true });
-    expect(await appStateGet(owner.userEmail, key)).toEqual(started);
     expect(await savedAt()).toBe(startedWrite);
+    expect(await set({ playing: true })).toMatchObject({ applied: true });
+    const replayed = await appStateGet(owner.userEmail, key);
+    expect(replayed).toMatchObject({
+      ...legacy,
+      startedAtMs: now,
+      commandedAtMs: now + 1000,
+    });
+    expect(replayed?.seekId).not.toBe(started?.seekId);
+    expect(
+      await set({ playing: false, observedSeekId: started!.seekId as string }),
+    ).toEqual({ applied: false });
+    const seekId = replayed!.seekId as string;
     expect(
       await set({
         speed: 600,
-        observedSeekId: started!.seekId as string,
-        observedClockRevision: 0,
+        observedSeekId: seekId,
+        observedClockRevision: 2,
         returnPlayback: true,
       }),
     ).toMatchObject({
@@ -302,7 +326,7 @@ it("plays and pauses a legacy clock using the same actions and preserves its pos
         second: 30120,
         speed: 600,
         startedAtMs: now + 1000,
-        clockRevision: 1,
+        clockRevision: 3,
       },
     });
 
@@ -315,8 +339,8 @@ it("plays and pauses a legacy clock using the same actions and preserves its pos
       await set({
         playing: false,
         effectiveAtMs: now + 1500,
-        observedSeekId: started!.seekId as string,
-        observedClockRevision: 1,
+        observedSeekId: seekId,
+        observedClockRevision: 3,
       }),
     ).toMatchObject({ applied: true });
     const paused = await appStateGet(owner.userEmail, key);
@@ -325,15 +349,22 @@ it("plays and pauses a legacy clock using the same actions and preserves its pos
     expect(
       await set({
         speed: 30,
-        observedSeekId: started!.seekId as string,
-        observedClockRevision: 1,
+        observedSeekId: seekId,
+        observedClockRevision: 3,
       }),
     ).toEqual({ applied: false });
     clock.mockReturnValue(now + 9000);
     expect(await screen()).toMatchObject({
       playback: { second: 30420, speed: 600, playing: false },
     });
-    expect(await set({ playing: false, speed: 600 })).toMatchObject({
+    expect(
+      await set({
+        playing: false,
+        speed: 600,
+        observedSeekId: seekId,
+        observedClockRevision: 4,
+      }),
+    ).toMatchObject({
       applied: true,
     });
     expect(await appStateGet(owner.userEmail, key)).toEqual(paused);
@@ -342,7 +373,7 @@ it("plays and pauses a legacy clock using the same actions and preserves its pos
       await inTab(tab, () => getPlaybackClock.run({}, owner)),
     ).toMatchObject({
       selection: { view: "cafe", scenarioId: scenario.id },
-      playback: { ...legacy, second: 30420, speed: 600, clockRevision: 2 },
+      playback: { ...legacy, second: 30420, speed: 600, clockRevision: 4 },
       sampledAtMs: now + 9000,
     });
   } finally {

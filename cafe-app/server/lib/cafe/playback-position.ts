@@ -252,15 +252,15 @@ export async function updatePlayback(
     ...(returnPlayback ? { playback } : {}),
     ...(identity.historical ? { historical: true as const } : {}),
   });
-  if (exact && current === next) return result(current);
+  if (browser && exact && current === next) return result(current);
   const updated = {
     ...next,
     ...(!browser
-      ? { seekId: crypto.randomUUID() }
+      ? { seekId: crypto.randomUUID(), commandedAtMs: now }
       : epoch
         ? { seekId: epoch }
         : {}),
-    ...(returnPlayback || saved?.clockRevision !== undefined
+    ...(!browser || returnPlayback || saved?.clockRevision !== undefined
       ? { clockRevision: (saved?.clockRevision ?? 0) + 1 }
       : {}),
   };

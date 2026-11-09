@@ -31,6 +31,7 @@ import type { Scenario } from "../../../server/lib/cafe/scenario-store";
 import { frameAt } from "../../../server/lib/cafe/service-playback";
 import type { ServiceRun } from "../../../server/lib/cafe/service-run";
 import {
+  calibratePlaybackClock,
   changePlayback,
   initialPlaybackSecond,
   playbackBounds,
@@ -39,6 +40,7 @@ import {
   playbackSpeedSchema,
   restorePlayback,
   type PlaybackChange,
+  type PlaybackClockCalibration,
   type PlaybackIdentity,
   type PlaybackState,
 } from "../../../shared/cafe/playback-position";
@@ -160,6 +162,7 @@ type PlaybackEdit = {
   change: PlaybackChange;
   when: number;
   bootstrap?: true;
+  observedClockRevision?: number;
 };
 type PlaybackQueue = {
   scope: string;
@@ -212,36 +215,46 @@ export function Playback({
   const savedPosition = useQuery({
     queryKey,
     queryFn: async ({ signal }) => {
-      const {
-        selection,
-        playback: incoming,
-        sampledAtMs,
-      } = await callAction(
-        "get-playback-clock",
-        {},
-        {
-          method: "GET",
-          signal: AbortSignal.any([
-            signal,
-            AbortSignal.timeout(playbackReadTimeout),
-          ]),
-        },
-      );
-      const receivedAt = performance.now();
-      const previous = queryClient.getQueryData<{
-        playback: PlaybackState | null;
-      }>(queryKey)?.playback;
-      return {
-        navigationReady:
-          selection?.scenarioId === identity.scenarioId &&
-          selection.comparisonScenarioId === identity.comparisonScenarioId,
-        sampledAtMs,
-        receivedAt,
-        playback:
-          (previous?.clockRevision ?? 0) > (incoming?.clockRevision ?? 0)
-            ? (previous ?? null)
-            : incoming,
+      const readOptions = {
+        method: "GET" as const,
+        signal: AbortSignal.any([
+          signal,
+          AbortSignal.timeout(playbackReadTimeout),
+        ]),
       };
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const sentAt = performance.now();
+        const {
+          selection,
+          playback: incoming,
+          sampledAtMs,
+        } = await callAction("get-playback-clock", {}, readOptions);
+        const receivedAt = performance.now();
+        const previous = queryClient.getQueryData<{
+          playback: PlaybackState | null;
+          calibration: PlaybackClockCalibration;
+        }>(queryKey);
+        const calibration = calibratePlaybackClock(
+          previous?.calibration,
+          sentAt,
+          receivedAt,
+          sampledAtMs,
+        );
+        if (!calibration) continue;
+        return {
+          navigationReady:
+            selection?.scenarioId === identity.scenarioId &&
+            selection.comparisonScenarioId === identity.comparisonScenarioId,
+          calibration,
+          receivedAt,
+          playback:
+            (previous?.playback?.clockRevision ?? 0) >
+            (incoming?.clockRevision ?? 0)
+              ? (previous?.playback ?? null)
+              : incoming,
+        };
+      }
+      throw new Error("Couldn’t synchronize the Saturday clock.");
     },
     staleTime: Infinity,
     refetchOnMount: "always",
@@ -287,9 +300,9 @@ export function Playback({
   const initial = initialPlaybackSecond(bounds, playback.timeline.length > 0);
   const [mountedAt] = useState(() => performance.now());
   const [localNow, setLocalNow] = useState(mountedAt);
-  const { sampledAtMs = 0, receivedAt = mountedAt } = savedPosition.data ?? {};
+  const { calibration, receivedAt = mountedAt } = savedPosition.data ?? {};
   const clockAt = (local: number) =>
-    Math.max(0, Math.floor(sampledAtMs + local - receivedAt));
+    Math.max(0, Math.floor(local + (calibration?.offset ?? 0)));
   const now = clockAt(Math.max(localNow, receivedAt));
   const { state: base, exact: exactResult } = restorePlayback(
     identity,
@@ -297,11 +310,27 @@ export function Playback({
     { ...bounds, initial },
     now,
   );
-  const mountedClock = clockAt(mountedAt);
+  const revision = stored?.clockRevision ?? 0;
+  const [loadedClock, setLoadedClock] = useState<{
+    before: number;
+    epoch: string | null;
+    revision: number;
+  } | null>(null);
+  useEffect(() => {
+    if (!navigationReady || !calibration || loadedClock) return;
+    setLoadedClock({
+      before: Math.floor(mountedAt + calibration.earliestOffset),
+      epoch,
+      revision,
+    });
+  }, [navigationReady, calibration, loadedClock, mountedAt, epoch, revision]);
+  const mountedClock = loadedClock?.before ?? 0;
   const pauseOnLoad =
     exactResult &&
+    loadedClock?.epoch === epoch &&
+    loadedClock.revision === revision &&
     base.startedAtMs !== undefined &&
-    base.startedAtMs < mountedClock &&
+    Math.max(base.startedAtMs, base.commandedAtMs ?? 0) < mountedClock &&
     playbackFrame(base, end, now).playing;
   const [queue, setQueue] = useState<PlaybackQueue | null>(null);
   const inFlight = useRef<PlaybackEdit | null>(null);
@@ -322,7 +351,7 @@ export function Playback({
       : base,
   );
   const { second, speed, playing } = playbackFrame(current, end, now);
-  const playbackReady = navigationReady && !pauseOnLoad;
+  const playbackReady = navigationReady && loadedClock !== null && !pauseOnLoad;
   const playbackUnavailable =
     (!navigationReady &&
       !savedPosition.isFetching &&
@@ -367,6 +396,7 @@ export function Playback({
     const attempt = `${scope}:${savedPosition.dataUpdatedAt}`;
     if (
       !navigationReady ||
+      !loadedClock ||
       (exactResult && !pauseOnLoad) ||
       edits.length ||
       attemptedBootstrap.current === attempt
@@ -378,7 +408,12 @@ export function Playback({
       epoch,
       edits: [
         pauseOnLoad
-          ? { change: { playing: false }, when: mountedClock, bootstrap: true }
+          ? {
+              change: { playing: false },
+              when: mountedClock,
+              bootstrap: true,
+              observedClockRevision: loadedClock.revision,
+            }
           : {
               change: { at: base.second },
               when: clockAt(performance.now()),
@@ -392,6 +427,7 @@ export function Playback({
     [
       scope,
       navigationReady,
+      loadedClock,
       exactResult,
       pauseOnLoad,
       savedPosition.dataUpdatedAt,
@@ -406,8 +442,10 @@ export function Playback({
       ...identity,
       observedSeekId: epoch,
       observedClockRevision:
+        edit.observedClockRevision ??
         queryClient.getQueryData<typeof savedPosition.data>(queryKey)?.playback
-          ?.clockRevision ?? 0,
+          ?.clockRevision ??
+        0,
       returnPlayback: true as const,
       effectiveAtMs: edit.when,
     };
