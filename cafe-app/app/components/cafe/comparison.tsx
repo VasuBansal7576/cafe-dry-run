@@ -150,6 +150,7 @@ function MatchedPlayback({
   return (
     <Playback
       receiptId={receipt.id}
+      arrivalProvenance={receipt.a.service.summary.arrivalProvenance}
       stale={stale}
       boards={[
         {
@@ -184,7 +185,7 @@ function ComparisonPlayback({
           Seed {settings.seed} · {settings.demandLevel} demand ·{" "}
           <ServiceFigure
             value={`${countFormat.format(sample.arrivals)} shared arrivals`}
-            tag={receipt.weekendDemand[settings.demandLevel].tag}
+            tag={a.service.summary.arrivalProvenance}
             stale={serviceStale}
           />{" "}
           across {settings.runCount}{" "}
@@ -221,7 +222,7 @@ function ComparisonPlayback({
           the saved inputs.
         </p>
       )}
-      {!serviceStale && cashStale && (
+      {cashStale && (
         <p className="cafe-notice" role="status">
           <strong>Stale cash deltas.</strong> Refresh the comparison to include
           current cash assumptions.
@@ -273,9 +274,11 @@ function ComparisonMetrics({
         <h3>What changes in B?</h3>
         {delta.higherMonthlyCash && (
           <p>
+            {cashStale && "Saved projection. "}
             {delta.higherMonthlyCash.current === "tie"
               ? "Monthly cash is tied."
-              : `${delta.higherMonthlyCash.current === "a" ? a.label : b.label} has higher monthly cash with the saved-customer switch ${savedCustomers.enabled ? "on" : "off"}.`}
+              : `${delta.higherMonthlyCash.current === "a" ? a.label : b.label} has higher monthly cash with the saved-customer switch ${savedCustomers.enabled ? "on" : "off"}.`}{" "}
+            <Stamp tag={delta.monthlyCash.tag} stale={cashStale} />
           </p>
         )}
         <dl className="cafe-metrics" aria-label="B minus A">
@@ -320,8 +323,13 @@ function ComparisonMetrics({
           {moneyDeltas.map(([label, value]) => (
             <div key={label}>
               <dt>{label}</dt>
-              <dd>{signedCash.format(value.value)}</dd>
-              <Stamp tag={value.tag} />
+              <dd>
+                <ServiceFigure
+                  value={signedCash.format(value.value)}
+                  tag={value.tag}
+                  stale={cashStale}
+                />
+              </dd>
             </div>
           ))}
         </dl>
@@ -340,7 +348,7 @@ function ComparisonMetrics({
         <p>
           Assumption source <Stamp tag={savedCustomers.tag} />
         </p>
-        <SavedCustomerSensitivity receipt={receipt} />
+        <SavedCustomerSensitivity receipt={receipt} stale={cashStale} />
       </aside>
     </>
   );

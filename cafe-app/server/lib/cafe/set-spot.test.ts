@@ -52,6 +52,7 @@ it("moves only the site pin and returns attributed places without staling a save
     lon: 77.6386612,
   });
   expect(changed.spotRevision).toBe(1);
+  expect(changed.spotSourceTag).toBe("public");
   expect(changed.map).toMatchObject({
     coverage: "partial",
     source: {
@@ -66,6 +67,7 @@ it("moves only the site pin and returns attributed places without staling a save
       group: "transit",
       osmId: 6400857551,
       distanceMetres: 0,
+      distanceTag: "public",
     }),
   );
   expect(await setSpot.run(edit, owner)).toEqual(changed);
@@ -99,6 +101,7 @@ it("rejects another owner and outdated pin edits while allowing concurrent deman
     setDemand.run({ id, expectedRevision: 0, baseHourlyDemand: 24 }, owner),
   ]);
   expect(pin.map).toMatchObject({ coverage: "outside", places: [] });
+  expect(pin.spotSourceTag).toBe("estimate");
   expect(pin.spot).toEqual({
     label: "Pinned coordinates",
     lat: 12.955,

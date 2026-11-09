@@ -10,10 +10,12 @@ import {
   searchRadiusMetres,
   siteMap,
   spotAt,
+  spotSourceTag,
   type Coordinate,
   type MapWay,
   type Spot,
 } from "../../../shared/cafe/site-map";
+import { Stamp } from "./provenance-stamp";
 
 import "./site-map.css";
 
@@ -128,6 +130,7 @@ export function SiteMap({
     sameSpot(anchor, current),
   );
   const { coverage, places, missingGroups } = describeSpot(current);
+  const pinTag = spotSourceTag(current);
   const covered = coverage !== "outside";
   const missing = missingGroups.map((group) =>
     placeGroups[group].toLowerCase(),
@@ -364,7 +367,10 @@ export function SiteMap({
         <div aria-live={dragging ? "off" : "polite"} aria-atomic="true">
           <strong>{current.label}</strong>
           <p className="cafe-map-coordinates">
-            {current.lat.toFixed(6)}°, {current.lon.toFixed(6)}°
+            <span>
+              {current.lat.toFixed(6)}°, {current.lon.toFixed(6)}°
+            </span>
+            <Stamp tag={pinTag} />
           </p>
         </div>
         <button
@@ -392,7 +398,7 @@ export function SiteMap({
           <>
             <p className="cafe-map-hint">
               Closest mapped place in each category within {searchRadiusMetres}{" "}
-              m, measured in a straight line.
+              m. Distances are calculated in a straight line from the pin.
             </p>
             {places.length > 0 && (
               <ol>
@@ -413,7 +419,8 @@ export function SiteMap({
                           <small>{category}</small>
                         </span>
                         <span className="cafe-map-distance">
-                          {distanceMetres} m
+                          <span>{distanceMetres} m</span>
+                          <Stamp tag={pinTag} />
                         </span>
                       </a>
                     </li>

@@ -28,6 +28,7 @@ import {
   validateInput,
   type Scenario,
 } from "./scenario-store.js";
+import { pedestrianDailyArrivals } from "./scenario.js";
 import { pairedRunId, pairedRunVersion } from "./service-run-identity.js";
 import { serviceRunSchema } from "./service-run.js";
 
@@ -48,6 +49,37 @@ export const decisionScopeSchema = z.object({
 });
 
 type Version = z.infer<typeof scenarioVersionKey>;
+
+function restoreReceiptArrivalSources(
+  receipt: DecisionReceipt,
+): DecisionReceipt {
+  if (receipt.a.service.summary.arrivalProvenance !== undefined) return receipt;
+  // Earlier receipts used the sample source for their expected daily total.
+  const arrivalProvenance =
+    receipt.weekendDemand[receipt.settings.demandLevel].tag;
+  const withSample = (side: DecisionReceipt["a"]) => ({
+    ...side,
+    service: {
+      ...side.service,
+      summary: { ...side.service.summary, arrivalProvenance },
+    },
+  });
+  const counted =
+    receipt.pedestrian && pedestrianDailyArrivals(receipt.pedestrian);
+  const weekendDemand =
+    counted &&
+    Object.values(receipt.weekendDemand).every(
+      ({ value }) => value === counted.value,
+    )
+      ? { low: counted, base: counted, high: counted }
+      : receipt.weekendDemand;
+  return {
+    ...receipt,
+    weekendDemand,
+    a: withSample(receipt.a),
+    b: receipt.b ? withSample(receipt.b) : null,
+  };
+}
 
 function verifyVersion(
   scenario: Scenario | undefined,
@@ -310,19 +342,19 @@ export async function saveDecision(
             ...calculated.serviceB,
           })
         : null;
-    const withoutPlayback = ({
-      id,
-      scenarioId,
-      scenarioRevision,
-      arrivalSource,
-      summary,
-    }: typeof runA) => ({
-      id,
-      scenarioId,
-      scenarioRevision,
-      arrivalSource,
-      summary,
-    });
+    const serviceSnapshot = (
+      { id, scenarioId, scenarioRevision, arrivalSource, summary }: typeof runA,
+      saved?: DecisionReceipt["a"]["service"],
+    ) =>
+      saved
+        ? {
+            ...saved,
+            summary: {
+              ...saved.summary,
+              arrivalProvenance: summary.arrivalProvenance,
+            },
+          }
+        : { id, scenarioId, scenarioRevision, arrivalSource, summary };
     const receipt = validateInput(decisionReceiptSchema, {
       id: crypto.randomUUID(),
       settings,
@@ -339,7 +371,7 @@ export async function saveDecision(
         label: a.label,
         finance: a.finance,
         financeRevision: a.financeRevision,
-        service: matchedReceipt?.a.service ?? withoutPlayback(runA),
+        service: serviceSnapshot(runA, matchedReceipt?.a.service),
         weekendLosses: calculated.weekendLossA,
         cash: calculated.cashA,
       },
@@ -349,7 +381,7 @@ export async function saveDecision(
               label: b.label,
               finance: b.finance,
               financeRevision: b.financeRevision,
-              service: matchedReceipt?.b?.service ?? withoutPlayback(runB),
+              service: serviceSnapshot(runB, matchedReceipt?.b?.service),
               weekendLosses: calculated.weekendLossB,
               cash: calculated.cashB,
             }
@@ -489,7 +521,7 @@ export async function readDecision(
       )
     : latest;
   if (!row || !assumption) return null;
-  const { receipt } = row;
+  const receipt = restoreReceiptArrivalSources(row.receipt);
   const currentSavedCustomers = assumption.receipt.savedCustomers;
   const assumptionStale =
     (receipt.assumptionRevision ?? 0) !==

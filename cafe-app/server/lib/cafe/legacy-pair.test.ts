@@ -6,10 +6,14 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 
 import compareScenarios from "../../../actions/compare-scenarios.js";
+import computeRunway from "../../../actions/compute-runway.js";
+import configureShop from "../../../actions/configure-shop.js";
+import createScenario from "../../../actions/create-scenario.js";
 import getComparison from "../../../actions/get-comparison.js";
 import getSimulation from "../../../actions/get-simulation.js";
 import listScenarios from "../../../actions/list-scenarios.js";
 import runSimulation from "../../../actions/run-simulation.js";
+import setDemand from "../../../actions/set-demand.js";
 import { getDb } from "../../db/index.js";
 import { decisionRuns, scenarios, serviceRuns } from "../../db/schema.js";
 import migrate from "../../plugins/db.js";
@@ -233,3 +237,90 @@ it.each([
     });
   },
 );
+
+it("separates the counted total and sample source when reading and refreshing earlier receipts", async () => {
+  const { scenario } = await createScenario.run(
+    { label: "Counted shop" },
+    owner,
+  );
+  const { scenario: a } = await setDemand.run(
+    {
+      id: scenario.id,
+      expectedRevision: scenario.revision,
+      demand: {
+        pedestrian: {
+          count: { value: 120, source: { tag: "observed" } },
+          conversionPercent: { value: 10, source: { tag: "estimate" } },
+        },
+      },
+    },
+    owner,
+  );
+  const versionOf = ({ id, revision, financeRevision }: typeof a) => ({
+    id,
+    expectedRevision: revision,
+    expectedFinanceRevision: financeRevision,
+  });
+  const { scenario: b } = await configureShop.run(
+    {
+      ...versionOf(a),
+      variantLabel: "Earlier alternative",
+    },
+    owner,
+  );
+  const pair = { a: versionOf(a), b: versionOf(b) };
+  const { receipt } = await compareScenarios.run(
+    { ...pair, ...settings },
+    owner,
+  );
+  const legacy = structuredClone(receipt);
+  for (const side of [legacy.a, legacy.b!]) {
+    delete side.service.summary.arrivalProvenance;
+    await getDb()
+      .update(serviceRuns)
+      .set({ summary: side.service.summary })
+      .where(eq(serviceRuns.id, side.service.id));
+  }
+  for (const demand of Object.values(legacy.weekendDemand))
+    demand.tag = "illustrative";
+  await getDb()
+    .update(decisionRuns)
+    .set({ receipt: legacy })
+    .where(eq(decisionRuns.id, legacy.id));
+
+  const scope = { aId: a.id, bId: b.id, receiptId: legacy.id };
+  const earlier = (await getComparison.run(scope, owner)).decision;
+  expect(earlier?.receipt.weekendDemand.base).toEqual({
+    value: 12,
+    tag: "estimate",
+  });
+  expect(earlier?.receipt.a.service.summary.arrivalProvenance).toBe(
+    "illustrative",
+  );
+  const readRun = () =>
+    getSimulation.run({ id: a.id, runId: receipt.a.service.id }, owner);
+  expect((await readRun()).run?.summary.arrivalProvenance).toBe("illustrative");
+
+  const refreshed = await computeRunway.run(
+    { comparison: { ...pair, receiptId: legacy.id } },
+    owner,
+  );
+  expect(refreshed.receipt.a.service.id).toBe(legacy.a.service.id);
+  expect(refreshed.receipt.b?.service.id).toBe(legacy.b?.service.id);
+  expect(refreshed.receipt.a.service.summary.arrivalProvenance).toBe(
+    "illustrative",
+  );
+  expect(refreshed.receipt.weekendDemand.base.tag).toBe("estimate");
+
+  await setDemand.run(
+    { id: a.id, expectedRevision: a.revision, baseHourlyDemand: 20 },
+    owner,
+  );
+  const { run } = await readRun();
+  expect(run?.stale).toBe(true);
+  expect(run?.summary.arrivalProvenance).toBeUndefined();
+  expect(
+    (await getComparison.run(scope, owner)).decision?.receipt.a.service.summary
+      .arrivalProvenance,
+  ).toBe("illustrative");
+});

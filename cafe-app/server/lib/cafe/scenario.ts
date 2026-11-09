@@ -376,6 +376,12 @@ export function demandSources(
   ];
 }
 
+export function sampledArrivalProvenance(
+  ...inputs: Parameters<typeof demandSources>
+): SourceTag {
+  return weakestTag(demandSources(...inputs));
+}
+
 export function serviceInputs(shop: ScenarioShop): Shop {
   return {
     workers: shop.workers.map(({ id, shifts }) => ({

@@ -196,10 +196,12 @@ type PlaybackBoard = { run: ServiceRun; label?: string };
 export function Playback({
   boards,
   receiptId,
+  arrivalProvenance,
   stale,
 }: {
   boards: readonly [PlaybackBoard, ...PlaybackBoard[]];
   receiptId?: string;
+  arrivalProvenance?: SourceTag | undefined;
   stale: boolean;
 }) {
   const [{ run }] = boards;
@@ -328,6 +330,7 @@ export function Playback({
             key={board.run.id}
             board={board}
             second={second}
+            arrivalProvenance={arrivalProvenance}
             stale={stale}
           />
         ))}
@@ -342,14 +345,17 @@ function StationBoard({
     label,
   },
   second,
+  arrivalProvenance,
   stale,
 }: {
   board: PlaybackBoard;
   second: number;
+  arrivalProvenance: SourceTag | undefined;
   stale: boolean;
 }) {
   const frame = useMemo(() => frameAt(playback, second), [playback, second]);
   const tag = summary.provenance;
+  const arrivalTag = arrivalProvenance ?? summary.arrivalProvenance;
   const longest = frame.tickets
     .filter(
       ([, ticket]) =>
@@ -372,17 +378,23 @@ function StationBoard({
       >
         {(
           [
-            ["Arrived", frame.arrived],
-            ["Waiting", frame.waiting],
-            ["In service", frame.active],
-            ["Served", frame.served],
-            ["Lost", frame.lost],
+            [
+              "Arrived",
+              arrivalTag
+                ? frame.arrived
+                : `${frame.arrived} · source unavailable`,
+              arrivalTag,
+            ],
+            ["Waiting", frame.waiting, tag],
+            ["In service", frame.active, tag],
+            ["Served", frame.served, tag],
+            ["Lost", frame.lost, tag],
           ] as const
-        ).map(([label, value]) => (
+        ).map(([label, value, source]) => (
           <div key={label}>
             <dt>{label}</dt>
             <dd>
-              <ServiceFigure value={value} tag={tag} stale={stale} />
+              <ServiceFigure value={value} tag={source} stale={stale} />
             </dd>
           </div>
         ))}

@@ -19,6 +19,7 @@ import {
   scenarioKey,
   scenarioScope,
 } from "../server/lib/cafe/scenario-store.js";
+import { sampledArrivalProvenance } from "../server/lib/cafe/scenario.js";
 import {
   pairedRunId,
   soloRunId,
@@ -65,6 +66,7 @@ export default defineAction({
         arrivalSourceId: serviceRuns.arrivalSourceId,
         arrivalSourceRevision: serviceRuns.arrivalSourceRevision,
         currentArrivalRevision: source.revision,
+        currentArrivalDemand: source.demand,
         summary: serviceRuns.summary,
         ...(includePlayback === true || includePlayback === "true"
           ? { playback: serviceRuns.playback }
@@ -129,12 +131,25 @@ export default defineAction({
       !currentRunId ||
       row.scenarioRevision !== row.revision ||
       row.arrivalSourceRevision !== row.currentArrivalRevision;
+    const summary =
+      row.summary.arrivalProvenance === undefined &&
+      currentRunId &&
+      row.arrivalSourceRevision === row.currentArrivalRevision &&
+      row.currentArrivalDemand
+        ? {
+            ...row.summary,
+            arrivalProvenance: sampledArrivalProvenance(
+              row.currentArrivalDemand,
+              row.summary.demandLevel,
+            ),
+          }
+        : row.summary;
     const run = {
       id: row.runId,
       scenarioId: id,
       scenarioRevision: row.scenarioRevision,
       arrivalSource,
-      summary: row.summary,
+      summary,
       playback: row.playback ?? undefined,
       stale,
     };

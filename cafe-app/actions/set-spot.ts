@@ -23,6 +23,7 @@ import {
   searchRadiusMetres,
   siteMap,
   spotAt,
+  spotSourceTag,
 } from "../shared/cafe/site-map.js";
 
 const {
@@ -59,6 +60,7 @@ export default defineAction({
   outputSchema: z.object({
     id: z.string().uuid(),
     spot: spotSchema,
+    spotSourceTag: z.enum(["public", "estimate"]),
     spotRevision: z.number().int().nonnegative(),
     map: z.object({
       source: z.object({
@@ -82,6 +84,7 @@ export default defineAction({
           osmType: z.enum(["node", "way"]),
           osmId: z.number().int().positive(),
           distanceMetres: z.number().nonnegative(),
+          distanceTag: z.enum(["public", "estimate"]),
         }),
       ),
     }),
@@ -117,12 +120,16 @@ export default defineAction({
       spotRevision = updated.spotRevision;
     }
 
+    const tag = spotSourceTag(spot);
+    const { places, ...coverage } = describeSpot(spot);
     return {
       id,
       spot,
+      spotSourceTag: tag,
       spotRevision,
       map: {
-        ...describeSpot(spot),
+        ...coverage,
+        places: places.map((place) => ({ ...place, distanceTag: tag })),
         searchRadiusMetres,
         source: {
           tag: "public" as const,

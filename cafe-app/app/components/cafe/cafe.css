@@ -370,6 +370,7 @@
   font: 11px var(--cafe-mono);
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  overflow-wrap: normal;
 }
 .cafe-service-figure > .cafe-stamp {
   max-inline-size: 100%;
@@ -682,6 +683,11 @@
   aspect-ratio: 390 / 164;
   font: 11px var(--cafe-mono);
   fill: var(--cafe-print);
+}
+.cafe-chart-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
 }
 .cafe-zero-line {
   stroke: #776a58;

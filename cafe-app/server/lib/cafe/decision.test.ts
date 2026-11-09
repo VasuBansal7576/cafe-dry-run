@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { defaultSpot } from "../../../shared/cafe/site-map";
-
 import { createArrivalPlan } from "./arrivals";
 import { calculateDecision } from "./decision";
 import { defaultFinance } from "./finance";
@@ -79,14 +78,17 @@ describe("paired café decisions", () => {
       conversionPercent: { value: 10, source: { tag: "estimate" } },
     };
     a.demand.hourlyMultipliers[0] = illustrative(2);
-    const { cashA, weekendDemand } = calculateDecision(a, null, parameters, {
-      enabled: false,
-      tag: "estimate",
-    });
+    const { cashA, serviceA, weekendDemand } = calculateDecision(
+      a,
+      null,
+      parameters,
+      { enabled: false, tag: "estimate" },
+    );
     expect(weekendDemand.base).toMatchObject({
       value: 60,
-      tag: "illustrative",
+      tag: "estimate",
     });
+    expect(serviceA.summary.arrivalProvenance).toBe("illustrative");
     expect(cashA.outcomes.base.weekdayOrdersPerDay.value).toBe(70);
     expect(cashA.assumptions.passersByPerOpenDay).toEqual({
       value: 600,
@@ -95,6 +97,32 @@ describe("paired café decisions", () => {
     expect(cashA.requiredCaptureRate?.value).toBe(
       cashA.breakEvenOrdersPerDay.value! / 600,
     );
+  });
+
+  it("uses the common demand source for both sides' sampled arrivals", () => {
+    const a = scenario("a");
+    const b = scenario("b");
+    const observed = (value: number) => ({
+      value,
+      source: { tag: "observed" as const },
+    });
+    a.demand.hourly.base = observed(55);
+    a.demand.opensAt = observed(a.demand.opensAt.value);
+    a.demand.closesAt = observed(a.demand.closesAt.value);
+    a.demand.hourlyMultipliers = a.demand.hourlyMultipliers.map(({ value }) =>
+      observed(value),
+    );
+    b.shop.equipment.grinder = illustrative(2);
+
+    const { serviceA, serviceB } = calculateDecision(a, b, parameters, {
+      enabled: false,
+      tag: "estimate",
+    });
+
+    expect(serviceA.playback.arrivals).toEqual(serviceB?.playback.arrivals);
+    expect(serviceA.summary.arrivalProvenance).toBe("observed");
+    expect(serviceB?.summary.arrivalProvenance).toBe("observed");
+    expect(serviceB?.summary.provenance).toBe("illustrative");
   });
 
   it("keeps each candidate's cash anchored to the original Saturday when it moves into A", () => {

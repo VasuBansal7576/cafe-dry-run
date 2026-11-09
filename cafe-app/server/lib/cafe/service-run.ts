@@ -73,6 +73,7 @@ const stats = z.object({
 
 export const serviceSummarySchema = serviceParameters.extend({
   provenance: sourceTagSchema,
+  arrivalProvenance: sourceTagSchema.optional(),
   hours: z.object({ opensAt: seconds, closesAt: seconds }),
   staffNames: z.record(z.string(), name),
   itemNames: z.record(z.string(), name),

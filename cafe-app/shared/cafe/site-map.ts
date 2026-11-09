@@ -97,6 +97,13 @@ export function findNamedSpot(name: string): Spot | undefined {
   return undefined;
 }
 
+export function spotSourceTag(spot: Spot) {
+  const snapshotSpot = findNamedSpot(spot.label);
+  return snapshotSpot && sameSpot(spot, snapshotSpot)
+    ? ("public" as const)
+    : ("estimate" as const);
+}
+
 function distanceBetween(from: Coordinate, to: Coordinate): number {
   const latitudeDifference = radians(to.lat - from.lat);
   const longitudeDifference = radians(to.lon - from.lon);

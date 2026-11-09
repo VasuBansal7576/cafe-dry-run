@@ -9,7 +9,10 @@ import type {
   StoredDecision,
 } from "../../../server/lib/cafe/decision-receipt";
 import type { ScenarioFinance } from "../../../server/lib/cafe/finance";
-import type { SourceTag } from "../../../server/lib/cafe/provenance";
+import {
+  weakestTag,
+  type SourceTag,
+} from "../../../server/lib/cafe/provenance";
 import { demandLevels } from "../../../server/lib/cafe/scenario";
 import type { Scenario } from "../../../server/lib/cafe/scenario-store";
 import { Stamp } from "./provenance-stamp";
@@ -224,22 +227,26 @@ function FinanceForm({
 function Figure({
   figure,
   format,
+  stale = false,
 }: {
   figure: { value: number | null; tag: SourceTag };
   format: Intl.NumberFormat;
+  stale?: boolean;
 }) {
   return (
     <>
       {figure.value === null ? "Unavailable" : format.format(figure.value)}{" "}
-      <Stamp tag={figure.tag} />
+      <Stamp tag={figure.tag} stale={stale} />
     </>
   );
 }
 
 export function SavedCustomerSensitivity({
   receipt,
+  stale,
 }: {
   receipt: DecisionReceipt;
+  stale: boolean;
 }) {
   const { a, b, delta } = receipt;
   if (!b || !delta) return null;
@@ -269,7 +276,7 @@ export function SavedCustomerSensitivity({
           <div key={setting}>
             <dt>B minus A monthly cash with switch {setting}</dt>
             <dd>
-              <Figure figure={figure} format={signedCash} />
+              <Figure figure={figure} format={signedCash} stale={stale} />
             </dd>
           </div>
         ))}
@@ -282,14 +289,27 @@ export function SavedCustomerSensitivity({
             ? "The ordering stays the same in this demand case."
             : ordering.off === "tie" || ordering.on === "tie"
               ? "One setting produces a tie in this demand case."
-              : "The switch reverses the cash ordering in this demand case."}
+              : "The switch reverses the cash ordering in this demand case."}{" "}
+          <Stamp
+            tag={weakestTag([
+              delta.monthlyCashSavedCustomersOff,
+              delta.monthlyCashSavedCustomersOn,
+            ])}
+            stale={stale}
+          />
         </p>
       )}
     </>
   );
 }
 
-function CashChart({ receipt }: { receipt: DecisionReceipt }) {
+function CashChart({
+  receipt,
+  stale,
+}: {
+  receipt: DecisionReceipt;
+  stale: boolean;
+}) {
   const title = useId();
   const { demandLevel } = receipt.settings;
   const a = receipt.a.cash.outcomes[demandLevel].closingCash;
@@ -318,6 +338,20 @@ function CashChart({ receipt }: { receipt: DecisionReceipt }) {
   return (
     <div className="cafe-cash-chart">
       <h4>Cash after startup and each month</h4>
+      <div
+        className="cafe-chart-sources"
+        role="group"
+        aria-label="Weakest source for each cash line"
+      >
+        <span>
+          A <Stamp tag={weakestTag(a)} stale={stale} />
+        </span>
+        {b && (
+          <span>
+            B <Stamp tag={weakestTag(b)} stale={stale} />
+          </span>
+        )}
+      </div>
       <svg role="img" aria-labelledby={title}>
         <title id={title}>
           {caseLabels[demandLevel]} case closing cash projection. Exact values
@@ -385,11 +419,15 @@ function CashChart({ receipt }: { receipt: DecisionReceipt }) {
               <tr key={index}>
                 <th scope="row">{index}</th>
                 <td>
-                  <Figure figure={value} format={cashFormat} />
+                  <Figure figure={value} format={cashFormat} stale={stale} />
                 </td>
                 {b && (
                   <td>
-                    <Figure figure={b[index]!} format={cashFormat} />
+                    <Figure
+                      figure={b[index]!}
+                      format={cashFormat}
+                      stale={stale}
+                    />
                   </td>
                 )}
               </tr>
@@ -542,11 +580,11 @@ function Receipt({ decision }: { decision: StoredDecision }) {
               <tr key={label}>
                 <th scope="row">{label}</th>
                 <td>
-                  <Figure figure={get(a)} format={format} />
+                  <Figure figure={get(a)} format={format} stale={cashStale} />
                 </td>
                 {b && (
                   <td>
-                    <Figure figure={get(b)} format={format} />
+                    <Figure figure={get(b)} format={format} stale={cashStale} />
                   </td>
                 )}
               </tr>
@@ -561,7 +599,7 @@ function Receipt({ decision }: { decision: StoredDecision }) {
                       {value.kind === "no-burn"
                         ? "No burn"
                         : `${countFormat.format(value.months)} mo`}{" "}
-                      <Stamp tag={tag} />
+                      <Stamp tag={tag} stale={cashStale} />
                     </td>
                   );
                 })}
@@ -633,11 +671,16 @@ function Receipt({ decision }: { decision: StoredDecision }) {
                   {period} ·{" "}
                   {units ? (
                     <>
-                      <Figure figure={units.price} format={cashFormat} /> sale
-                      price ·{" "}
+                      <Figure
+                        figure={units.price}
+                        format={cashFormat}
+                        stale={cashStale}
+                      />{" "}
+                      sale price ·{" "}
                       <Figure
                         figure={units.ingredientCost}
                         format={cashFormat}
+                        stale={cashStale}
                       />{" "}
                       ingredients per order
                       {!!legacy?.length &&
@@ -673,32 +716,40 @@ function Receipt({ decision }: { decision: StoredDecision }) {
               {index ? "B" : "A"} ·{" "}
               {side.cash.requiredCaptureRate ? (
                 side.cash.requiredCaptureRate.value === null ? (
-                  "Required conversion unavailable with this footfall or break-even volume."
+                  <>
+                    Required conversion unavailable with this footfall or
+                    break-even volume. <Stamp stale={cashStale} />
+                  </>
                 ) : (
                   <Figure
                     figure={side.cash.requiredCaptureRate}
                     format={percentageFormat}
+                    stale={cashStale}
                   />
                 )
               ) : side.cash.illustrativeCaptureRates.length ? (
-                side.cash.illustrativeCaptureRates
-                  .map(
-                    ({ passersByPerOpenDay, rate }) =>
-                      `${countFormat.format(rate.value * 100)}% of ${countFormat.format(passersByPerOpenDay.value)} passers-by`,
-                  )
-                  .join(" · ")
+                side.cash.illustrativeCaptureRates.map(
+                  ({ passersByPerOpenDay, rate }, index) => (
+                    <span key={passersByPerOpenDay.value}>
+                      {index > 0 && " · "}
+                      {countFormat.format(rate.value * 100)}% of{" "}
+                      {countFormat.format(passersByPerOpenDay.value)} passers-by{" "}
+                      <Stamp
+                        tag={weakestTag([rate, passersByPerOpenDay])}
+                        stale={cashStale}
+                      />
+                    </span>
+                  ),
+                )
               ) : (
                 "No break-even volume under these assumptions."
-              )}{" "}
-              {!!side.cash.illustrativeCaptureRates.length && (
-                <Stamp tag="illustrative" />
               )}
             </p>
           ))}
         </details>
       </div>
       <div className="cafe-receipt-aside">
-        <CashChart receipt={receipt} />
+        <CashChart receipt={receipt} stale={cashStale} />
         {b && receipt.delta && (
           <section
             className="cafe-receipt-sensitivity"
@@ -716,7 +767,7 @@ function Receipt({ decision }: { decision: StoredDecision }) {
               {receipt.savedCustomers.enabled ? "On" : "Off"}{" "}
               <Stamp tag={receipt.savedCustomers.tag} />
             </p>
-            <SavedCustomerSensitivity receipt={receipt} />
+            <SavedCustomerSensitivity receipt={receipt} stale={cashStale} />
           </section>
         )}
         <footer>

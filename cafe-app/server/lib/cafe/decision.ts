@@ -19,6 +19,7 @@ import {
   arrivalInputs,
   demandSources,
   pedestrianDailyArrivals,
+  sampledArrivalProvenance,
   serviceInputs,
   serviceProvenance,
   serviceSources,
@@ -70,6 +71,10 @@ export function summarizeService(
       scenario.shop.menu.map(({ id, name }) => [id, name]),
     ),
     stats: result.stats as ServiceRun["summary"]["stats"],
+    arrivalProvenance: sampledArrivalProvenance(
+      arrivalScenario.demand,
+      plan.demandLevel,
+    ),
     provenance: serviceProvenance(
       arrivalScenario.demand,
       scenario.shop,
@@ -325,10 +330,13 @@ export function calculateDecision(
       ? null
       : serviceInputs(baseline.shop);
   function runLevel(level: DecisionParameters["demandLevel"]) {
-    const expected = baseline.demand.pedestrian
-      ? pedestrianDailyArrivals(baseline.demand.pedestrian).value
-      : expectedDailyArrivals(demand, level);
-    if (!isServicePlanSizeAllowed(expected, settings.runCount)) {
+    const taggedDemand = baseline.demand.pedestrian
+      ? pedestrianDailyArrivals(baseline.demand.pedestrian)
+      : calculateMeasure(
+          expectedDailyArrivals(demand, level),
+          ...demandSources(baseline.demand, level),
+        );
+    if (!isServicePlanSizeAllowed(taggedDemand.value, settings.runCount)) {
       throw new RangeError(
         "This test is too large. Reduce demand, the service window, or the number of Saturdays.",
       );
@@ -359,10 +367,6 @@ export function calculateDecision(
         .update(JSON.stringify(plan.runs))
         .digest("hex"),
     };
-    const taggedDemand = calculateMeasure(
-      expected,
-      ...demandSources(baseline.demand, level),
-    );
     const lossA = projectedWeekendLoss(
       taggedDemand,
       sample.arrivals,

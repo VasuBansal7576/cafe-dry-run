@@ -289,6 +289,17 @@
   font: 11px/1.45 var(--cafe-mono, ui-monospace, Menlo, monospace);
   white-space: nowrap;
 }
+.cafe-map-coordinates {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.cafe-map-distance {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+}
 
 .cafe-site-map .cafe-map-save {
   min-height: 44px;
