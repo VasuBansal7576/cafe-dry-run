@@ -639,6 +639,11 @@ export async function runFounder({ context, page, origin, map, record, section, 
   const firstTab = await tabState(page, origin);
   const secondTab = await tabState(second, origin);
   assert.notEqual(firstTab.tab, secondTab.tab, "Café tabs must have distinct browser tab IDs");
+  await poll("reverse tab publishes its selected playhead", async () => {
+    const values = await secondTab.read(secondTab.playbackKey);
+    const playback = values[secondTab.playbackKey];
+    return playback?.receiptId === reverseAction.receipt.id && playback.second === reverseSecond;
+  });
   const forward = { a: barista.id, b: grinder.id, document: "service-test" };
   const reverse = { a: grinder.id, b: barista.id, document: "cash-ledger" };
   const servicePath = `/cafe?scenario=${barista.id}&compare=${grinder.id}#service-test`;
