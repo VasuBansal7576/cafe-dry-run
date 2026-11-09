@@ -149,7 +149,7 @@ export default function CafeRoute() {
             </header>
             <div className="cafe-input-boards">
               <SiteMap
-                key={scenario.id}
+                key={`site:${scenario.id}`}
                 spot={scenario.spot}
                 spotRevision={scenario.spotRevision}
                 onSetSpot={(location) =>
@@ -168,7 +168,7 @@ export default function CafeRoute() {
               />
               {demandScenario ? (
                 <DemandForm
-                  key={demandScenario.id}
+                  key={`demand:${demandScenario.id}`}
                   scenario={demandScenario}
                   shared={!!comparison}
                   separateMenu={demandScenario.id !== scenario.id}
