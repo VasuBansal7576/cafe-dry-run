@@ -13,7 +13,7 @@ import {
   serviceInputs,
 } from "./scenario";
 import type { Scenario } from "./scenario-store";
-import { simulateSaturday, type SaturdayResult } from "./simulation";
+import { simulateSaturday, type SimulationEvent } from "./simulation";
 
 function scenario(id: string): Scenario {
   return {
@@ -270,7 +270,13 @@ function twoDrinks(id: string) {
   return shop;
 }
 
-function completedCounts({ timeline, arrivals }: SaturdayResult) {
+function completedCounts({
+  timeline,
+  arrivals,
+}: {
+  timeline: readonly Pick<SimulationEvent, "kind" | "arrivalId">[];
+  arrivals: readonly { id: string; itemId: string }[];
+}) {
   const servedIds = new Set(
     timeline
       .filter(({ kind }) => kind === "order_served")
