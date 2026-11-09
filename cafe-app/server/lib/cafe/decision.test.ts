@@ -227,3 +227,71 @@ describe("paired café decisions", () => {
     expect(cashA.costs.weekendStaff).toEqual({ value: 0, tag: "observed" });
   });
 });
+
+
+function twoDrinks(id: string) {
+  const shop = scenario(id);
+  shop.demand = defaultDemand(20);
+  shop.demand.opensAt = illustrative(8 * 3600);
+  shop.demand.closesAt = illustrative(9 * 3600);
+  shop.demand.hourlyMultipliers = [illustrative(1)];
+  shop.finance.weekdaysPerMonth = illustrative(0);
+  shop.finance.weekendsPerMonth = illustrative(1);
+  shop.shop.menu[0]!.weight = illustrative(50);
+  shop.shop.menu[0]!.tasks = [{ station: "Brew", staffSeconds: illustrative(1), unattendedSeconds: illustrative(0) }];
+  shop.shop.menu[0]!.economics = { price: illustrative(100), ingredientCost: illustrative(10) };
+  shop.shop.menu[1]!.weight = illustrative(50);
+  shop.shop.menu[1]!.tasks = [{ station: "Grind", staffSeconds: illustrative(1), unattendedSeconds: illustrative(0) }];
+  shop.shop.menu[1]!.economics = { price: illustrative(1000), ingredientCost: illustrative(300) };
+  return shop;
+}
+
+function completedCounts(run: ReturnType<typeof calculateDecision>["serviceA"]) {
+  const servedIds = new Set(run.playback.timeline.filter(({ kind }) => kind === "order_served").map(({ arrivalId }) => arrivalId));
+  return run.playback.arrivals.filter(({ id }) => servedIds.has(id)).reduce((counts, { itemId }) => counts.set(itemId, (counts.get(itemId) ?? 0) + 1), new Map<string, number>());
+}
+
+it("prices only completed drinks and adds the recovered drink at its own price with the switch on", () => {
+  const original = twoDrinks("original");
+  original.shop.equipment.grinder = illustrative(0);
+  const candidate = twoDrinks("candidate");
+  const off = calculateDecision(original, candidate, parameters, { enabled: false, tag: "estimate" });
+  const on = calculateDecision(original, candidate, parameters, { enabled: true, tag: "estimate" });
+  const counts = completedCounts(on.serviceB!);
+  const [cheap, costly] = candidate.shop.menu;
+  const cheapCount = counts.get(cheap!.id)!;
+  const costlyCount = counts.get(costly!.id)!;
+  expect(cheapCount).toBeGreaterThan(0);
+  expect(costlyCount).toBeGreaterThan(0);
+  expect(completedCounts(on.serviceA)).toEqual(new Map([[cheap!.id, cheapCount]]));
+  const scale = 20 / on.weekend.base.arrivals;
+  const originalCash = on.cashA.outcomes.base;
+  const offCash = off.cashB!.outcomes.base;
+  const onCash = on.cashB!.outcomes.base;
+  expect(originalCash.monthlyRevenue.value).toBeCloseTo(scale * cheapCount * 100, 2);
+  expect(originalCash.monthlyIngredientCost.value).toBeCloseTo(scale * cheapCount * 10, 2);
+  expect(offCash.monthlyRevenue).toEqual(originalCash.monthlyRevenue);
+  expect(offCash.monthlyIngredientCost).toEqual(originalCash.monthlyIngredientCost);
+  expect(onCash.monthlyRevenue.value).toBeCloseTo(scale * (cheapCount * 100 + costlyCount * 1000), 2);
+  expect(onCash.monthlyIngredientCost.value).toBeCloseTo(scale * (cheapCount * 10 + costlyCount * 300), 2);
+  expect(onCash.recoveredOrdersPerMonth.value).toBeCloseTo(scale * costlyCount, 9);
+  expect(off.cashB!.assumptions.weekendUnitEconomics.price.value).toBe(100);
+});
+
+it("does not count a drink substitution as saved orders when total losses do not fall", () => {
+  const original = twoDrinks("original");
+  original.shop.equipment.groupHead = illustrative(0);
+  const candidate = twoDrinks("candidate");
+  candidate.shop.equipment.grinder = illustrative(0);
+  const off = calculateDecision(original, candidate, parameters, { enabled: false, tag: "estimate" });
+  const on = calculateDecision(original, candidate, parameters, { enabled: true, tag: "estimate" });
+  expect(on.weekend.base.lostB).toBeGreaterThanOrEqual(on.weekend.base.lostA);
+  const originalDrinks = completedCounts(on.serviceA);
+  const candidateDrinks = completedCounts(on.serviceB!);
+  expect(originalDrinks.size).toBe(1);
+  expect(candidateDrinks.size).toBe(1);
+  expect([...candidateDrinks.keys()]).not.toEqual([...originalDrinks.keys()]);
+  expect(off.cashB!.outcomes.base.monthlyRevenue.value).toBe(0);
+  expect(on.cashB!.outcomes.base.monthlyRevenue.value).toBe(0);
+  expect(on.cashB!.outcomes.base.recoveredOrdersPerMonth.value).toBe(0);
+});
