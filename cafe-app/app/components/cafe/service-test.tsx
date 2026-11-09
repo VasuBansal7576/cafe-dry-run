@@ -30,6 +30,7 @@ import {
   stations,
 } from "../../../server/lib/cafe/scenario";
 import type { Scenario } from "../../../server/lib/cafe/scenario-store";
+import { frameAt } from "../../../server/lib/cafe/service-playback";
 import type { ServiceRun } from "../../../server/lib/cafe/service-run";
 import {
   playbackBounds,
@@ -40,6 +41,13 @@ import {
 import { useCalculationState } from "./calculation-state";
 import { Stamp } from "./provenance-stamp";
 import { formatClock } from "./scenario-inputs";
+
+const waitLabels = {
+  staff: "shared staff capacity",
+  grinder: "grinder capacity",
+  groupHead: "espresso group head capacity",
+  steamWand: "steam wand capacity",
+} as const;
 
 const playbackSpeeds = [30, 120, 600] as const;
 const playbackSyncInterval = 1000;
@@ -142,68 +150,6 @@ export function ServiceMetrics({
       </p>
     </>
   );
-}
-
-type Ticket = {
-  itemId: string;
-  station?: (typeof stations)[number];
-  queuedAt?: number;
-  active: boolean;
-};
-
-function frameAt(playback: ServiceRun["playback"], time: number) {
-  const tickets = new Map<string, Ticket>();
-  let arrived = 0;
-  let served = 0;
-  let lost = 0;
-  let latest = "";
-  for (const event of playback.timeline) {
-    if (event.at > time) break;
-    if (event.kind === "arrived") {
-      arrived++;
-      latest = `${event.arrivalId} arrived`;
-      tickets.set(event.arrivalId, { itemId: event.itemId, active: false });
-      continue;
-    }
-    const ticket = tickets.get(event.arrivalId);
-    if (!ticket) continue;
-    switch (event.kind) {
-      case "task_queued":
-        ticket.station = event.taskId;
-        ticket.queuedAt = event.at;
-        ticket.active = false;
-        break;
-      case "task_started":
-        ticket.active = true;
-        break;
-      case "task_completed":
-        delete ticket.station;
-        ticket.active = false;
-        break;
-      case "order_served":
-        served++;
-        latest = `${event.arrivalId} picked up their order`;
-        tickets.delete(event.arrivalId);
-        break;
-      case "customer_lost":
-        lost++;
-        latest = `${event.arrivalId} left the queue`;
-        tickets.delete(event.arrivalId);
-        break;
-    }
-  }
-  const waiting = [...tickets.values()].filter(
-    (ticket) => !ticket.active,
-  ).length;
-  return {
-    tickets: [...tickets.entries()],
-    arrived,
-    waiting,
-    served,
-    lost,
-    active: tickets.size - waiting,
-    latest,
-  };
 }
 
 type PlaybackBoard = { run: ServiceRun; label?: string };
@@ -572,16 +518,10 @@ function StationBoard({
   const frame = useMemo(() => frameAt(playback, second), [playback, second]);
   const tag = summary.provenance;
   const arrivalTag = arrivalProvenance ?? summary.arrivalProvenance;
-  const longest = frame.tickets
-    .filter(
-      ([, ticket]) =>
-        !ticket.active && ticket.station && ticket.queuedAt !== undefined,
-    )
-    .reduce<Ticket | undefined>(
-      (oldest, [, ticket]) =>
-        oldest && oldest.queuedAt! <= ticket.queuedAt! ? oldest : ticket,
-      undefined,
-    );
+  const wait = frame.currentWait;
+  const waitingFor = wait?.blockedBy
+    .map((resource) => waitLabels[resource])
+    .join(" and ");
   return (
     <section
       className="cafe-station-board"
@@ -618,8 +558,8 @@ function StationBoard({
       <p className="cafe-pressure">
         <ServiceFigure
           value={
-            longest
-              ? `${longest.station} has the longest current wait · ${displayWait(second - longest.queuedAt!)}`
+            wait
+              ? `${wait.station} has the longest current wait · ${displayWait(wait.seconds)}${waitingFor ? `. Waiting for ${waitingFor}.` : ""}`
               : "No orders waiting at this time."
           }
           tag={tag}
@@ -637,7 +577,7 @@ function StationBoard({
             <li
               key={station}
               className={
-                station === longest?.station
+                station === wait?.station
                   ? "cafe-station cafe-station-pressure"
                   : "cafe-station"
               }

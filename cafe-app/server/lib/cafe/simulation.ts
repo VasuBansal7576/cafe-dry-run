@@ -91,7 +91,18 @@ interface WaitStats {
   readonly bottleneck: ResourceWait | null;
 }
 
+type TaskCapacity = Pick<Task, "staffSeconds" | "machine">;
+
+interface PlaybackCapacity {
+  readonly workers: readonly Worker[];
+  readonly equipment: Shop["equipment"];
+  readonly tasks: Readonly<
+    Record<string, Readonly<Record<string, TaskCapacity>>>
+  >;
+}
+
 export interface SaturdayResult {
+  readonly capacity: PlaybackCapacity;
   readonly arrivals: readonly Arrival[];
   readonly timeline: readonly SimulationEvent[];
   readonly stats: WaitStats &
@@ -255,6 +266,37 @@ function prepareShop(shop: Shop): PreparedShop {
   };
 }
 
+export function shiftFitsTask(shift: Shift, at: number, staffSeconds: number) {
+  return shift.startsAt <= at && at <= shift.endsAt - staffSeconds;
+}
+
+function playbackCapacity(shop: PreparedShop): PlaybackCapacity {
+  const workers = shop.workers.map(({ id, shifts }) =>
+    Object.freeze({
+      id,
+      shifts: Object.freeze(shifts.map((shift) => Object.freeze({ ...shift }))),
+    }),
+  );
+  const tasks = Object.fromEntries(
+    [...shop.menu].map(([itemId, tasks]) => [
+      itemId,
+      Object.freeze(
+        Object.fromEntries(
+          tasks.map(({ id, staffSeconds, machine }) => [
+            id,
+            Object.freeze({ staffSeconds, ...(machine ? { machine } : {}) }),
+          ]),
+        ),
+      ),
+    ]),
+  );
+  return Object.freeze({
+    workers: Object.freeze(workers),
+    equipment: Object.freeze({ ...shop.equipment }),
+    tasks: Object.freeze(tasks),
+  });
+}
+
 function resourceWaits(): MutableResourceWait[] {
   return resources.map((resource) => ({
     resource,
@@ -326,9 +368,8 @@ function day(
     let earliestEnd = Infinity;
     for (const worker of workers) {
       if (worker.busyUntil > time) continue;
-      const shift = worker.shifts.find(
-        ({ startsAt, endsAt }) =>
-          startsAt <= time && time <= endsAt - staffSeconds,
+      const shift = worker.shifts.find((shift) =>
+        shiftFitsTask(shift, time, staffSeconds),
       );
       if (
         shift &&
@@ -585,8 +626,12 @@ function waitStats(
   };
 }
 
-function saturdayResult(result: ReturnType<typeof day>): SaturdayResult {
+function saturdayResult(
+  result: ReturnType<typeof day>,
+  shop: PreparedShop,
+): SaturdayResult {
   return Object.freeze({
+    capacity: playbackCapacity(shop),
     arrivals: Object.freeze(result.arrivals),
     timeline: Object.freeze(result.timeline),
     stats: Object.freeze({
@@ -602,7 +647,8 @@ export function simulateSaturday(
   saturday: Saturday,
 ): SaturdayResult {
   assertServiceHours(saturday.hours);
-  return saturdayResult(day(prepareShop(shop), saturday, true));
+  const prepared = prepareShop(shop);
+  return saturdayResult(day(prepared, saturday, true), prepared);
 }
 
 export function simulateSeries(shop: Shop, plan: ArrivalPlan): SeriesResult {
@@ -657,7 +703,7 @@ export function simulateSeries(shop: Shop, plan: ArrivalPlan): SeriesResult {
     seed: plan.seed,
     demandLevel: plan.demandLevel,
     runCount,
-    playback: saturdayResult(first),
+    playback: saturdayResult(first, prepared),
     completedDrinksByRun,
     totals: Object.freeze({ customersLost }),
     stats: Object.freeze({

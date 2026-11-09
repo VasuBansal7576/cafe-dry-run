@@ -82,7 +82,28 @@ export const serviceSummarySchema = serviceParameters.extend({
     meanCustomersLost: seconds,
   }),
 });
+const playbackCapacitySchema = z.object({
+  workers: z.array(
+    z.object({
+      id: name,
+      shifts: z.array(z.object({ startsAt: seconds, endsAt: seconds })),
+    }),
+  ),
+  equipment: z.record(z.enum(equipmentTypes), count),
+  tasks: z.record(
+    name,
+    z.record(
+      name,
+      z.object({
+        staffSeconds: seconds.positive(),
+        machine: z.enum(equipmentTypes).optional(),
+      }),
+    ),
+  ),
+});
+
 export const servicePlaybackSchema = z.object({
+  capacity: playbackCapacitySchema.optional(),
   arrivals: z.array(z.object({ id: name, at: seconds, itemId: name })),
   timeline: z.array(event),
   stats: stats.extend({ ordersServed: count, customersLost: count }),
