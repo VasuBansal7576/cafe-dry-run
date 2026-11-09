@@ -15,6 +15,8 @@ const INITIAL_TOOL_NAMES = [
   "create-scenario",
   "set-spot",
   "set-demand",
+  "set-pedestrian-count",
+  "tag-source",
   "configure-shop",
   "configure-finance",
   "compare-scenarios",

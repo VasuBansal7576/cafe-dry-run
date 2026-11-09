@@ -42,6 +42,8 @@ Follow the project rules in `../AGENTS.md` and behavior specification in `../caf
 | `create-scenario` | Start a private scenario with clearly labeled illustrative inputs. |
 | `set-spot` | Move the selected scenario's pin by snapshot place name or coordinates using its `spotRevision`. Confirm the saved spot with `list-scenarios`. Use nearby places as area context only. |
 | `set-demand` | Edit hourly demand, opening hours or the Saturday curve using the current revision. |
+| `set-pedestrian-count` | Save an observed count and conversion, or clear the count, using the shared demand source revision. |
+| `tag-source` | Change one tagged numeric input’s source without changing its value; use the field path and applicable revision from `list-scenarios`. Public tags require full source evidence. |
 | `configure-shop` | Replace selected shop fields using the current revision. To change one shift, preserve the other workers and shifts in the replacement list. |
 | `run-simulation` | Persist a seeded service result for the current revision. Use its metrics and provenance when explaining the result. |
 | `get-simulation` | Read a saved run and its stale status. Request playback only when the arrival and event timeline is needed. |
