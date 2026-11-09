@@ -3,15 +3,17 @@ import { closeDbExec } from "@agent-native/core/db";
 import { appendAgentChatContextToMessage } from "@agent-native/core/shared";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
-import compareScenarios from "../../../actions/compare-scenarios.js";
-import configureFinance from "../../../actions/configure-finance.js";
-import configureShop from "../../../actions/configure-shop.js";
 import createScenario from "../../../actions/create-scenario.js";
 import {
   COMPARISON_REVIEW_CONTEXT,
   COMPARISON_REVIEW_PROMPT,
 } from "../../../shared/cafe/structured-review.js";
 import migrate from "../../plugins/db.js";
+import {
+  compareScenarios,
+  configureFinance,
+  configureShop,
+} from "./full-action-fixtures.js";
 import { illustrative } from "./provenance.js";
 import type { Scenario } from "./scenario-store.js";
 import {

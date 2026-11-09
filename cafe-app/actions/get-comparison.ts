@@ -9,22 +9,19 @@ import {
   decisionChatOutputSchema,
   withDecisionChatFigures,
 } from "../server/lib/cafe/chat-figures.js";
-import { decisionReceiptSchema } from "../server/lib/cafe/decision-receipt.js";
 import {
   decisionScopeSchema,
   readArrivalSource,
   readDecision,
 } from "../server/lib/cafe/decision-store.js";
+import { decisionSummarySchema } from "../server/lib/cafe/decision-tool-result.js";
 import {
   requireOwner,
   scenarioErrors,
   scenarioSchema,
   scenarioVersionKey,
 } from "../server/lib/cafe/scenario-store.js";
-import {
-  serviceParameters,
-  serviceRunSchema,
-} from "../server/lib/cafe/service-run.js";
+import { serviceParameters } from "../server/lib/cafe/service-run.js";
 import { fitsToolResult } from "../server/lib/cafe/tool-result-budget.js";
 
 const rerunComparisonSchema = serviceParameters.required().extend({
@@ -37,32 +34,9 @@ const arrivalSourceSchema = scenarioSchema.pick({
   label: true,
   demand: true,
 });
-const summarySide = decisionReceiptSchema.shape.a
-  .pick({ label: true, financeRevision: true })
-  .extend({
-    service: serviceRunSchema.pick({
-      id: true,
-      scenarioId: true,
-      scenarioRevision: true,
-      arrivalSource: true,
-    }),
-  });
-const summaryReceipt = decisionReceiptSchema
-  .pick({
-    id: true,
-    settings: true,
-    savedCustomers: true,
-    cashBaseline: true,
-    weekendDemand: true,
-    weekend: true,
-    delta: true,
-  })
-  .extend({ a: summarySide, b: summarySide.nullable() });
 const summaryArrivalSource = arrivalSourceSchema.omit({ demand: true });
 const comparisonSummarySchema = z.object({
-  decision: decisionChatOutputSchema
-    .extend({ receipt: summaryReceipt })
-    .nullable(),
+  decision: decisionSummarySchema.nullable(),
   arrivalSource: summaryArrivalSource.nullable(),
 });
 

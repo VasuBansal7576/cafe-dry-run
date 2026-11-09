@@ -1,4 +1,7 @@
-import { defineActionErrors } from "@agent-native/core/action";
+import {
+  DEFAULT_TOOL_RESULT_CHARS,
+  defineActionErrors,
+} from "@agent-native/core/action";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
@@ -13,6 +16,7 @@ import {
   hourlyRateSchema,
   shopSchema,
 } from "./scenario.js";
+import { fitsToolResult } from "./tool-result-budget.js";
 
 export const scenarioErrors = defineActionErrors(
   "sign_in_required",
@@ -60,6 +64,36 @@ export const scenarioSchema = z.object({
   shop: shopSchema,
 });
 export type Scenario = z.infer<typeof scenarioSchema>;
+
+const scenarioWriteSummary = z.object({
+  scenarioScope: z.enum(["summary", "reference"]),
+  scenario: scenarioSchema.omit({ shop: true, finance: true, demand: true }),
+});
+export const scenarioWriteOutputSchema = z.union([
+  scenarioWriteSummary,
+  z.object({ scenario: scenarioSchema }),
+]);
+
+export function scenarioWriteResult(
+  scenario: Scenario,
+  budget: number | undefined,
+) {
+  const result = { scenario };
+  if (
+    budget === undefined ||
+    fitsToolResult(result, Math.min(budget, DEFAULT_TOOL_RESULT_CHARS))
+  )
+    return result;
+  const summary = scenarioWriteSummary.parse({
+    scenarioScope: "summary",
+    scenario,
+  });
+  if (fitsToolResult(summary, budget)) return summary;
+  return {
+    scenarioScope: "reference" as const,
+    scenario: { ...summary.scenario, chatFigures: undefined },
+  };
+}
 
 export const scenarioFields = {
   id: scenarios.id,

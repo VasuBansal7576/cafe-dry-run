@@ -5,9 +5,6 @@ import { closeDbExec, getDbExec } from "@agent-native/core/db";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 
-import compareScenarios from "../../../actions/compare-scenarios.js";
-import computeRunway from "../../../actions/compute-runway.js";
-import configureShop from "../../../actions/configure-shop.js";
 import createScenario from "../../../actions/create-scenario.js";
 import getComparison from "../../../actions/get-comparison.js";
 import getSimulation from "../../../actions/get-simulation.js";
@@ -17,6 +14,11 @@ import setDemand from "../../../actions/set-demand.js";
 import { getDb } from "../../db/index.js";
 import { decisionRuns, scenarios, serviceRuns } from "../../db/schema.js";
 import migrate from "../../plugins/db.js";
+import {
+  compareScenarios,
+  computeRunway,
+  configureShop,
+} from "./full-action-fixtures.js";
 import { illustrative } from "./provenance.js";
 
 const defaults = vi.hoisted(() => ({ changed: false }));

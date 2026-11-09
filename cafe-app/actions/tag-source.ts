@@ -99,16 +99,16 @@ export default defineAction({
       if (current.financeRevision !== edit.expectedFinanceRevision)
         return scenarioConflict();
       const finance = replaceSource(current.finance, path, source);
-      return finance
-        ? configureFinance.run(
-            {
-              id,
-              expectedFinanceRevision: edit.expectedFinanceRevision,
-              finance,
-            },
-            ctx,
-          )
-        : { scenario: current };
+      if (!finance) return { scenario: current };
+      const { maxResultChars: _, ...financeContext } = ctx ?? {
+        caller: "tool" as const,
+        userEmail: owner,
+      };
+      const saved = await configureFinance.run(
+        { id, expectedFinanceRevision: edit.expectedFinanceRevision, finance },
+        financeContext,
+      );
+      return { scenario: scenarioSchema.parse(saved.scenario) };
     }
 
     if (current.revision !== edit.expectedRevision) return scenarioConflict();

@@ -1,11 +1,12 @@
 import { defineAction } from "@agent-native/core/action";
 import { z } from "zod";
 
-import {
-  decisionChatOutputSchema,
-  withDecisionChatFigures,
-} from "../server/lib/cafe/chat-figures.js";
+import { withDecisionChatFigures } from "../server/lib/cafe/chat-figures.js";
 import { saveDecision } from "../server/lib/cafe/decision-store.js";
+import {
+  decisionWriteOutputSchema,
+  decisionWriteResult,
+} from "../server/lib/cafe/decision-tool-result.js";
 import { savedCustomerAssumptionSchema } from "../server/lib/cafe/finance.js";
 import {
   requireOwner,
@@ -16,7 +17,7 @@ import { serviceParameters } from "../server/lib/cafe/service-run.js";
 
 export default defineAction({
   description:
-    "Compare two private café scenarios on the same seeded Saturday arrivals. Related variants use their nearest shared original scenario for arrivals and the reference loss stream. For unrelated scenarios, A supplies both. The saved-customer assumption persists for the pair in either order. Call get-comparison to find the current shared arrival source before editing demand. Quote chatFigures.text verbatim for wait, losses, staff costs, cash and sensitivity.",
+    "Compare two private café scenarios on the same seeded Saturday arrivals. Related variants use their nearest shared original scenario for arrivals and the reference loss stream. For unrelated scenarios, A supplies both. The saved-customer assumption persists for the pair in either order. Call get-comparison to find the current shared arrival source before editing demand. A receiptScope of summary or reference means the receipt was saved and the detailed snapshot was omitted. Quote chatFigures.text verbatim for wait, losses, staff costs, cash and sensitivity.",
   schema: serviceParameters.extend({
     a: scenarioVersionKey,
     b: scenarioVersionKey,
@@ -32,16 +33,20 @@ export default defineAction({
         "Whether weekend customers who otherwise leave would place an order after faster service. Omit to retain the last choice for this pair in either order.",
       ),
   }),
-  outputSchema: decisionChatOutputSchema,
+  outputSchema: decisionWriteOutputSchema,
+  maxResultChars: 100_000,
   errors: scenarioErrors,
   run: async ({ a, b, expectedReceiptId, savedCustomers, ...settings }, ctx) =>
-    withDecisionChatFigures(
-      await saveDecision(requireOwner(ctx?.userEmail), {
-        a,
-        b,
-        settings,
-        ...(expectedReceiptId !== undefined ? { expectedReceiptId } : {}),
-        ...(savedCustomers ? { savedCustomers } : {}),
-      }),
+    decisionWriteResult(
+      withDecisionChatFigures(
+        await saveDecision(requireOwner(ctx?.userEmail), {
+          a,
+          b,
+          settings,
+          ...(expectedReceiptId !== undefined ? { expectedReceiptId } : {}),
+          ...(savedCustomers ? { savedCustomers } : {}),
+        }),
+      ),
+      ctx?.maxResultChars,
     ),
 });

@@ -1,11 +1,12 @@
 import { defineAction } from "@agent-native/core/action";
 import { z } from "zod";
 
-import {
-  decisionChatOutputSchema,
-  withDecisionChatFigures,
-} from "../server/lib/cafe/chat-figures.js";
+import { withDecisionChatFigures } from "../server/lib/cafe/chat-figures.js";
 import { saveDecision } from "../server/lib/cafe/decision-store.js";
+import {
+  decisionWriteOutputSchema,
+  decisionWriteResult,
+} from "../server/lib/cafe/decision-tool-result.js";
 import { savedCustomerAssumptionSchema } from "../server/lib/cafe/finance.js";
 import {
   requireOwner,
@@ -20,7 +21,7 @@ const soloRunway = scenarioVersionKey.extend({
 
 export default defineAction({
   description:
-    "Compute and save cash runway using the latest fresh service results. For one shop pass id, expectedRevision, expectedFinanceRevision and runId. For a matched pair pass only comparison with both current scenario versions and the latest receiptId for that order from get-comparison. Run compare-scenarios first if the pair has no current service results. Cash edits and saved-customer changes reuse the matched run IDs and settings. Quote chatFigures.text verbatim in chat.",
+    "Compute and save cash runway using the latest fresh service results. For one shop pass id, expectedRevision, expectedFinanceRevision and runId. For a matched pair pass only comparison with both current scenario versions and the latest receiptId for that order from get-comparison. Run compare-scenarios first if the pair has no current service results. Cash edits and saved-customer changes reuse the matched run IDs and settings. A receiptScope of summary or reference means the receipt was saved and the detailed snapshot was omitted. Quote chatFigures.text verbatim in chat.",
   schema: soloRunway.partial().extend({
     comparison: z
       .object({
@@ -38,7 +39,8 @@ export default defineAction({
       })
       .optional(),
   }),
-  outputSchema: decisionChatOutputSchema,
+  outputSchema: decisionWriteOutputSchema,
+  maxResultChars: 100_000,
   errors: scenarioErrors,
   run: async ({ comparison, ...solo }, ctx) => {
     const owner = requireOwner(ctx?.userEmail);
@@ -49,12 +51,20 @@ export default defineAction({
           "invalid_scenario",
         );
       const { savedCustomers, ...request } = comparison;
-      return withDecisionChatFigures(await saveDecision(owner, {
+      const saved = await saveDecision(owner, {
         ...request,
         ...(savedCustomers ? { savedCustomers } : {}),
-      }));
+      });
+      return decisionWriteResult(
+        withDecisionChatFigures(saved),
+        ctx?.maxResultChars,
+      );
     }
     const { runId, ...a } = validateInput(soloRunway, solo);
-    return withDecisionChatFigures(await saveDecision(owner, { a, runId }));
+    const saved = await saveDecision(owner, { a, runId });
+    return decisionWriteResult(
+      withDecisionChatFigures(saved),
+      ctx?.maxResultChars,
+    );
   },
 });

@@ -467,7 +467,7 @@ export function ShopForm({
   const update = useActionMutation("configure-shop", {
     mutationKey,
     onSuccess: ({ scenario: saved }) => {
-      setConfirmed(saved);
+      if ("shop" in saved) setConfirmed(saved);
       setDraft(null);
     },
   });
@@ -530,7 +530,11 @@ export function ShopForm({
     if (!draft || conflicted || saving.inFlight()) return;
     update.mutate(
       { id: scenario.id, expectedRevision: draft.revision, shop: draft.value },
-      { onSuccess: ({ scenario: saved }) => onSaved?.(saved) },
+      {
+        onSuccess: ({ scenario: saved }) => {
+          if ("shop" in saved) onSaved?.(saved);
+        },
+      },
     );
   }
   return (

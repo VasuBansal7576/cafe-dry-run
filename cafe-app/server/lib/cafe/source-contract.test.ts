@@ -12,10 +12,7 @@ import {
 } from "@agent-native/core/server";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
-import compareScenarios from "../../../actions/compare-scenarios.js";
-import computeRunway from "../../../actions/compute-runway.js";
-import configureFinance from "../../../actions/configure-finance.js";
-import configureShop from "../../../actions/configure-shop.js";
+import compareAction from "../../../actions/compare-scenarios.js";
 import createScenario from "../../../actions/create-scenario.js";
 import explainResult from "../../../actions/explain-result.js";
 import getComparison from "../../../actions/get-comparison.js";
@@ -27,6 +24,12 @@ import setPedestrianCount from "../../../actions/set-pedestrian-count.js";
 import setSpot from "../../../actions/set-spot.js";
 import migrate from "../../plugins/db.js";
 import { guardCafeFigures } from "./chat-figure-guard.js";
+import {
+  compareScenarios,
+  computeRunway,
+  configureFinance,
+  configureShop,
+} from "./full-action-fixtures.js";
 import type { Scenario } from "./scenario-store.js";
 
 const owner = {
@@ -861,6 +864,38 @@ it("keeps a comparison's rerun inputs and current quotes when the full receipt e
   await expect(
     getComparison.run(scope, { ...owner, maxResultChars: 100 }),
   ).rejects.toThrow(/exceeds this agent's tool result limit/);
+});
+
+it("reports the saved receipt even when the quote bundle cannot fit the write response", async () => {
+  const { scenario: a } = await createScenario.run(
+    { baseHourlyDemand: 55 },
+    owner,
+  );
+  const { scenario: b } = await configureShop.run(
+    { ...versions(a), variantLabel: "Extra grinder" },
+    owner,
+  );
+  const saved = await compareAction.run(
+    { a: versions(a), b: versions(b), ...settings },
+    { ...owner, maxResultChars: 3_000 },
+  );
+  expect(saved).toMatchObject({
+    receiptScope: "reference",
+    receipt: { id: expect.any(String) },
+  });
+  expect(saved).not.toHaveProperty("chatFigures");
+  const read = await getComparison.run({ aId: a.id, bId: b.id }, owner);
+  expect(read.decision?.receipt.id).toBe(saved.receipt.id);
+  const quote = read.decision!.chatFigures!["scenarioA.waitP50"]!.text;
+  expect(
+    await check(`${quote}.`, [tool("compare-scenarios", saved)]),
+  ).toBeDefined();
+  expect(
+    await check(`${quote}.`, [
+      tool("compare-scenarios", saved),
+      tool("get-comparison", read),
+    ]),
+  ).toBeUndefined();
 });
 
 it("pages exact stored playback at the resolved tool budget and pins continuations to the selected run", async () => {

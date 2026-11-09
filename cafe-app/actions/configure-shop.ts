@@ -16,8 +16,9 @@ import {
   scenarioFinanceEditKey,
   scenarioKey,
   scenarioLabel,
-  scenarioSchema,
   scenarioScope,
+  scenarioWriteOutputSchema,
+  scenarioWriteResult,
   toScenario,
   validateInput,
 } from "../server/lib/cafe/scenario-store.js";
@@ -25,7 +26,7 @@ import { shopFields, shopSchema } from "../server/lib/cafe/scenario.js";
 
 export default defineAction({
   description:
-    "Edit staff shifts, equipment, menu, service times and tagged money inputs, together or separately. A money-only edit leaves service results fresh. To create a variant without altering the original, send variantLabel and both revisions. Read list-scenarios for current revisions. Include existing workers when adding one.",
+    "Edit staff shifts, equipment, menu, service times and tagged money inputs, together or separately. A money-only edit leaves service results fresh. To create a variant without altering the original, send variantLabel and both revisions. Read list-scenarios for current revisions. Include existing workers when adding one. A scenarioScope of summary or reference confirms the scenario was saved and omits the full inputs.",
   schema: scenarioKey.extend({
     expectedRevision: scenarioEditKey.shape.expectedRevision
       .optional()
@@ -56,7 +57,8 @@ export default defineAction({
         "Alternative to finance when copying a variant. Do not send both.",
       ),
   }),
-  outputSchema: z.object({ scenario: scenarioSchema }),
+  outputSchema: scenarioWriteOutputSchema,
+  maxResultChars: 160_000,
   errors: scenarioErrors,
   run: async (
     {
@@ -95,7 +97,7 @@ export default defineAction({
       );
     }
     if (variantLabel && expectedRevision !== undefined) {
-      return getDb().transaction(async (tx) => {
+      const scenario = await getDb().transaction(async (tx) => {
         const [row] = await tx
           .select(scenarioFields)
           .from(scenarios)
@@ -138,8 +140,9 @@ export default defineAction({
             }),
           })
           .returning(scenarioFields);
-        return { scenario: toScenario(variant!) };
+        return toScenario(variant!);
       });
+      return scenarioWriteResult(scenario, ctx?.maxResultChars);
     }
     if (!changesShop && !changesFinance) {
       return scenarioErrors.fail(
@@ -182,6 +185,9 @@ export default defineAction({
         ),
       )
       .returning(scenarioFields);
-    return { scenario: row ? toScenario(row) : scenarioConflict() };
+    return scenarioWriteResult(
+      row ? toScenario(row) : scenarioConflict(),
+      ctx?.maxResultChars,
+    );
   },
 });

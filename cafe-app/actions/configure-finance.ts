@@ -4,14 +4,14 @@ import { z } from "zod";
 import { financeFields } from "../server/lib/cafe/finance.js";
 import {
   scenarioErrors,
-  scenarioSchema,
   scenarioFinanceEditKey,
+  scenarioWriteOutputSchema,
 } from "../server/lib/cafe/scenario-store.js";
 import configureShop from "./configure-shop.js";
 
 export default defineAction({
   description:
-    "Edit a scenario's tagged cash, rent, wages, one-time and recurring costs, average order economics or independent weekday demand and staffing. Money edits do not invalidate Saturday playback.",
+    "Edit a scenario's tagged cash, rent, wages, one-time and recurring costs, average order economics or independent weekday demand and staffing. Money edits do not invalidate Saturday playback. A scenarioScope of summary or reference confirms the scenario was saved and omits the full inputs.",
   schema: scenarioFinanceEditKey.extend({
     finance: financeFields
       .partial()
@@ -19,7 +19,8 @@ export default defineAction({
         "Fields to replace. Supply all three levels when replacing weekdayDemand.",
       ),
   }),
-  outputSchema: z.object({ scenario: scenarioSchema }),
+  outputSchema: scenarioWriteOutputSchema,
+  maxResultChars: 160_000,
   errors: scenarioErrors,
   run: (input, ctx) => configureShop.run(input, ctx),
 });

@@ -2,8 +2,6 @@ import { actionCallIntent } from "@agent-native/core/action";
 import { closeDbExec, withMigrationRuntime } from "@agent-native/core/db";
 import { afterAll, beforeAll, expect, test } from "vitest";
 
-import computeRunway from "../../../actions/compute-runway.js";
-import configureFinance from "../../../actions/configure-finance.js";
 import createScenario from "../../../actions/create-scenario.js";
 import getComparison from "../../../actions/get-comparison.js";
 import getSimulation from "../../../actions/get-simulation.js";
@@ -12,6 +10,7 @@ import runSimulation from "../../../actions/run-simulation.js";
 import setPedestrianCount from "../../../actions/set-pedestrian-count.js";
 import tagSource from "../../../actions/tag-source.js";
 import migrate from "../../plugins/db.js";
+import { computeRunway, configureFinance } from "./full-action-fixtures.js";
 
 const founder = {
   caller: "frontend",

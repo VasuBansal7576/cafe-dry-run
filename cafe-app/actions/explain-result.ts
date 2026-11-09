@@ -10,6 +10,7 @@ import {
   requireOwner,
   scenarioErrors,
 } from "../server/lib/cafe/scenario-store.js";
+import { fitsToolResult } from "../server/lib/cafe/tool-result-budget.js";
 
 export default defineAction({
   description:
@@ -18,6 +19,7 @@ export default defineAction({
   errors: scenarioErrors,
   http: false,
   readOnly: true,
+  maxResultChars: 100_000,
   run: async (args, ctx) => {
     const decision = await readDecision(requireOwner(ctx?.userEmail), args);
     if (!decision)
@@ -35,7 +37,7 @@ export default defineAction({
     const { receipt } = decision;
     const level = receipt.settings.demandLevel;
     const { chatFigureBasis, chatFigures } = withDecisionChatFigures(decision);
-    return {
+    const result = {
       chatFigureBasis,
       chatFigures,
       receiptId: receipt.id,
@@ -73,5 +75,11 @@ export default defineAction({
       basis:
         "Both scenarios use the exact same Saturday arrivals. Weekend sales use completed orders by drink, scaled to expected daily arrivals. With the switch off, sales use the lower of the shop and baseline completion counts for each drink on each Saturday. Turning it on adds the shop's additional completed drinks only when total sample losses fall. Break-even holds daily orders constant and uses the projected base-case weekend mix, or the arrival mix if there are no projected orders. Weekdays use their own assumptions. Cash figures are INR per month except for cash after startup. Wait figures are seconds and losses are orders per Saturday.",
     };
+    const budget = ctx?.maxResultChars;
+    if (budget === undefined || fitsToolResult(result, budget)) return result;
+    return scenarioErrors.fail(
+      "The explanation exceeds this agent's tool result limit. Read the decision in the café.",
+      "invalid_scenario",
+    );
   },
 });
