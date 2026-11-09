@@ -10,7 +10,7 @@ Open `/cafe` and use the Site & demand plate. The map uses a bounded Indiranagar
 
 ## Driving it with Playwright
 
-Pick a preloaded spot, then drop or drag the pin. Capture the rendered coordinates, place records, source attribution, and coverage gap. Match displayed places to their source IDs. Verify that moving the pin leaves an existing demand and result unchanged. Ask the agent to set a named spot and confirm the same visible location changes.
+Run `founder`. Choose **Near Indiranagar Metro** in **Preloaded spots** and save. Match visible nearby place links to the committed OSM snapshot. Once service and runway exist, press ArrowRight then Enter on **Place site pin**. The spot revision changes and demand, the run and the receipt stay fresh. For live coverage, ask the agent to set a named spot and confirm the location changes in the open café tab.
 
 ## Gotchas
 

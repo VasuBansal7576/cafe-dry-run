@@ -10,7 +10,7 @@ Open **Cash ledger** and edit **Money & demand assumptions**. For one scenario, 
 
 ## Driving it with Playwright
 
-Enter rent and opening cash, run a Saturday and compare the receipt with `compute-runway` or `get-comparison`. Check independent weekday arrivals, weekday staffing, weekend wage hours, recurring costs and upfront equipment. Compare both switch states. Change one wage or rent value and verify cash becomes stale while service stays fresh. Refresh and check the prior receipt, the latest result, and the chart's first month and zero line. Repeat at 1440 px and 390 px. Verify the receipt and old stale state survive a server restart.
+Run `founder` to enter rent and cash, check solo conversion and reconcile the paired receipt with `get-comparison`. The fixture uses 23 weekdays, five weekend days and separate demand and staff hours. Check both saved-customer switch states against the same service runs and the change in the higher-monthly-cash option. Inspect the exact monthly balance table and chart in the captures. Verify that the current receipt and old stale state survive a server restart. For an additional cash-only check, edit rent and verify **Stale cash receipt** while the service runs stay fresh.
 
 ## Gotchas
 

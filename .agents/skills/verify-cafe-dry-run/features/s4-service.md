@@ -10,7 +10,7 @@ Open **Service test** after configuring demand and shop. The app can run and rep
 
 ## Driving it with Playwright
 
-Run the same scenario twice with the same seed. Compare the full returned timeline and result, then play, pause, and seek. At one chosen timestamp corroborate board counts against event records. Force staff and equipment contention separately and check that the correct resource appears in the bottleneck explanation. Exercise keyboard controls and reduced motion. Edit an input after the run and observe **Stale** until rerun.
+Run `founder` to repeat the same seed and compare the full stored timeline and result. Use Enter to play and pause and Home, ArrowRight and End on **Saturday timeline**. Check all board counts against the saved events at a time with a queue, active service and lost customers. The fixture uses one barista across several tasks and requires staff to be the named bottleneck. Run a separate equipment contention case to check the machine bottleneck.
 
 ## Gotchas
 

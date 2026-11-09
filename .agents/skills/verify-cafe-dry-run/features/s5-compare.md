@@ -10,10 +10,10 @@ In **Service test**, open **Create a variant**, add a barista or enter the grind
 
 ## Driving it with Playwright
 
-Verify two variants preserve the original and display in the picker. Fetch both receipt run IDs with `get-simulation` and compare the ordered arrays of arrival IDs, timestamps and drink IDs. Scrub the single **Saturday timeline** and check both board counters. Save the second barista from 10:00 to 12:00 and assert fresh wait, loss, staff cost and cash deltas against the comparison action. Flip **Count weekend customers who would have left but now place an order** and check that the saved receipt changes cash and keeps the same service runs. Reopen after restart and check the old shift receipt is still stale.
+Run `founder`. Verify two variants preserve the original and display in the picker. Fetch both receipt run IDs with `get-simulation` and compare the ordered arrays of arrival IDs, timestamps and drink IDs. Scrub the single **Saturday timeline** and check both board counters. Save the second barista from 10:00 to 12:00 and assert fresh wait, loss, staff cost and cash deltas against the comparison action. Flip **Count weekend customers who would have left but now place an order** and check that the saved receipt changes cash and keeps the same service runs. Reopen after restart and check the old shift receipt is still stale.
 
 For live model acceptance, ask whether to add a barista or buy another grinder. Capture actual streamed tools, the recommendation from action results, and the selected pair appearing without manual refresh. A manual variant check can prove the deterministic path. Live acceptance requires a configured model provider.
 
 ## Gotchas
 
-A supplies the demand curve and drink mix. Check the actual arrival records and current scenario revisions. A money edit alone leaves service fresh.
+For sibling variants, the original supplies the shared Saturday demand and drink mix. Check the source ID in both picker orders. Editing shared demand must save to the original and invalidate both linked runs. A money edit alone leaves service fresh.

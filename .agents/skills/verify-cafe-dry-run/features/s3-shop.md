@@ -6,11 +6,11 @@ Staff, shifts, group heads, grinders, steam wands, menu mix, service times, pric
 
 ## How to get to it (user POV)
 
-Open `/cafe` and use **Staff & equipment**. Staff, shifts, equipment, menu mix and service times are editable. Money and variants remain unimplemented.
+Open `/cafe` and use **Staff & equipment**. Open **Money & demand assumptions** in Cash ledger for rent, cash and wages. Use **Create a variant** in Service test for an extra barista or grinder.
 
 ## Driving it with Playwright
 
-Fill and save shop inputs, then reopen them to verify the same values and provenance. Add a second barista and manually edit the shift from 10 to 12. Verify the selected scenario becomes stale and the baseline retains its original shifts when editing a variant. Exercise the equivalent agent action and confirm the form updates.
+Run `founder` to save tagged equipment, a menu price and a service time. Compare the new barista against the original, then manually save 10:00 to 12:00 in **Edit B · Two baristas**. Confirm the stale historical receipt, fresh deltas and unchanged original shop. For live coverage, exercise the equivalent agent action and confirm the form updates.
 
 ## Gotchas
 

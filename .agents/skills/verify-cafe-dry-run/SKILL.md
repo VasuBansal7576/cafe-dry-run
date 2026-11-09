@@ -25,15 +25,21 @@ The helper checks listener ownership, uses **Continue as local dev**, opens `/ca
 ## Drive
 
 ```sh
+"$verify" founder "$PWD" 8189
+"$verify" demo "$PWD" 8189
 "$verify" pilot "$PWD" 8189
 CAFE_PROVIDER_SETUP=manual "$verify" live "$PWD" 8189
 ```
+
+`founder` drives S1 through S6 using the committed app and verifier. It picks a sourced spot, saves tagged inputs, plays the solo Saturday, compares the two variants and edits the second barista's shift. It checks the cash switch, weekday and weekend projections, a shared demand edit, and database readback after restart. It captures 1440 px and 390 px layouts with reduced motion.
+
+`demo` runs the founder journey and returns a failed full-demo verdict until there is separate evidence of real provider tool calls and a model recommendation. Follow [the integrated demo](features/demo.md) for the remaining provider steps.
 
 `pilot` drives the founder's demand controls in Chromium, reads the exact persisted row with the server stopped, and restarts to verify the same row in the UI. `live` adds an actual chat edit and requires the already-open Café UI to update before restart. The live command opens a scratch browser and pauses for the operator to connect an authorized provider in that app's Settings. Keep the operator's personal database and browser profile separate. A missing connection leaves the live step unverified. See [the demand journey](features/s2-demand.md) and [the integrated demo](features/demo.md).
 
 ## Evidence
 
-The helper writes `.artifacts/verify-cafe-dry-run/<mode>-*/index.json` and selected screenshots and row fields. Set `CAFE_EVIDENCE_DIR` to an absolute writable path when verifying from a read-only checkout. The index records the commit, app tree, core version, inputs, observations, failure phase, and artifact names. Include its path and relevant requirement IDs in the project evidence index.
+The helper writes `.artifacts/verify-cafe-dry-run/<mode>-*/index.json` and selected screenshots and row fields. Set `CAFE_EVIDENCE_DIR` to an absolute writable path when verifying from a read-only checkout. The index records the commit, app tree, core version, inputs, observations, failure phase, and artifact names. The founder index includes the statechart, design, and verifier hashes. Each journey lists related requirement IDs and its own evidence files. Use the observations to scope any broader predicate claim. Include its path and relevant requirement IDs in the project evidence index.
 
 Drive writes through actual user controls and use the framework read action and offline row projection to corroborate them. Capture the action, the visible result, and the side effect. Keep credentials, cookies, raw provider payloads, and full auth or chat tables out of evidence.
 

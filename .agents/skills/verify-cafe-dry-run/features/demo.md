@@ -1,24 +1,16 @@
 # Integrated founder and agent demo
 
-## Sub-features
+Follow the six-step recording order in the [source HTML](../../../../cafe-dry-run-statechart.html). Run `founder` to collect deterministic evidence on a disposable database. Run `demo` for the combined verdict. It fails the full demo gate while the live model observations are missing.
 
-Six-step user journey, live agent tools and synchronization, database persistence, and responsive design review.
+| Step | Founder journey | Real provider observations |
+| --- | --- | --- |
+| 1 | Pick the Indiranagar preset. Match nearby place links to the snapshot and capture the source and gap notices. | |
+| 2 | Save hourly demand, opening hours, rent and cash. Read back the value and source of each field. | |
+| 3 | Play, pause and seek a simulated Saturday. Compare board counts with recorded events and read the named bottleneck. | |
+| 4 | Create the barista and grinder variants through the founder controls. Compare their saved arrival records. | In a fresh scenario with the same inputs and an authorized provider, ask "Should I add a barista or buy another grinder?" Capture the actual tools and the two variants appearing in the open café tab. |
+| 5 | Manually save Barista 2 from 10:00 to 12:00. Check that fresh wait, loss, staff cost and cash deltas replace the old receipt. | Challenge the agent to use the edited shift. Observe the rerun and match its figures to the new action result. |
+| 6 | Toggle the named assumption and check the cash ledger, break-even and separated day types. | Capture the model's actual recommendation and check every figure against an action result. |
 
-## How to get to it (user POV)
+For live checks, open `/cafe` and `/chat` in the same scratch browser context. Keep the café tab open to observe edits without reload. The founder journey reads the view, both selections and shared playhead from tab-scoped application state and checks that the browser follows a framework navigation command. Exercise the agent’s real view-screen and navigate actions with a provider. Verify tool streaming, stop and redirect separately. Record only the observed tool names, scenario and receipt IDs, and relevant recommendation text. Keep provider setup screens, cookies, keys and raw auth or chat responses out of the evidence.
 
-Start in a single-user local session and follow the separate demo list in the statechart HTML. For the pilot, open `/cafe` and `/chat` in the same browser context.
-
-## Driving it with Playwright
-
-1. Pick a Bengaluru spot and show the nearby sources and coverage gap. [S1](s1-spot.md) has a sourced Indiranagar picker.
-2. Enter rent, cash, hours and low, base and high demand with tags. [S2](s2-demand.md) has demand and hours controls. Rent and cash remain unimplemented.
-3. Play the Saturday and show the queue, losses, and bottleneck. [S4](s4-service.md) has a single-scenario run and playback.
-4. Ask whether to add a barista or buy another grinder. Observe the real tools create variants through the founder's actions. [S5](s5-compare.md) is unimplemented.
-5. Challenge the agent to schedule the second barista from 10 to 12. Edit the shift by hand, have the agent rerun, and inspect wait, staff cost and cash deltas. [S3](s3-shop.md) has shift editing; S5 comparison remains unimplemented.
-6. Show the reversing assumption, break-even and monthly cash. Capture the actual model recommendation. [S6](s6-runway.md) is unimplemented.
-
-For a later design pass, capture the opening file, site and demand, service test, co-pilot review and cash ledger at 1440 px and 390 px. Compare them to `DESIGN.md`. Check provenance, stale and missing states, focus, touch targets, reduced motion, and synchronized playback. Those design checks remain unverified.
-
-## Gotchas
-
-The [demand pilot](s2-demand.md) is a separate workflow. Its successful readback does not advance any full demo step. Run real chat with an authorized provider and a scratch account connection. Use only the app-owned browser context for evidence. Keep OAuth screens and raw auth or chat responses out of the evidence set.
+The existing `live` demand pilot proves one shared edit when a real provider is connected. The full demo needs the specific tools and recommendation above. For design judgment, inspect the opening file, site and demand, solo service, comparison and cash ledger against `DESIGN.md` at both widths. The founder command's overflow check and captures are inputs to that review.

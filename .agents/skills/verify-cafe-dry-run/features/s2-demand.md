@@ -2,7 +2,7 @@
 
 ## Sub-features
 
-The current flow supports a tagged low, base and high demand range, Saturday curve and hours. Pedestrian counts and conversion remain unimplemented.
+Tagged low, base and high demand, the Saturday curve and hours, and optional pedestrian count and conversion.
 
 ## How to get to it (user POV)
 
@@ -14,7 +14,7 @@ Run the skill's `pilot` command. The scenario initially reads **Current base dem
 
 Run `live` with an authorized provider in the isolated app. Keep `/cafe` open and submit the demand change through the real `/chat` composer. Observe **list-scenarios** and **set-demand** in the tool stream. The original tab must show 35 without refresh and the same row must reach revision 2. Compare the action readback to the projected database row and verify again after restart.
 
-Enter the low, base and high values and hours. Verify source tags on each value. Exercise the optional pedestrian calculation and the required conversion view when the count is missing. Change demand after a run and verify the dependent results show **Stale**.
+Run `founder` for the range, hours, source tags and required conversion with no count. It edits the sibling pair’s shared demand from a second tab. The parent scenario gets 600 observed pedestrians and a 10% estimated conversion. The receipt reports 60 estimated Saturday arrivals, while weekday demand stays separate. The open comparison and both saved runs become stale.
 
 ## Gotchas
 
