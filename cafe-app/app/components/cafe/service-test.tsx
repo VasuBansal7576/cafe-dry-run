@@ -1,8 +1,9 @@
 import { sendToAgentChat } from "@agent-native/core/client/agent-chat";
 import {
+  actionErrorCode,
   actionErrorMessage,
   callAction,
-  readClientAppState,
+  readClientAppStateMany,
   useActionMutation,
   useActionQuery,
 } from "@agent-native/core/client/hooks";
@@ -17,7 +18,9 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
+import { useLocation } from "react-router";
 
+import type { NavigationState } from "@/hooks/use-navigation-state";
 import { TAB_ID } from "@/lib/tab-id";
 
 import type { SourceTag } from "../../../server/lib/cafe/provenance";
@@ -239,18 +242,63 @@ export function Playback({
         }
       : {}),
   };
+  const location = useLocation();
+  const scope = `${location.key}:${receiptId ?? run.id}`;
+  const queryKey = ["app-state", playbackStateKey, scope];
   const queryClient = useQueryClient();
   const savedPosition = useQuery({
-    queryKey: ["app-state", playbackStateKey],
+    queryKey,
     queryFn: async ({ signal }) => {
-      const stored = playbackStateSchema.safeParse(
-        await readClientAppState(playbackStateKey, { signal }),
+      const { values } = await readClientAppStateMany(
+        ["navigation", playbackStateKey],
+        { signal },
       );
-      return stored.success ? stored.data : null;
+      const navigation = values.navigation as NavigationState | undefined;
+      const stored = playbackStateSchema.safeParse(values[playbackStateKey]);
+      return {
+        navigationReady:
+          navigation?.view === "cafe" &&
+          navigation.scenarioId === identity.scenarioId &&
+          navigation.comparisonScenarioId === identity.comparisonScenarioId,
+        playback: stored.success ? stored.data : null,
+      };
     },
     enabled: !stale,
     staleTime: Infinity,
+    refetchOnMount: "always",
+    retry: false,
   });
+  const navigationReady =
+    savedPosition.isFetchedAfterMount && savedPosition.data?.navigationReady;
+  const activeScope = useRef<string | null>(null);
+  const retriedNavigation = useRef<string | null>(null);
+  useEffect(() => {
+    activeScope.current = stale ? null : scope;
+    return () => {
+      activeScope.current = null;
+    };
+  }, [scope, stale]);
+  const refreshNavigationOnce = useEffectEvent(() => {
+    if (activeScope.current !== scope || retriedNavigation.current === scope)
+      return;
+    retriedNavigation.current = scope;
+    void savedPosition.refetch();
+  });
+  useEffect(() => {
+    if (
+      !stale &&
+      savedPosition.data &&
+      !navigationReady &&
+      savedPosition.isFetchedAfterMount
+    )
+      refreshNavigationOnce();
+  }, [
+    scope,
+    stale,
+    navigationReady,
+    savedPosition.data,
+    savedPosition.isFetchedAfterMount,
+  ]);
   const [time, setTime] = useState(
     playback.timeline.length ? Math.min(end, start + 25 * 60) : start,
   );
@@ -283,8 +331,8 @@ export function Playback({
   const pending = useRef<{ position: string; queued: boolean } | null>(null);
   const positionKey = (value: number) => `${receiptId ?? run.id}:${value}`;
   const applySavedPosition = useEffectEvent(() => {
-    if (savedPosition.data === undefined || stale) return;
-    const stored = savedPosition.data;
+    if (!navigationReady || stale) return;
+    const stored = savedPosition.data?.playback;
     const state = synced.current;
     const seekId = stored?.seekId ?? null;
     const changed = !state.ready || state.seekId !== seekId;
@@ -304,11 +352,14 @@ export function Playback({
       setPlaying(false);
     }
   });
-  useEffect(() => applySavedPosition(), [savedPosition.data, stale]);
+  useEffect(
+    () => applySavedPosition(),
+    [navigationReady, savedPosition.data?.playback, stale],
+  );
 
   const publishPosition = useEffectEvent((): void => {
     const state = synced.current;
-    if (!state.ready || stale) return;
+    if (!state.ready || !navigationReady || stale) return;
     if (state.remoteSecond !== null) {
       if (state.remoteSecond !== second) return;
       state.remoteSecond = null;
@@ -328,19 +379,31 @@ export function Playback({
       observedSeekId: seekId,
     })
       .then(({ applied }) => {
+        if (activeScope.current !== scope) return;
         if (!applied) {
           void savedPosition.refetch();
         } else if (state.seekId === seekId) {
           state.applied = position;
-          queryClient.setQueryData(["app-state", playbackStateKey], {
-            ...identity,
-            second,
-            ...(seekId ? { seekId } : {}),
-          });
+          queryClient.setQueryData<typeof savedPosition.data>(
+            queryKey,
+            (current) =>
+              current && {
+                ...current,
+                playback: {
+                  ...identity,
+                  second,
+                  ...(seekId ? { seekId } : {}),
+                },
+              },
+          );
         }
       })
-      .catch(() => {
-        // The local clock can keep moving if the selected result is no longer current.
+      .catch((error: unknown) => {
+        if (
+          activeScope.current === scope &&
+          actionErrorCode(error) === "scenario_conflict"
+        )
+          refreshNavigationOnce();
       })
       .finally(() => {
         pending.current = null;
@@ -356,10 +419,17 @@ export function Playback({
     return () => window.clearInterval(timer);
   }, [playing, stale]);
   useEffect(() => {
-    if (playing || stale || savedPosition.data === undefined) return;
+    if (playing || stale || !navigationReady) return;
     const timer = window.setTimeout(() => publishPosition(), 300);
     return () => window.clearTimeout(timer);
-  }, [playing, receiptId, second, savedPosition.data, stale]);
+  }, [
+    playing,
+    scope,
+    second,
+    navigationReady,
+    savedPosition.dataUpdatedAt,
+    stale,
+  ]);
 
   return (
     <div className="cafe-playback">

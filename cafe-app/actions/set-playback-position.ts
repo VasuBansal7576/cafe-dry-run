@@ -59,9 +59,10 @@ export default defineAction({
       navigation.comparisonScenarioId !== identity.comparisonScenarioId ||
       (!browser && navigation.document !== "service-test")
     )
-      return invalid(
+      return scenarioErrors.fail(
         "Open the selected Saturday result in Service test before seeking.",
-        409,
+        "scenario_conflict",
+        { statusCode: 409 },
       );
     const bounds = await currentPlaybackBounds(owner, identity);
     if (!bounds)
