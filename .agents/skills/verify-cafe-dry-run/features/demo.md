@@ -10,7 +10,7 @@ Start in a single-user local session and follow the separate demo list in the st
 
 ## Driving it with Playwright
 
-1. Pick a Bengaluru spot and show the nearby sources and coverage gap. [S1](s1-spot.md) is unimplemented.
+1. Pick a Bengaluru spot and show the nearby sources and coverage gap. [S1](s1-spot.md) has a sourced Indiranagar picker.
 2. Enter rent, cash, hours and low, base and high demand with tags. [S2](s2-demand.md) has demand and hours controls. Rent and cash remain unimplemented.
 3. Play the Saturday and show the queue, losses, and bottleneck. [S4](s4-service.md) has a single-scenario run and playback.
 4. Ask whether to add a barista or buy another grinder. Observe the real tools create variants through the founder's actions. [S5](s5-compare.md) is unimplemented.

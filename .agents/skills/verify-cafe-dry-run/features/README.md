@@ -4,7 +4,7 @@ Resolve capabilities, transitions, stale dependencies and required rows from [th
 
 | Entry | Founder goal | Current check |
 | --- | --- | --- |
-| [S1](s1-spot.md) | Pick a Bengaluru spot and inspect its context | UI unimplemented |
+| [S1](s1-spot.md) | Pick a Bengaluru spot and inspect its context | Sourced Indiranagar picker; test action, persistence and coverage |
 | [S2](s2-demand.md) | Enter demand and inspect provenance | Demand range, hours and provenance implemented; pedestrian path remains |
 | [S3](s3-shop.md) | Configure staff, shifts, equipment, menu and money | Staff, shifts, equipment, menu and service inputs implemented; variants and money remain |
 | [S4](s4-service.md) | Run and replay a simulated Saturday | Runnable service journey; full acceptance still open |
