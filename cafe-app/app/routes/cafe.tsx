@@ -9,7 +9,7 @@ import { useLocation, useNavigate, useSearchParams } from "react-router";
 import { ComparisonWorkspace } from "@/components/cafe/comparison";
 import { scenarioVersion } from "@/components/cafe/finance-ledger";
 import { OpeningFile } from "@/components/cafe/opening-file";
-import { DemandForm, ShopForm } from "@/components/cafe/scenario-inputs";
+import { DemandForm, ShopForm, sourceLabels } from "@/components/cafe/scenario-inputs";
 import { SiteMap } from "@/components/cafe/site-map";
 import {
   cafeDocuments,
@@ -270,7 +270,7 @@ export default function CafeRoute() {
           >
             {query.data.scenarios.map(({ id, demand, label }) => (
               <option value={id} key={id}>
-                {label} · {demand.hourly.base.value}/hr
+                {label} · {demand.hourly.base.value}/hr · {sourceLabels[demand.hourly.base.source.tag]}
               </option>
             ))}
           </select>
