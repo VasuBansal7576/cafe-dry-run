@@ -23,7 +23,7 @@ import { shopFields, shopSchema } from "../server/lib/cafe/scenario.js";
 
 export default defineAction({
   description:
-    "Edit a cafe scenario's staff shifts, equipment, menu mix, service times or customer patience. To create a variant without altering the original, send variantLabel and the changes. Read list-scenarios for the current revision and financeRevision. Include existing workers when adding one.",
+    "Edit a cafe scenario's staff shifts, equipment, menu mix, tagged drink prices and ingredient costs, service times or customer patience. To create a variant without altering the original, send variantLabel and the changes. Read list-scenarios for the current revision and financeRevision. Include existing workers when adding one.",
   schema: scenarioEditKey.extend({
     shop: shopFields
       .partial()

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
@@ -27,10 +27,7 @@ import {
 import { serviceRunSchema } from "./service-run.js";
 
 export const decisionScopeSchema = z.object({
-  aId: z
-    .string()
-    .uuid()
-    .describe("Baseline scenario ID. Supplies all matched arrival records."),
+  aId: z.string().uuid().describe("Scenario shown as A."),
   bId: z
     .string()
     .uuid()
@@ -69,7 +66,7 @@ function pairedRunId(
   const digest = createHash("sha256")
     .update(
       JSON.stringify([
-        "paired-v1",
+        "paired-v2",
         scenario.id,
         scenario.revision,
         arrivalScenario.id,
@@ -92,19 +89,51 @@ type DecisionRequest =
     }
   | { a: Version; runId: string };
 
+function sharedBaselineId(
+  aId: string,
+  bId: string,
+  parents: Map<string, string | null>,
+) {
+  function lineage(id: string) {
+    const ancestors = new Set<string>();
+    let current: string | null = id;
+    while (current && parents.has(current) && !ancestors.has(current)) {
+      ancestors.add(current);
+      current = parents.get(current) ?? null;
+    }
+    return ancestors;
+  }
+  const bLineage = lineage(bId);
+  return [...lineage(aId)].find((id) => bLineage.has(id)) ?? aId;
+}
+
 export async function saveDecision(
   owner: string,
   request: DecisionRequest,
 ): Promise<StoredDecision> {
   return getDb().transaction(async (tx) => {
     const paired = "b" in request;
-    const ids = paired ? [request.a.id, request.b.id] : [request.a.id];
     if (paired && request.a.id === request.b.id) {
       return scenarioErrors.fail(
         "Choose a different scenario for B.",
         "invalid_scenario",
       );
     }
+    let baselineId = request.a.id;
+    if (paired) {
+      const links = await tx
+        .select({ id: scenarios.id, parentId: scenarios.parentId })
+        .from(scenarios)
+        .where(eq(scenarios.ownerEmail, owner));
+      baselineId = sharedBaselineId(
+        request.a.id,
+        request.b.id,
+        new Map(links.map(({ id, parentId }) => [id, parentId])),
+      );
+    }
+    const ids = paired
+      ? [request.a.id, request.b.id, baselineId]
+      : [request.a.id];
     const rows = await tx
       .select(scenarioFields)
       .from(scenarios)
@@ -116,6 +145,7 @@ export async function saveDecision(
     const b = paired
       ? verifyVersion(inputs.get(request.b.id), request.b)
       : null;
+    const baseline = inputs.get(baselineId) ?? scenarioConflict();
     const scope = and(
       eq(decisionRuns.ownerEmail, owner),
       eq(decisionRuns.aScenarioId, a.id),
@@ -123,18 +153,23 @@ export async function saveDecision(
     );
     let settings: DecisionParameters;
     let savedCustomers = defaultSavedCustomers;
+    let assumptionRevision = 0;
     if (paired) {
       settings = request.settings;
-      if (request.savedCustomers) {
-        savedCustomers = request.savedCustomers;
-      } else {
-        const [prior] = await tx
-          .select({ receipt: decisionRuns.receipt })
-          .from(decisionRuns)
-          .where(scope)
-          .orderBy(desc(decisionRuns.sequence))
-          .limit(1);
-        savedCustomers = prior?.receipt.savedCustomers ?? savedCustomers;
+      const [prior] = await tx
+        .select({ receipt: decisionRuns.receipt })
+        .from(decisionRuns)
+        .where(scope)
+        .orderBy(desc(decisionRuns.sequence))
+        .limit(1);
+      const previous = prior?.receipt.savedCustomers ?? defaultSavedCustomers;
+      savedCustomers = request.savedCustomers ?? previous;
+      assumptionRevision = prior?.receipt.assumptionRevision ?? 0;
+      if (
+        savedCustomers.enabled !== previous.enabled ||
+        savedCustomers.tag !== previous.tag
+      ) {
+        assumptionRevision += 1;
       }
     } else {
       if (a.latestRunId !== request.runId) return scenarioConflict();
@@ -166,24 +201,27 @@ export async function saveDecision(
 
     let calculated: ReturnType<typeof calculateDecision>;
     try {
-      calculated = calculateDecision(a, b, settings, savedCustomers);
+      calculated = calculateDecision(a, b, settings, savedCustomers, baseline);
     } catch (error) {
       if (!(error instanceof RangeError)) throw error;
       return scenarioErrors.fail(error.message, "invalid_scenario");
     }
 
+    const arrivalSource = { id: baseline.id, revision: baseline.revision };
     const runA = validateInput(serviceRunSchema, {
-      id: paired ? pairedRunId(a, a, settings) : request.runId,
+      id: paired ? pairedRunId(a, baseline, settings) : request.runId,
       scenarioId: a.id,
       scenarioRevision: a.revision,
+      arrivalSource,
       ...calculated.serviceA,
     });
     const runB =
       b && calculated.serviceB
         ? validateInput(serviceRunSchema, {
-            id: pairedRunId(b, a, settings),
+            id: pairedRunId(b, baseline, settings),
             scenarioId: b.id,
             scenarioRevision: b.revision,
+            arrivalSource,
             ...calculated.serviceB,
           })
         : null;
@@ -191,12 +229,26 @@ export async function saveDecision(
       id,
       scenarioId,
       scenarioRevision,
+      arrivalSource,
       summary,
-    }: typeof runA) => ({ id, scenarioId, scenarioRevision, summary });
+    }: typeof runA) => ({
+      id,
+      scenarioId,
+      scenarioRevision,
+      arrivalSource,
+      summary,
+    });
     const receipt = validateInput(decisionReceiptSchema, {
       id: crypto.randomUUID(),
       settings,
       savedCustomers,
+      pedestrian: baseline.demand.pedestrian ?? null,
+      assumptionRevision,
+      cashBaseline: {
+        ...arrivalSource,
+        label: baseline.label,
+        weekendLosses: calculated.baselineLosses,
+      },
       a: {
         label: a.label,
         finance: a.finance,
@@ -224,8 +276,18 @@ export async function saveDecision(
       await tx
         .insert(serviceRuns)
         .values([
-          { ...runA, ownerEmail: owner },
-          { ...runB, ownerEmail: owner },
+          {
+            ...runA,
+            ownerEmail: owner,
+            arrivalSourceId: baseline.id,
+            arrivalSourceRevision: baseline.revision,
+          },
+          {
+            ...runB,
+            ownerEmail: owner,
+            arrivalSourceId: baseline.id,
+            arrivalSourceRevision: baseline.revision,
+          },
         ])
         .onConflictDoNothing({ target: serviceRuns.id });
     }
@@ -236,7 +298,14 @@ export async function saveDecision(
       bScenarioId: b?.id,
       receipt,
     });
-    return { receipt, serviceStale: false, cashStale: false };
+    return {
+      receipt,
+      serviceStale: false,
+      cashStale: false,
+      historical: false,
+      assumptionStale: false,
+      currentSavedCustomers: savedCustomers,
+    };
   });
 }
 
@@ -245,7 +314,20 @@ export async function readDecision(
   { aId, bId, receiptId }: z.infer<typeof decisionScopeSchema>,
 ): Promise<StoredDecision | null> {
   const b = alias(scenarios, "b_scenario");
-  const [row] = await getDb()
+  const source = alias(scenarios, "arrival_source");
+  const db = getDb();
+  const scope = and(
+    eq(decisionRuns.ownerEmail, owner),
+    eq(decisionRuns.aScenarioId, aId),
+    bId ? eq(decisionRuns.bScenarioId, bId) : isNull(decisionRuns.bScenarioId),
+  );
+  const latestSequence = db
+    .select({ sequence: decisionRuns.sequence })
+    .from(decisionRuns)
+    .where(scope)
+    .orderBy(desc(decisionRuns.sequence))
+    .limit(1);
+  const [latest, historicalRow] = await db
     .select({
       receipt: decisionRuns.receipt,
       aRevision: scenarios.revision,
@@ -253,6 +335,7 @@ export async function readDecision(
       aLatestRunId: scenarios.latestRunId,
       bRevision: b.revision,
       bFinanceRevision: b.financeRevision,
+      arrivalRevision: source.revision,
     })
     .from(decisionRuns)
     .innerJoin(
@@ -266,28 +349,58 @@ export async function readDecision(
       b,
       and(eq(b.id, decisionRuns.bScenarioId), eq(b.ownerEmail, owner)),
     )
+    .leftJoin(
+      source,
+      and(
+        eq(source.id, sql`${decisionRuns.receipt}->'cashBaseline'->>'id'`),
+        eq(source.ownerEmail, owner),
+      ),
+    )
     .where(
       and(
-        eq(decisionRuns.ownerEmail, owner),
-        eq(decisionRuns.aScenarioId, aId),
-        bId
-          ? eq(decisionRuns.bScenarioId, bId)
-          : isNull(decisionRuns.bScenarioId),
-        receiptId ? eq(decisionRuns.id, receiptId) : undefined,
+        scope,
+        receiptId
+          ? or(
+              eq(decisionRuns.id, receiptId),
+              eq(decisionRuns.sequence, latestSequence),
+            )
+          : undefined,
       ),
     )
     .orderBy(desc(decisionRuns.sequence))
-    .limit(1);
-  if (!row) return null;
+    .limit(receiptId ? 2 : 1);
+  if (!latest) return null;
+  const row =
+    !receiptId || latest.receipt.id === receiptId ? latest : historicalRow;
+  if (!row || (receiptId && row.receipt.id !== receiptId)) return null;
   const { receipt } = row;
+  const currentSavedCustomers = latest.receipt.savedCustomers;
+  const historical = receipt.id !== latest.receipt.id;
+  const assumptionStale =
+    historical &&
+    ((receipt.assumptionRevision ?? 0) !==
+      (latest.receipt.assumptionRevision ?? 0) ||
+      receipt.savedCustomers.enabled !== currentSavedCustomers.enabled ||
+      receipt.savedCustomers.tag !== currentSavedCustomers.tag);
   const serviceStale =
     receipt.a.service.scenarioRevision !== row.aRevision ||
+    (!!receipt.cashBaseline &&
+      receipt.cashBaseline.revision !== row.arrivalRevision) ||
     (receipt.b
       ? receipt.b.service.scenarioRevision !== row.bRevision
       : receipt.a.service.id !== row.aLatestRunId);
   const cashStale =
     serviceStale ||
+    assumptionStale ||
+    (!!receipt.b && !receipt.cashBaseline) ||
     receipt.a.financeRevision !== row.aFinanceRevision ||
     (!!receipt.b && receipt.b.financeRevision !== row.bFinanceRevision);
-  return { receipt, serviceStale, cashStale };
+  return {
+    receipt,
+    serviceStale,
+    cashStale,
+    historical,
+    assumptionStale,
+    currentSavedCustomers,
+  };
 }

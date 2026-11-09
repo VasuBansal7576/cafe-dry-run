@@ -56,6 +56,24 @@ export default runMigrations(
     CREATE INDEX cafe_decision_runs_scope_idx
       ON cafe_decision_runs (owner_email, a_scenario_id, b_scenario_id, sequence DESC);`,
     },
+    {
+      version: 5,
+      name: "cafe-service-arrival-source",
+      sql: `ALTER TABLE cafe_service_runs
+      ADD COLUMN arrival_source_id TEXT,
+      ADD COLUMN arrival_source_revision INTEGER;
+    UPDATE cafe_service_runs AS r
+      SET arrival_source_id = r.scenario_id, arrival_source_revision = r.scenario_revision;
+    UPDATE cafe_service_runs AS r
+      SET arrival_source_id = d.a_scenario_id,
+          arrival_source_revision = (d.receipt->'a'->'service'->>'scenarioRevision')::integer
+      FROM cafe_decision_runs AS d
+      WHERE r.owner_email = d.owner_email AND r.id = d.receipt->'b'->'service'->>'id';
+    ALTER TABLE cafe_service_runs
+      ALTER COLUMN arrival_source_id SET NOT NULL,
+      ALTER COLUMN arrival_source_revision SET NOT NULL,
+      ADD CHECK (arrival_source_revision >= 0);`,
+    },
   ],
   { table: "cafe_app_migrations" },
 );

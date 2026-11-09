@@ -40,6 +40,8 @@ export const serviceRuns = pgTable(
     scenarioId: text("scenario_id").notNull(),
     ownerEmail: text("owner_email").notNull(),
     scenarioRevision: integer("scenario_revision").notNull(),
+    arrivalSourceId: text("arrival_source_id").notNull(),
+    arrivalSourceRevision: integer("arrival_source_revision").notNull(),
     summary: jsonb("summary").$type<ServiceRun["summary"]>().notNull(),
     playback: jsonb("playback").$type<ServiceRun["playback"]>().notNull(),
   },

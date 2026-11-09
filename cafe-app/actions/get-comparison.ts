@@ -13,7 +13,7 @@ import {
 
 export default defineAction({
   description:
-    "Read a saved comparison or standalone runway, its linked Saturday runs, exact sample totals, cash and reversing assumption. Check serviceStale and cashStale before presenting it as current.",
+    "Read a saved comparison or standalone runway, its shared cash baseline, linked Saturday runs, exact sample totals, cash and reversing assumption. Historical receipts retain their own assumptions. Check historical, serviceStale, cashStale and currentSavedCustomers before presenting one as current.",
   schema: decisionScopeSchema,
   outputSchema: z.object({ decision: storedDecisionSchema.nullable() }),
   errors: scenarioErrors,

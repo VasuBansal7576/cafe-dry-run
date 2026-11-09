@@ -12,7 +12,7 @@ import { serviceParameters } from "../server/lib/cafe/service-run.js";
 
 export default defineAction({
   description:
-    "Compare two private cafe scenarios on the same actual seeded Saturday arrivals and save the result with both run IDs, wait, losses, monthly staff cost, monthly cash and saved-customer sensitivity. A supplies demand and drink choices. Weekday assumptions remain independent.",
+    "Compare two private café scenarios on the same seeded Saturday arrivals. Related variants use their nearest shared original scenario for arrivals and the reference loss stream. For unrelated scenarios, A supplies both. Both alternatives use the same saved-customer assumption. Returns matched run IDs, loss and wait deltas, staff costs, cash ordering and sensitivity, with independent weekday assumptions.",
   schema: serviceParameters.extend({
     a: scenarioVersionKey,
     b: scenarioVersionKey,

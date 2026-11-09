@@ -91,13 +91,19 @@ export default defineAction({
         id: runId,
         scenarioId: id,
         scenarioRevision: expectedRevision,
+        arrivalSource: { id, revision: expectedRevision },
         summary: summarizeService(scenario, scenario, plan, result),
         playback: result.playback,
       });
 
       await tx
         .insert(serviceRuns)
-        .values({ ...run, ownerEmail: owner })
+        .values({
+          ...run,
+          ownerEmail: owner,
+          arrivalSourceId: id,
+          arrivalSourceRevision: expectedRevision,
+        })
         .onConflictDoNothing({ target: serviceRuns.id });
       await tx
         .update(scenarios)
@@ -111,6 +117,7 @@ export default defineAction({
         id: run.id,
         scenarioId: run.scenarioId,
         scenarioRevision: run.scenarioRevision,
+        arrivalSource: run.arrivalSource,
         summary: run.summary,
       };
     });

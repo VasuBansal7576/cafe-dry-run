@@ -18,9 +18,11 @@ export const financeFields = z.object({
     .describe(
       "Additional one-time equipment quotes in INR. Preserve existing quotes when adding a purchase.",
     ),
-  averagePrice: money.describe("Blended sales price per order in INR"),
+  averagePrice: money.describe(
+    "Legacy blended sales price per order in INR. Used only for drinks without a price and ingredient cost.",
+  ),
   averageIngredientCost: money.describe(
-    "Blended ingredient cost per order in INR",
+    "Legacy blended ingredient cost per order in INR. Used only for drinks without a price and ingredient cost.",
   ),
   hourlyWage: money.describe("Hourly pay per worker in INR"),
   weekdayStaffCount: sourced(z.number().int().min(0).max(20)),

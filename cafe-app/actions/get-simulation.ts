@@ -1,5 +1,6 @@
 import { defineAction } from "@agent-native/core/action";
 import { and, eq } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
 import { getDb } from "../server/db/index.js";
@@ -39,11 +40,15 @@ export default defineAction({
   readOnly: true,
   run: async ({ id, runId, includePlayback }, ctx) => {
     const owner = requireOwner(ctx?.userEmail);
+    const source = alias(scenarios, "arrival_source");
     const [row] = await getDb()
       .select({
         revision: scenarios.revision,
         runId: serviceRuns.id,
         scenarioRevision: serviceRuns.scenarioRevision,
+        arrivalSourceId: serviceRuns.arrivalSourceId,
+        arrivalSourceRevision: serviceRuns.arrivalSourceRevision,
+        currentArrivalRevision: source.revision,
         summary: serviceRuns.summary,
         ...(includePlayback === true || includePlayback === "true"
           ? { playback: serviceRuns.playback }
@@ -58,21 +63,40 @@ export default defineAction({
           eq(serviceRuns.id, runId ?? scenarios.latestRunId),
         ),
       )
+      .leftJoin(
+        source,
+        and(
+          eq(source.id, serviceRuns.arrivalSourceId),
+          eq(source.ownerEmail, owner),
+        ),
+      )
       .where(scenarioScope(id, owner));
     if (!row)
       return scenarioErrors.fail("Scenario not found.", "scenario_not_found", {
         statusCode: 404,
       });
-    if (!row.runId || row.scenarioRevision === null || !row.summary)
+    if (
+      !row.runId ||
+      row.scenarioRevision === null ||
+      !row.summary ||
+      !row.arrivalSourceId ||
+      row.arrivalSourceRevision === null
+    )
       return { run: null };
     return {
       run: {
         id: row.runId,
         scenarioId: id,
         scenarioRevision: row.scenarioRevision,
+        arrivalSource: {
+          id: row.arrivalSourceId,
+          revision: row.arrivalSourceRevision,
+        },
         summary: row.summary,
         playback: row.playback ?? undefined,
-        stale: row.scenarioRevision !== row.revision,
+        stale:
+          row.scenarioRevision !== row.revision ||
+          row.arrivalSourceRevision !== row.currentArrivalRevision,
       },
     };
   },

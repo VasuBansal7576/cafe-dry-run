@@ -11,6 +11,8 @@ import {
 } from "./provenance";
 import {
   arrivalInputs,
+  demandSources,
+  pedestrianDailyArrivals,
   serviceInputs,
   serviceProvenance,
   serviceSources,
@@ -75,11 +77,45 @@ type WeekendSample = {
   arrivals: number;
   lostA: number;
   lostB: number | null;
+  lostBaseline: number;
   arrivalDigest: string;
 };
 
+function menuEconomics(scenario: Scenario, mix: Scenario["shop"]["menu"]) {
+  const active = mix.filter(({ weight }) => weight.value > 0);
+  const prices = new Map(
+    scenario.shop.menu.map(({ id, economics }) => [id, economics]),
+  );
+  const totalWeight = active.reduce((sum, { weight }) => sum + weight.value, 0);
+  function average(key: "price" | "ingredientCost") {
+    const fallback =
+      key === "price"
+        ? scenario.finance.averagePrice
+        : scenario.finance.averageIngredientCost;
+    const entries = active.map(({ id, weight }) => ({
+      weight,
+      unit: prices.get(id)?.[key] ?? fallback,
+    }));
+    return calculateMeasure(
+      entries.reduce(
+        (sum, { weight, unit }) => sum + weight.value * unit.value,
+        0,
+      ) / totalWeight,
+      ...entries.flatMap(({ weight, unit }) => [weight, unit]),
+    );
+  }
+  return {
+    price: average("price"),
+    ingredientCost: average("ingredientCost"),
+    legacyDrinks: active
+      .filter(({ id }) => !prices.get(id))
+      .map(({ name }) => name),
+  };
+}
+
 function forecast(
   scenario: Scenario,
+  baseline: Scenario,
   weekendDemand: Levels<CalculatedNumber>,
   weekendLosses: Levels<CalculatedNumber>,
   candidateLosses: Levels<CalculatedNumber> | undefined,
@@ -124,7 +160,9 @@ function forecast(
       finance.weekdayLossPercent,
     );
   };
-  return computeRunway({
+  const weekdayEconomics = menuEconomics(scenario, scenario.shop.menu);
+  const weekendEconomics = menuEconomics(scenario, baseline.shop.menu);
+  const result = computeRunway({
     cash: finance.cash,
     startupCosts: [
       finance.fitOut,
@@ -133,8 +171,9 @@ function forecast(
     ],
     recurringCosts: [finance.rent, finance.otherRecurring],
     wages,
-    price: finance.averagePrice,
-    ingredientCost: finance.averageIngredientCost,
+    price: weekdayEconomics.price,
+    ingredientCost: weekdayEconomics.ingredientCost,
+    weekendUnitEconomics: weekendEconomics,
     weekdays: {
       daysPerMonth: finance.weekdaysPerMonth,
       demand: finance.weekdayDemand,
@@ -152,7 +191,18 @@ function forecast(
     },
     savedCustomers: assumption.enabled,
     savedCustomersSource: { tag: assumption.tag },
+    ...(baseline.demand.pedestrian
+      ? { passersByPerOpenDay: baseline.demand.pedestrian.count }
+      : {}),
   });
+  return {
+    ...result,
+    assumptions: {
+      ...result.assumptions,
+      weekdayLegacyDrinks: weekdayEconomics.legacyDrinks,
+      weekendLegacyDrinks: weekendEconomics.legacyDrinks,
+    },
+  };
 }
 
 export function calculateDecision(
@@ -160,21 +210,29 @@ export function calculateDecision(
   b: Scenario | null,
   settings: DecisionParameters,
   assumption: SavedCustomerAssumption,
+  baseline: Scenario = a,
 ) {
-  const { demand, menuMix } = arrivalInputs(a.demand, a.shop);
-  const bItems = new Set(b?.shop.menu.map(({ id }) => id));
-  if (
-    b &&
-    menuMix.some(({ itemId, weight }) => weight > 0 && !bItems.has(itemId))
-  ) {
-    throw new RangeError(
-      "Both shops must serve the drinks ordered in A. Restore the missing drinks in B or select another scenario.",
-    );
+  const { demand, menuMix } = arrivalInputs(baseline.demand, baseline.shop);
+  for (const side of b ? [a, b] : [a]) {
+    const items = new Set(side.shop.menu.map(({ id }) => id));
+    if (
+      menuMix.some(({ itemId, weight }) => weight > 0 && !items.has(itemId))
+    ) {
+      throw new RangeError(
+        `${side.label} must serve the drinks ordered in ${baseline.label}. Restore the missing drinks or select another scenario.`,
+      );
+    }
   }
   const shopA = serviceInputs(a.shop);
   const shopB = b ? serviceInputs(b.shop) : null;
+  const baselineShop =
+    baseline.id === a.id || baseline.id === b?.id
+      ? null
+      : serviceInputs(baseline.shop);
   function runLevel(level: DecisionParameters["demandLevel"]) {
-    const expected = expectedDailyArrivals(demand, level);
+    const expected = baseline.demand.pedestrian
+      ? pedestrianDailyArrivals(baseline.demand.pedestrian).value
+      : expectedDailyArrivals(demand, level);
     if (!isServicePlanSizeAllowed(expected, settings.runCount)) {
       throw new RangeError(
         "This test is too large. Reduce demand, the service window, or the number of Saturdays.",
@@ -189,29 +247,32 @@ export function calculateDecision(
     );
     const aResult = simulateSeries(shopA, plan);
     const bResult = shopB ? simulateSeries(shopB, plan) : null;
-    const summaryA = summarizeService(a, a, plan, aResult);
+    const baselineResult = baselineShop
+      ? simulateSeries(baselineShop, plan)
+      : baseline.id === b?.id && bResult
+        ? bResult
+        : aResult;
+    const summaryA = summarizeService(a, baseline, plan, aResult);
     const summaryB =
-      b && bResult ? summarizeService(b, a, plan, bResult) : null;
+      b && bResult ? summarizeService(b, baseline, plan, bResult) : null;
     const sample: WeekendSample = {
       arrivals: plan.runs.reduce((sum, arrivals) => sum + arrivals.length, 0),
       lostA: aResult.totals.customersLost,
       lostB: bResult?.totals.customersLost ?? null,
+      lostBaseline: baselineResult.totals.customersLost,
       arrivalDigest: createHash("sha256")
         .update(JSON.stringify(plan.runs))
         .digest("hex"),
     };
     const taggedDemand = calculateMeasure(
       expected,
-      a.demand.hourly[level],
-      a.demand.opensAt,
-      a.demand.closesAt,
-      ...a.demand.hourlyMultipliers,
+      ...demandSources(baseline.demand, level),
     );
     const lossA = projectedWeekendLoss(
       taggedDemand,
       sample.arrivals,
       sample.lostA,
-      serviceSources(a.demand, a.shop, level),
+      serviceSources(baseline.demand, a.shop, level, baseline.shop.menu),
     );
     const lossB =
       b && sample.lostB !== null
@@ -219,7 +280,7 @@ export function calculateDecision(
             taggedDemand,
             sample.arrivals,
             sample.lostB,
-            serviceSources(a.demand, b.shop, level, a.shop.menu),
+            serviceSources(baseline.demand, b.shop, level, baseline.shop.menu),
           )
         : null;
     return {
@@ -227,6 +288,12 @@ export function calculateDecision(
       demand: taggedDemand,
       lossA,
       lossB,
+      lossBaseline: projectedWeekendLoss(
+        taggedDemand,
+        sample.arrivals,
+        sample.lostBaseline,
+        serviceSources(baseline.demand, baseline.shop, level),
+      ),
       serviceA: {
         summary: summaryA,
         playback: aResult.playback as ServiceRun["playback"],
@@ -258,13 +325,33 @@ export function calculateDecision(
       ? { low: low.lossB, base: base.lossB, high: high.lossB }
       : undefined;
   const selected = levels[settings.demandLevel];
-  const cashA = forecast(a, weekendDemand, lossesA, undefined, assumption);
+  const baselineLosses = {
+    low: low.lossBaseline,
+    base: base.lossBaseline,
+    high: high.lossBaseline,
+  };
+  const cashA = forecast(
+    a,
+    baseline,
+    weekendDemand,
+    baselineLosses,
+    a.id === baseline.id ? undefined : lossesA,
+    assumption,
+  );
   const cashB = b
-    ? forecast(b, weekendDemand, lossesA, lossesB, assumption)
+    ? forecast(
+        b,
+        baseline,
+        weekendDemand,
+        baselineLosses,
+        b.id === baseline.id ? undefined : lossesB,
+        assumption,
+      )
     : null;
   return {
     weekend,
     weekendDemand,
+    baselineLosses,
     weekendLossA: lossesA,
     weekendLossB: lossesB ?? null,
     serviceA: selected.serviceA,
@@ -316,6 +403,20 @@ function deltas(
   ) =>
     derive(Math.round((second.value - first.value) * 100) / 100, first, second);
   const level = a.demandLevel;
+  const current = diffMoney(
+    cashA.outcomes[level].monthlyCash,
+    cashB.outcomes[level].monthlyCash,
+  );
+  const off = diffMoney(
+    cashA.savedCustomersAssumption.monthlyCash[level].off,
+    cashB.savedCustomersAssumption.monthlyCash[level].off,
+  );
+  const on = diffMoney(
+    cashA.savedCustomersAssumption.monthlyCash[level].on,
+    cashB.savedCustomersAssumption.monthlyCash[level].on,
+  );
+  const higher = ({ value }: { value: number }) =>
+    value > 0 ? ("b" as const) : value < 0 ? ("a" as const) : ("tie" as const);
   return {
     waitP50Seconds: diffWait("waitP50Seconds"),
     waitP90Seconds: diffWait("waitP90Seconds"),
@@ -325,22 +426,18 @@ function deltas(
       { tag: b.provenance },
     ),
     staffPerMonth: diffMoney(cashA.costs.staff, cashB.costs.staff),
-    monthlyCash: diffMoney(
-      cashA.outcomes[level].monthlyCash,
-      cashB.outcomes[level].monthlyCash,
-    ),
+    monthlyCash: current,
     closingCashAfterStartup: diffMoney(
       cashA.outcomes[level].closingCash[0]!,
       cashB.outcomes[level].closingCash[0]!,
     ),
-    monthlyCashSavedCustomersOff: diffMoney(
-      cashA.outcomes[level].monthlyCash,
-      cashB.savedCustomersAssumption.monthlyCash[level].off,
-    ),
-    monthlyCashSavedCustomersOn: diffMoney(
-      cashA.outcomes[level].monthlyCash,
-      cashB.savedCustomersAssumption.monthlyCash[level].on,
-    ),
+    monthlyCashSavedCustomersOff: off,
+    monthlyCashSavedCustomersOn: on,
+    higherMonthlyCash: {
+      current: higher(current),
+      off: higher(off),
+      on: higher(on),
+    },
   };
 }
 

@@ -57,7 +57,7 @@ function staleAgainst(
       ? receipt.b?.service.scenarioRevision !== b.revision
       : receipt.a.service.id !== a.latestRunId);
   return {
-    receipt,
+    ...decision,
     serviceStale,
     cashStale:
       serviceStale ||
@@ -180,7 +180,7 @@ function ComparisonResult({
   setSavedCustomers: (enabled: boolean) => void;
 }) {
   const { receipt, serviceStale, cashStale } = decision;
-  const { a, b, delta, settings, savedCustomers } = receipt;
+  const { a, b, delta, settings, savedCustomers, cashBaseline } = receipt;
   if (!b || !delta) return null;
   const sample = receipt.weekend[settings.demandLevel];
   const cashOff = delta.monthlyCashSavedCustomersOff.value;
@@ -200,6 +200,12 @@ function ComparisonResult({
             {countFormat.format(sample.arrivals)} shared arrivals across{" "}
             {settings.runCount} Saturdays
           </p>
+          {cashBaseline && (
+            <p>
+              Shared arrival and cash baseline · {cashBaseline.label} · revision{" "}
+              {cashBaseline.revision}
+            </p>
+          )}
         </div>
         <button
           type="button"
@@ -209,7 +215,7 @@ function ComparisonResult({
             sendToAgentChat({
               message:
                 "Explain this café comparison. Use explain-result for the saved receipt. Say which option you favor, the reason, and what changes if we count recovered weekend customers. Use the action's figures and units.",
-              context: `Baseline A ${a.service.scenarioId}, alternative B ${b.service.scenarioId}, receipt ${receipt.id}. Both boards have the same Saturday arrivals.`,
+              context: `Scenario A ${a.service.scenarioId}, scenario B ${b.service.scenarioId}, receipt ${receipt.id}. Both boards have the same Saturday arrivals.`,
               contextLabel: "Matched Saturday result",
               openSidebar: true,
               submit: true,
@@ -229,7 +235,7 @@ function ComparisonResult({
       {!serviceStale && cashStale && (
         <p className="cafe-notice" role="status">
           <strong>Stale cash deltas.</strong> Refresh the comparison to include
-          the money edit.
+          current cash assumptions.
         </p>
       )}
       <div className="cafe-paired-boards">
@@ -242,6 +248,13 @@ function ComparisonResult({
       />
       <div className="cafe-decision-summary">
         <h3>What changes in B?</h3>
+        {delta.higherMonthlyCash && (
+          <p>
+            {delta.higherMonthlyCash.current === "tie"
+              ? "Monthly cash is tied."
+              : `${delta.higherMonthlyCash.current === "a" ? a.label : b.label} has higher monthly cash with the saved-customer switch ${savedCustomers.enabled ? "on" : "off"}.`}
+          </p>
+        )}
         <dl className="cafe-metrics" aria-label="B minus A">
           <div>
             <dt>Median wait</dt>
@@ -280,8 +293,8 @@ function ComparisonResult({
         </label>
         <p>
           <Stamp tag={savedCustomers.tag} /> · This changes projected revenue
-          only when B has fewer weekend losses. The weekday assumptions stay
-          separate.
+          for either shop that loses fewer weekend customers than the shared
+          baseline. Weekday assumptions stay separate.
         </p>
         <dl>
           <div>
@@ -300,7 +313,7 @@ function ComparisonResult({
           </div>
         </dl>
         <p>
-          {cashOff < 0 && cashOn > 0
+          {cashOff * cashOn < 0
             ? "The switch changes which scenario has higher monthly cash in this demand case."
             : cashOff !== cashOn && (cashOff === 0 || cashOn === 0)
               ? "One of the tested settings gives the same monthly cash in both scenarios."
@@ -372,7 +385,8 @@ function PairedWorkspace({
         <div className="cafe-board cafe-service">
           {controls}
           <p>
-            A supplies the hours, demand curve and drink mix for both boards.
+            Related variants share the hours, demand and drink mix of their
+            original scenario. For unrelated scenarios, A supplies those inputs.
           </p>
           <form
             className="cafe-service-settings"

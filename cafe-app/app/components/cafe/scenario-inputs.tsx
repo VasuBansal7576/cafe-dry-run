@@ -15,6 +15,7 @@ import {
   demandLevels,
   equipmentLabels,
   equipmentTypes,
+  pedestrianDailyArrivals,
   serviceHourCount,
   type ScenarioDemand,
   type ScenarioShop,
@@ -46,6 +47,7 @@ export function TaggedField({
   max,
   step = 1,
   clock = false,
+  fixedSource,
 }: {
   label: string;
   value: TaggedNumber;
@@ -54,6 +56,7 @@ export function TaggedField({
   max?: number;
   step?: number | "any";
   clock?: boolean;
+  fixedSource?: "observed";
 }) {
   const id = useId();
   const displayValue = clock ? formatClock(value.value) : String(value.value);
@@ -71,7 +74,7 @@ export function TaggedField({
       ? Number(hours) * 3600 + Number(minutes) * 60
       : Number(rawValue);
     if (!Number.isFinite(next) || next === value.value) return;
-    onChange({ value: next, source: { tag: "estimate" } });
+    onChange({ value: next, source: { tag: fixedSource ?? "estimate" } });
   }
   function publicField(
     key: "url" | "retrievedAt" | "supportingValue",
@@ -98,23 +101,29 @@ export function TaggedField({
               }
             : { type: "number", min, max, step })}
         />
-        <select
-          aria-label={`${label} source`}
-          className="cafe-source-control"
-          value={value.source.tag}
-          onChange={(event) =>
-            onChange({
-              ...value,
-              source: taggedSource(event.target.value as SourceTag),
-            })
-          }
-        >
-          {sourceTags.map((tag) => (
-            <option key={tag} value={tag}>
-              {sourceLabels[tag]}
-            </option>
-          ))}
-        </select>
+        {fixedSource ? (
+          <span className="cafe-source-control">
+            {sourceLabels[fixedSource]}
+          </span>
+        ) : (
+          <select
+            aria-label={`${label} source`}
+            className="cafe-source-control"
+            value={value.source.tag}
+            onChange={(event) =>
+              onChange({
+                ...value,
+                source: taggedSource(event.target.value as SourceTag),
+              })
+            }
+          >
+            {sourceTags.map((tag) => (
+              <option key={tag} value={tag}>
+                {sourceLabels[tag]}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
       {value.source.tag === "public" && (
         <div className="cafe-source-detail">
@@ -194,6 +203,10 @@ export function DemandForm({ scenario }: { scenario: Scenario }) {
   const demand = draft?.value ?? scenario.demand;
   const conflicted = !!draft && draft.revision !== scenario.revision;
   const base = scenario.demand.hourly.base;
+  const pedestrian = demand.pedestrian;
+  const expected =
+    scenario.demand.pedestrian &&
+    pedestrianDailyArrivals(scenario.demand.pedestrian);
   function edit(value: ScenarioDemand) {
     setDraft({ value, revision: draft?.revision ?? scenario.revision });
   }
@@ -219,23 +232,86 @@ export function DemandForm({ scenario }: { scenario: Scenario }) {
       <fieldset className="cafe-board cafe-form" disabled={update.isPending}>
         <header>
           <h3 id="demand-heading">Saturday demand</h3>
-          <p>
-            Current base demand: {base.value} customers per hour ·{" "}
-            {sourceLabels[base.source.tag]}
-          </p>
+          {expected ? (
+            <p>
+              Expected Saturday arrivals ·{" "}
+              {new Intl.NumberFormat("en-IN", {
+                maximumFractionDigits: 2,
+              }).format(expected.value)}{" "}
+              · {sourceLabels[expected.tag]}
+            </p>
+          ) : (
+            <p>
+              Current base demand: {base.value} customers per hour ·{" "}
+              {sourceLabels[base.source.tag]}
+            </p>
+          )}
         </header>
+        <label>
+          <input
+            type="checkbox"
+            checked={!!pedestrian}
+            onChange={(event) =>
+              edit({
+                ...demand,
+                pedestrian: event.currentTarget.checked
+                  ? {
+                      count: { value: 0, source: { tag: "observed" } },
+                      conversionPercent: illustrative(10),
+                    }
+                  : null,
+              })
+            }
+          />{" "}
+          Use a Saturday pedestrian count
+        </label>
         <div className="cafe-fields">
-          {demandLevels.map((level) => (
-            <TaggedField
-              key={level}
-              label={`${level[0]!.toUpperCase()}${level.slice(1)} customers per hour`}
-              max={1000}
-              value={demand.hourly[level]}
-              onChange={(next) =>
-                edit({ ...demand, hourly: { ...demand.hourly, [level]: next } })
-              }
-            />
-          ))}
+          {pedestrian ? (
+            <>
+              <TaggedField
+                label="People counted on Saturday"
+                max={120000}
+                value={pedestrian.count}
+                fixedSource="observed"
+                onChange={({ value }) =>
+                  edit({
+                    ...demand,
+                    pedestrian: {
+                      ...pedestrian,
+                      count: { value, source: { tag: "observed" } },
+                    },
+                  })
+                }
+              />
+              <TaggedField
+                label="Expected conversion (%)"
+                max={100}
+                step="any"
+                value={pedestrian.conversionPercent}
+                onChange={(conversionPercent) =>
+                  edit({
+                    ...demand,
+                    pedestrian: { ...pedestrian, conversionPercent },
+                  })
+                }
+              />
+            </>
+          ) : (
+            demandLevels.map((level) => (
+              <TaggedField
+                key={level}
+                label={`${level[0]!.toUpperCase()}${level.slice(1)} customers per hour`}
+                max={1000}
+                value={demand.hourly[level]}
+                onChange={(next) =>
+                  edit({
+                    ...demand,
+                    hourly: { ...demand.hourly, [level]: next },
+                  })
+                }
+              />
+            ))
+          )}
           <TaggedField
             label="Saturday opens"
             clock
@@ -249,6 +325,18 @@ export function DemandForm({ scenario }: { scenario: Scenario }) {
             onChange={(value) => editTime("closesAt", value)}
           />
         </div>
+        {pedestrian ? (
+          <p>
+            Use a count covering the full Saturday opening window. Count ×
+            conversion gives one Saturday estimate for all three cases. The
+            curve spreads it across opening hours.
+          </p>
+        ) : (
+          <p>
+            Without a count, the cash ledger shows the conversion needed at
+            illustrative footfall levels.
+          </p>
+        )}
         <details>
           <summary>Saturday arrival curve</summary>
           <p>
@@ -474,7 +562,7 @@ export function ShopForm({
           Add barista
         </button>
         <details>
-          <summary>Menu mix & service times</summary>
+          <summary>Menu mix, prices & service times</summary>
           <p>
             Service times are seconds. Unattended time occupies the machine
             while the barista can help someone else.
@@ -491,6 +579,54 @@ export function ShopForm({
                   editDrink(drink.id, (current) => ({ ...current, weight }))
                 }
               />
+              {drink.economics ? (
+                <div className="cafe-shift">
+                  <TaggedField
+                    label={`${drink.name} price (₹)`}
+                    value={drink.economics.price}
+                    max={1_000_000_000}
+                    step="any"
+                    onChange={(price) =>
+                      editDrink(drink.id, (current) => ({
+                        ...current,
+                        economics: { ...drink.economics!, price },
+                      }))
+                    }
+                  />
+                  <TaggedField
+                    label={`${drink.name} ingredient cost (₹)`}
+                    value={drink.economics.ingredientCost}
+                    max={1_000_000_000}
+                    step="any"
+                    onChange={(ingredientCost) =>
+                      editDrink(drink.id, (current) => ({
+                        ...current,
+                        economics: { ...drink.economics!, ingredientCost },
+                      }))
+                    }
+                  />
+                </div>
+              ) : (
+                <p>
+                  Uses the legacy blended price and cost in the cash ledger.{" "}
+                  <button
+                    type="button"
+                    className="cafe-link"
+                    onClick={() =>
+                      editDrink(drink.id, (current) => ({
+                        ...current,
+                        economics: {
+                          price: scenario.finance.averagePrice,
+                          ingredientCost:
+                            scenario.finance.averageIngredientCost,
+                        },
+                      }))
+                    }
+                  >
+                    Set this drink's price and cost
+                  </button>
+                </p>
+              )}
               {drink.tasks.map((task, index) => (
                 <div key={task.station} className="cafe-shift">
                   <TaggedField

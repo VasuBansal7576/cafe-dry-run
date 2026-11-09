@@ -21,7 +21,7 @@ import {
 
 export default defineAction({
   description:
-    "Edit a cafe scenario's tagged low/base/high hourly demand, Saturday opening hours or hourly curve. Read list-scenarios for its expected revision.",
+    "Edit a cafe scenario's tagged low/base/high hourly demand, Saturday opening hours, hourly curve, or observed Saturday footfall and conversion. Read list-scenarios for its expected revision.",
   schema: scenarioEditKey.extend({
     demand: demandFields
       .partial()
@@ -55,6 +55,12 @@ export default defineAction({
     const current = await readScenario(id, owner);
     if (current.revision !== expectedRevision) return scenarioConflict();
     const demand = {
+      pedestrian:
+        patch?.pedestrian !== undefined
+          ? patch.pedestrian
+          : baseHourlyDemand !== undefined || patch?.hourly
+            ? null
+            : current.demand.pedestrian,
       hourly: patch?.hourly ?? current.demand.hourly,
       opensAt: patch?.opensAt ?? current.demand.opensAt,
       closesAt: patch?.closesAt ?? current.demand.closesAt,

@@ -23,6 +23,10 @@ export const countFormat = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 2,
 });
 const caseLabels = { low: "Low", base: "Base", high: "High" };
+const percentageFormat = new Intl.NumberFormat("en-IN", {
+  style: "percent",
+  maximumFractionDigits: 2,
+});
 type Side = DecisionReceipt["a"];
 
 const financeGroups = [
@@ -35,15 +39,21 @@ const financeGroups = [
     ],
   },
   {
-    label: "Monthly costs & order economics",
+    label: "Monthly costs",
     fields: [
       { key: "rent", label: "Rent per month (₹)" },
       { key: "otherRecurring", label: "Other recurring costs per month (₹)" },
       { key: "hourlyWage", label: "Wage per staff hour (₹)" },
-      { key: "averagePrice", label: "Average order price (₹)" },
+    ],
+  },
+  {
+    label:
+      "Legacy blended amounts · used for drinks without their own price and cost",
+    fields: [
+      { key: "averagePrice", label: "Legacy blended order price (₹)" },
       {
         key: "averageIngredientCost",
-        label: "Average ingredients per order (₹)",
+        label: "Legacy blended ingredients per order (₹)",
       },
     ],
   },
@@ -326,7 +336,13 @@ function CashChart({ receipt }: { receipt: DecisionReceipt }) {
 }
 
 function Receipt({ decision }: { decision: StoredDecision }) {
-  const { receipt, cashStale } = decision;
+  const {
+    receipt,
+    cashStale,
+    historical,
+    assumptionStale,
+    currentSavedCustomers,
+  } = decision;
   const {
     a,
     b,
@@ -418,10 +434,13 @@ function Receipt({ decision }: { decision: StoredDecision }) {
         </header>
         {cashStale && (
           <p className="cafe-notice" role="status">
-            <strong>Stale cash receipt.</strong> Refresh the cash projection to
-            use current inputs.
+            <strong>Stale cash receipt.</strong>{" "}
+            {assumptionStale
+              ? `This receipt used an earlier saved-customer assumption. The current setting is ${currentSavedCustomers.enabled ? "on" : "off"}.`
+              : "Refresh the cash projection to use current inputs."}
           </p>
         )}
+        {historical && <p>Historical receipt</p>}
         <table>
           <thead>
             <tr>
@@ -474,6 +493,69 @@ function Receipt({ decision }: { decision: StoredDecision }) {
           actual seeded Saturdays. Weekdays use their own arrivals and loss
           assumptions.
         </p>
+        {receipt.cashBaseline && (
+          <p>
+            Shared arrival and cash baseline · {receipt.cashBaseline.label} ·
+            revision {receipt.cashBaseline.revision}
+          </p>
+        )}
+        {receipt.pedestrian && (
+          <p>
+            {countFormat.format(receipt.pedestrian.count.value)} counted
+            Saturday passers-by <Stamp tag="observed" />
+            {" · "}
+            {percentageFormat.format(
+              receipt.pedestrian.conversionPercent.value / 100,
+            )}{" "}
+            expected conversion{" "}
+            <Stamp tag={receipt.pedestrian.conversionPercent.source.tag} />
+          </p>
+        )}
+        <details>
+          <summary>Prices and ingredient costs by day type</summary>
+          <p>
+            Weekdays use each café's menu mix. Saturdays use the matched arrival
+            mix. Break-even assumes the same number of orders each open day.
+          </p>
+          {(b ? [a, b] : [a]).map(({ label, cash, service }) => (
+            <div key={service.scenarioId}>
+              <strong>{label}</strong>
+              {(
+                [
+                  [
+                    "Weekday",
+                    cash.assumptions.weekdayUnitEconomics,
+                    cash.assumptions.weekdayLegacyDrinks,
+                  ],
+                  [
+                    "Weekend",
+                    cash.assumptions.weekendUnitEconomics,
+                    cash.assumptions.weekendLegacyDrinks,
+                  ],
+                ] as const
+              ).map(([period, units, legacy]) => (
+                <p key={period}>
+                  {period} ·{" "}
+                  {units ? (
+                    <>
+                      <Figure figure={units.price} format={cashFormat} /> sale
+                      price ·{" "}
+                      <Figure
+                        figure={units.ingredientCost}
+                        format={cashFormat}
+                      />{" "}
+                      ingredients per order
+                      {!!legacy?.length &&
+                        ` · Legacy blended amounts for ${legacy.join(", ")}`}
+                    </>
+                  ) : (
+                    "Legacy blended amounts"
+                  )}
+                </p>
+              ))}
+            </div>
+          ))}
+        </details>
         {!!unsampled.length && (
           <p>
             <strong>
@@ -493,18 +575,33 @@ function Receipt({ decision }: { decision: StoredDecision }) {
         )}
         <details>
           <summary>Break-even capture rates</summary>
-          <p>Examples use assumed passers-by per open day.</p>
+          <p>
+            {receipt.pedestrian
+              ? "This benchmark applies the counted Saturday footfall to break-even orders per open day. The weekday cash forecast uses separate demand."
+              : "Examples use assumed passers-by per open day."}
+          </p>
           {(b ? [a, b] : [a]).map((side, index) => (
             <p key={side.service.scenarioId}>
               {index ? "B" : "A"} ·{" "}
-              {side.cash.illustrativeCaptureRates.length
-                ? side.cash.illustrativeCaptureRates
-                    .map(
-                      ({ passersByPerOpenDay, rate }) =>
-                        `${countFormat.format(rate.value * 100)}% of ${countFormat.format(passersByPerOpenDay.value)} passers-by`,
-                    )
-                    .join(" · ")
-                : "No break-even volume under these assumptions."}{" "}
+              {side.cash.requiredCaptureRate ? (
+                side.cash.requiredCaptureRate.value === null ? (
+                  "Required conversion unavailable with this footfall or break-even volume."
+                ) : (
+                  <Figure
+                    figure={side.cash.requiredCaptureRate}
+                    format={percentageFormat}
+                  />
+                )
+              ) : side.cash.illustrativeCaptureRates.length ? (
+                side.cash.illustrativeCaptureRates
+                  .map(
+                    ({ passersByPerOpenDay, rate }) =>
+                      `${countFormat.format(rate.value * 100)}% of ${countFormat.format(passersByPerOpenDay.value)} passers-by`,
+                  )
+                  .join(" · ")
+              ) : (
+                "No break-even volume under these assumptions."
+              )}{" "}
               {!!side.cash.illustrativeCaptureRates.length && (
                 <Stamp tag="illustrative" />
               )}
