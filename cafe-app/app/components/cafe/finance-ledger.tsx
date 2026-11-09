@@ -506,12 +506,11 @@ function Receipt({ decision }: { decision: StoredDecision }) {
     },
   ];
   return (
-    <article className="cafe-receipt" aria-label="Cash runway receipt">
-      {cashStale && (
-        <p className="cafe-print-stale" aria-hidden="true">
-          Stale cash receipt · Earlier inputs
-        </p>
-      )}
+    <article
+      className="cafe-receipt"
+      aria-label="Cash runway receipt"
+      data-stale={cashStale ? "" : undefined}
+    >
       <div className="cafe-receipt-main">
         <header>
           <p className="cafe-kicker">

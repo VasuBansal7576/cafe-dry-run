@@ -621,9 +621,6 @@
 .cafe-receipt h3 {
   margin-top: 8px;
 }
-.cafe-print-stale {
-  display: none;
-}
 .cafe-receipt-sensitivity {
   display: grid;
   gap: 8px;
@@ -791,6 +788,16 @@
     size: A4;
     margin: 10mm;
   }
+  @page cafe-stale-receipt {
+    @bottom-right {
+      content: "Stale cash receipt · Earlier inputs";
+      font: 11px ui-monospace, monospace;
+      color: #a43615;
+    }
+  }
+  html:has(.cafe-receipt[data-stale]) {
+    page: cafe-stale-receipt;
+  }
   body:has(.cafe-receipt) :not(.cafe-receipt, .cafe-receipt *, :has(.cafe-receipt)) {
     display: none !important;
   }
@@ -822,14 +829,6 @@
   }
   .cafe-receipt h3 {
     font-size: 26px;
-  }
-  .cafe-print-stale {
-    display: block;
-    position: fixed;
-    inset: auto 0 -6mm auto;
-    z-index: 2;
-    font: 11px var(--cafe-mono);
-    color: #a43615;
   }
   .cafe-receipt-main,
   .cafe-receipt-aside,
