@@ -29,6 +29,9 @@ const initialSettings = {
   runCount: 24,
   demandLevel: "base" as const,
 };
+type CompareMutation = ReturnType<
+  typeof useActionMutation<undefined, undefined, "compare-scenarios">
+>;
 const waitDelta = (value: number | null) =>
   value === null
     ? "Unavailable"
@@ -330,13 +333,19 @@ function PairedWorkspace({
   a,
   b,
   controls,
+  compare,
+  rerunAfterShopSave,
 }: {
   a: Scenario;
   b: Scenario;
   controls: ReactNode;
+  compare: CompareMutation;
+  rerunAfterShopSave: (scenario: Scenario) => void;
 }) {
   const saved = useActionQuery("get-comparison", { aId: a.id, bId: b.id });
-  const compare = useActionMutation("compare-scenarios");
+  const currentPair =
+    compare.variables?.a.id === a.id && compare.variables?.b.id === b.id;
+  const busy = currentPair && compare.isPending;
   const [draft, setDraft] = useState<{
     seed?: string;
     runCount?: string;
@@ -348,15 +357,11 @@ function PairedWorkspace({
     ...(decision?.receipt.settings ?? initialSettings),
     ...draft,
   };
-  function rerun(
-    alternative: Scenario = b,
-    assumption?: boolean,
-    useDraft = false,
-  ) {
-    if (compare.isPending) return;
+  function rerun(assumption?: boolean, useDraft = false) {
+    if (busy) return;
     compare.mutate({
       a: scenarioVersion(a),
-      b: scenarioVersion(alternative),
+      b: scenarioVersion(b),
       ...(useDraft
         ? {
             seed: Number(settings.seed),
@@ -371,7 +376,7 @@ function PairedWorkspace({
   }
   function submit(event: FormEvent) {
     event.preventDefault();
-    rerun(b, undefined, true);
+    rerun(undefined, true);
   }
   return (
     <>
@@ -453,16 +458,16 @@ function PairedWorkspace({
             </label>
             <button
               className="cafe-primary"
-              disabled={compare.isPending || !saved.data?.arrivalSource}
+              disabled={busy || !saved.data?.arrivalSource}
             >
-              {compare.isPending
+              {busy
                 ? "Comparing Saturdays…"
                 : decision
                   ? "Rerun comparison"
                   : "Compare Saturdays"}
             </button>
           </form>
-          {compare.error && (
+          {currentPair && compare.error && (
             <p className="cafe-notice" role="alert">
               {actionErrorMessage(compare.error) ??
                 "Could not compare these scenarios."}
@@ -486,8 +491,8 @@ function PairedWorkspace({
           {decision && (
             <ComparisonResult
               decision={decision}
-              disabled={compare.isPending}
-              setSavedCustomers={(enabled) => rerun(b, enabled)}
+              disabled={busy}
+              setSavedCustomers={rerun}
             />
           )}
           <details className="cafe-alternative-edit">
@@ -495,9 +500,7 @@ function PairedWorkspace({
             <ShopForm
               scenario={b}
               heading={`B · ${b.label} staff & equipment`}
-              onSaved={(updated) => {
-                if (decision) rerun(updated);
-              }}
+              onSaved={rerunAfterShopSave}
             />
           </details>
         </div>
@@ -506,7 +509,7 @@ function PairedWorkspace({
         a={a}
         b={b}
         decision={decision}
-        busy={compare.isPending}
+        busy={busy}
         refreshPair={() => rerun()}
       />
     </>
@@ -546,11 +549,15 @@ export function ComparisonWorkspace({
   b,
   options,
   select,
+  compare,
+  rerunAfterShopSave,
 }: {
   a: Scenario;
   b?: Scenario | undefined;
   options: Scenario[];
   select: (id: string | null) => void;
+  compare: CompareMutation;
+  rerunAfterShopSave: (scenario: Scenario) => void;
 }) {
   const copy = useActionMutation("configure-shop", {
     onSuccess: ({ scenario }) => select(scenario.id),
@@ -665,7 +672,14 @@ export function ComparisonWorkspace({
     </div>
   );
   return b ? (
-    <PairedWorkspace key={b.id} a={a} b={b} controls={controls} />
+    <PairedWorkspace
+      key={b.id}
+      a={a}
+      b={b}
+      controls={controls}
+      compare={compare}
+      rerunAfterShopSave={rerunAfterShopSave}
+    />
   ) : (
     <SingleWorkspace scenario={a} controls={controls} />
   );

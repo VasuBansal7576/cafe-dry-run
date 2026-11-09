@@ -8,8 +8,11 @@ import { useLocation, useSearchParams } from "react-router";
 
 import { ComparisonWorkspace } from "@/components/cafe/comparison";
 import { OpeningFile } from "@/components/cafe/opening-file";
+import { scenarioVersion } from "@/components/cafe/finance-ledger";
 import { DemandForm, ShopForm } from "@/components/cafe/scenario-inputs";
 import { SiteMap } from "@/components/cafe/site-map";
+
+import type { Scenario } from "../../server/lib/cafe/scenario-store.js";
 
 import "@/components/cafe/cafe.css";
 
@@ -31,6 +34,20 @@ export default function CafeRoute() {
     { enabled: !!scenario && !!comparison },
   );
   const demandScenario = comparison ? pair.data?.arrivalSource : scenario;
+  const compare = useActionMutation("compare-scenarios");
+  async function rerunAfterShopSave(updated: Scenario) {
+    const decision = pair.data?.decision;
+    if (!scenario || !comparison || !decision) return;
+    const { data } = await query.refetch();
+    const current = (side: Scenario) =>
+      data?.scenarios.find(({ id }) => id === side.id) ??
+      (updated.id === side.id ? updated : side);
+    compare.mutate({
+      a: scenarioVersion(current(scenario)),
+      b: scenarioVersion(current(comparison)),
+      ...decision.receipt.settings,
+    });
+  }
   const create = useActionMutation("create-scenario", {
     onSuccess: ({ scenario }) =>
       setParams({ scenario: scenario.id }, { replace: true }),
@@ -193,13 +210,15 @@ export default function CafeRoute() {
               )}
             </div>
             <div className="cafe-shop-board">
-              <ShopForm scenario={scenario} />
+              <ShopForm scenario={scenario} onSaved={rerunAfterShopSave} />
             </div>
           </section>
           <ComparisonWorkspace
             a={scenario}
             b={comparison}
             options={alternatives}
+            compare={compare}
+            rerunAfterShopSave={rerunAfterShopSave}
             select={(id) =>
               setParams(
                 (previous) => {
