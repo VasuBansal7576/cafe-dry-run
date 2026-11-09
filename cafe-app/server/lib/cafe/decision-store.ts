@@ -107,6 +107,45 @@ function sharedBaselineId(
   return [...lineage(aId)].find((id) => bLineage.has(id)) ?? aId;
 }
 
+function decisionScope(owner: string, aId: string, bId?: string) {
+  return and(
+    eq(decisionRuns.ownerEmail, owner),
+    eq(decisionRuns.aScenarioId, aId),
+    bId ? eq(decisionRuns.bScenarioId, bId) : isNull(decisionRuns.bScenarioId),
+  );
+}
+
+function assumptionScope(owner: string, aId: string, bId?: string) {
+  const forward = decisionScope(owner, aId, bId);
+  return bId ? or(forward, decisionScope(owner, bId, aId)) : forward;
+}
+
+export async function readArrivalSource(
+  owner: string,
+  aId: string,
+  bId: string,
+) {
+  const db = getDb();
+  const links = await db
+    .select({ id: scenarios.id, parentId: scenarios.parentId })
+    .from(scenarios)
+    .where(eq(scenarios.ownerEmail, owner));
+  const parents = new Map(links.map(({ id, parentId }) => [id, parentId]));
+  if (!parents.has(aId) || !parents.has(bId) || aId === bId) return null;
+  const [row] = await db
+    .select(scenarioFields)
+    .from(scenarios)
+    .where(
+      and(
+        eq(scenarios.ownerEmail, owner),
+        eq(scenarios.id, sharedBaselineId(aId, bId, parents)),
+      ),
+    );
+  if (!row) return null;
+  const { id, revision, label, demand } = toScenario(row);
+  return { id, revision, label, demand };
+}
+
 export async function saveDecision(
   owner: string,
   request: DecisionRequest,
@@ -146,11 +185,6 @@ export async function saveDecision(
       ? verifyVersion(inputs.get(request.b.id), request.b)
       : null;
     const baseline = inputs.get(baselineId) ?? scenarioConflict();
-    const scope = and(
-      eq(decisionRuns.ownerEmail, owner),
-      eq(decisionRuns.aScenarioId, a.id),
-      b ? eq(decisionRuns.bScenarioId, b.id) : isNull(decisionRuns.bScenarioId),
-    );
     let settings: DecisionParameters;
     let savedCustomers = defaultSavedCustomers;
     let assumptionRevision = 0;
@@ -159,7 +193,7 @@ export async function saveDecision(
       const [prior] = await tx
         .select({ receipt: decisionRuns.receipt })
         .from(decisionRuns)
-        .where(scope)
+        .where(assumptionScope(owner, a.id, b?.id))
         .orderBy(desc(decisionRuns.sequence))
         .limit(1);
       const previous = prior?.receipt.savedCustomers ?? defaultSavedCustomers;
@@ -316,20 +350,24 @@ export async function readDecision(
   const b = alias(scenarios, "b_scenario");
   const source = alias(scenarios, "arrival_source");
   const db = getDb();
-  const scope = and(
-    eq(decisionRuns.ownerEmail, owner),
-    eq(decisionRuns.aScenarioId, aId),
-    bId ? eq(decisionRuns.bScenarioId, bId) : isNull(decisionRuns.bScenarioId),
-  );
+  const scope = decisionScope(owner, aId, bId);
+  const assumptionSequence = db
+    .select({ sequence: decisionRuns.sequence })
+    .from(decisionRuns)
+    .where(assumptionScope(owner, aId, bId))
+    .orderBy(desc(decisionRuns.sequence))
+    .limit(1);
   const latestSequence = db
     .select({ sequence: decisionRuns.sequence })
     .from(decisionRuns)
     .where(scope)
     .orderBy(desc(decisionRuns.sequence))
     .limit(1);
-  const [latest, historicalRow] = await db
+  const rows = await db
     .select({
       receipt: decisionRuns.receipt,
+      isLatestForOrder: sql<boolean>`${decisionRuns.sequence} = (${latestSequence})`,
+      isLatestAssumption: sql<boolean>`${decisionRuns.sequence} = (${assumptionSequence})`,
       aRevision: scenarios.revision,
       aFinanceRevision: scenarios.financeRevision,
       aLatestRunId: scenarios.latestRunId,
@@ -357,31 +395,31 @@ export async function readDecision(
       ),
     )
     .where(
-      and(
-        scope,
-        receiptId
-          ? or(
-              eq(decisionRuns.id, receiptId),
-              eq(decisionRuns.sequence, latestSequence),
-            )
-          : undefined,
+      or(
+        eq(decisionRuns.sequence, latestSequence),
+        eq(decisionRuns.sequence, assumptionSequence),
+        receiptId ? and(scope, eq(decisionRuns.id, receiptId)) : undefined,
       ),
-    )
-    .orderBy(desc(decisionRuns.sequence))
-    .limit(receiptId ? 2 : 1);
-  if (!latest) return null;
-  const row =
-    !receiptId || latest.receipt.id === receiptId ? latest : historicalRow;
-  if (!row || (receiptId && row.receipt.id !== receiptId)) return null;
+    );
+  const latest = rows.find((row) => row.isLatestForOrder);
+  const assumption = rows.find((row) => row.isLatestAssumption);
+  const row = receiptId
+    ? rows.find(
+        (row) =>
+          row.receipt.id === receiptId &&
+          row.receipt.a.service.scenarioId === aId &&
+          (row.receipt.b?.service.scenarioId ?? undefined) === bId,
+      )
+    : latest;
+  if (!row || !assumption) return null;
   const { receipt } = row;
-  const currentSavedCustomers = latest.receipt.savedCustomers;
-  const historical = receipt.id !== latest.receipt.id;
+  const currentSavedCustomers = assumption.receipt.savedCustomers;
   const assumptionStale =
-    historical &&
-    ((receipt.assumptionRevision ?? 0) !==
-      (latest.receipt.assumptionRevision ?? 0) ||
-      receipt.savedCustomers.enabled !== currentSavedCustomers.enabled ||
-      receipt.savedCustomers.tag !== currentSavedCustomers.tag);
+    (receipt.assumptionRevision ?? 0) !==
+      (assumption.receipt.assumptionRevision ?? 0) ||
+    receipt.savedCustomers.enabled !== currentSavedCustomers.enabled ||
+    receipt.savedCustomers.tag !== currentSavedCustomers.tag;
+  const historical = !row.isLatestForOrder || assumptionStale;
   const serviceStale =
     receipt.a.service.scenarioRevision !== row.aRevision ||
     (!!receipt.cashBaseline &&
@@ -392,6 +430,7 @@ export async function readDecision(
   const cashStale =
     serviceStale ||
     assumptionStale ||
+    !receipt.a.cash.assumptions.breakEvenWeekendMix ||
     (!!receipt.b && !receipt.cashBaseline) ||
     receipt.a.financeRevision !== row.aFinanceRevision ||
     (!!receipt.b && receipt.b.financeRevision !== row.bFinanceRevision);

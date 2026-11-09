@@ -56,6 +56,9 @@ const cash = z.object({
       .optional(),
     weekdayLegacyDrinks: z.array(z.string()).optional(),
     weekendLegacyDrinks: z.array(z.string()).optional(),
+    breakEvenWeekendMix: z
+      .enum(["base-case-completed", "arrival-mix-fallback"])
+      .optional(),
     passersByPerOpenDay: figure.nullable().optional(),
   }),
   savedCustomersAssumption: z.object({

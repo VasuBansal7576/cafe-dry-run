@@ -37,8 +37,8 @@ export function decimalNumber(value: Decimal): number {
   return Number(`${value.units}e-${value.places}`);
 }
 
-export function postedPaise(value: Decimal): number {
-  const divisor = powerOfTen(value.places);
+export function postedPaise(value: Decimal, denominator = 1): number {
+  const divisor = powerOfTen(value.places) * BigInt(denominator);
   const paise = Number((value.units * 200n + divisor) / (2n * divisor));
   if (!Number.isSafeInteger(paise)) throw new RangeError("Cash model amounts exceed supported precision.");
   return paise;

@@ -3,6 +3,7 @@ import {
   useActionMutation,
 } from "@agent-native/core/client/hooks";
 import { useEffect, useId, useState, type FormEvent } from "react";
+import { Link } from "react-router";
 
 import {
   illustrative,
@@ -192,7 +193,15 @@ export function FormStatus({
   );
 }
 
-export function DemandForm({ scenario }: { scenario: Scenario }) {
+export function DemandForm({
+  scenario,
+  shared = false,
+  separateMenu = false,
+}: {
+  scenario: Pick<Scenario, "id" | "label" | "revision" | "demand">;
+  shared?: boolean;
+  separateMenu?: boolean;
+}) {
   const [draft, setDraft] = useState<{
     value: ScenarioDemand;
     revision: number;
@@ -231,7 +240,24 @@ export function DemandForm({ scenario }: { scenario: Scenario }) {
     <form onSubmit={submit} aria-labelledby="demand-heading">
       <fieldset className="cafe-board cafe-form" disabled={update.isPending}>
         <header>
-          <h3 id="demand-heading">Saturday demand</h3>
+          <h3 id="demand-heading">
+            {shared ? "Shared Saturday demand" : "Saturday demand"}
+          </h3>
+          {shared && (
+            <p>
+              Both shops use demand from <strong>{scenario.label}</strong>,
+              revision {scenario.revision}.
+              {separateMenu && (
+                <>
+                  {" "}
+                  <Link to={`?scenario=${scenario.id}#site-demand`}>
+                    Edit its drink mix
+                  </Link>
+                  .
+                </>
+              )}
+            </p>
+          )}
           {expected ? (
             <p>
               Expected Saturday arrivals ·{" "}

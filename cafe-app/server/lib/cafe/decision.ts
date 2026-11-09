@@ -1,7 +1,13 @@
 import { createHash } from "node:crypto";
 
 import { createArrivalPlan, type ArrivalPlan, type Demand } from "./arrivals";
-import { computeRunway, type CashWage, type Levels } from "./cash";
+import {
+  computeRunway,
+  type CashMeasure,
+  type CashWage,
+  type Levels,
+  type MatchedWeekendSales,
+} from "./cash";
 import type { SavedCustomerAssumption } from "./finance";
 import {
   calculateMeasure,
@@ -81,20 +87,28 @@ type WeekendSample = {
   arrivalDigest: string;
 };
 
-function menuEconomics(scenario: Scenario, mix: Scenario["shop"]["menu"]) {
-  const active = mix.filter(({ weight }) => weight.value > 0);
+function drinkEconomics(scenario: Scenario) {
   const prices = new Map(
     scenario.shop.menu.map(({ id, economics }) => [id, economics]),
   );
+  return (id: string) =>
+    prices.get(id) ?? {
+      price: scenario.finance.averagePrice,
+      ingredientCost: scenario.finance.averageIngredientCost,
+    };
+}
+
+function menuEconomics(
+  scenario: Scenario,
+  mix: readonly { id: string; name: string; weight: CashMeasure }[],
+) {
+  const economics = drinkEconomics(scenario);
+  const active = mix.filter(({ weight }) => weight.value > 0);
   const totalWeight = active.reduce((sum, { weight }) => sum + weight.value, 0);
   function average(key: "price" | "ingredientCost") {
-    const fallback =
-      key === "price"
-        ? scenario.finance.averagePrice
-        : scenario.finance.averageIngredientCost;
     const entries = active.map(({ id, weight }) => ({
       weight,
-      unit: prices.get(id)?.[key] ?? fallback,
+      unit: economics(id)[key],
     }));
     return calculateMeasure(
       entries.reduce(
@@ -108,9 +122,40 @@ function menuEconomics(scenario: Scenario, mix: Scenario["shop"]["menu"]) {
     price: average("price"),
     ingredientCost: average("ingredientCost"),
     legacyDrinks: active
-      .filter(({ id }) => !prices.get(id))
+      .filter(
+        ({ id }) =>
+          !scenario.shop.menu.find((item) => item.id === id)?.economics,
+      )
       .map(({ name }) => name),
   };
+}
+
+type MatchedCompletionCounts = {
+  arrivals: number;
+  source: CalculatedNumber;
+  counts: ReadonlyMap<string, { common: number; recovered: number }>;
+};
+
+function matchedCompletions(
+  baseline: SeriesResult,
+  candidate: SeriesResult,
+  arrivals: number,
+  source: CalculatedNumber,
+): MatchedCompletionCounts {
+  const counts = new Map<string, { common: number; recovered: number }>();
+  const fewerLosses =
+    candidate.totals.customersLost < baseline.totals.customersLost;
+  for (const [index, drinks] of candidate.completedDrinksByRun.entries()) {
+    const original = baseline.completedDrinksByRun[index]!;
+    for (const [itemId, completed] of drinks) {
+      const common = Math.min(original.get(itemId) ?? 0, completed);
+      const totals = counts.get(itemId) ?? { common: 0, recovered: 0 };
+      totals.common += common;
+      if (fewerLosses) totals.recovered += completed - common;
+      counts.set(itemId, totals);
+    }
+  }
+  return { arrivals, source, counts };
 }
 
 function forecast(
@@ -118,7 +163,7 @@ function forecast(
   baseline: Scenario,
   weekendDemand: Levels<CalculatedNumber>,
   weekendLosses: Levels<CalculatedNumber>,
-  candidateLosses: Levels<CalculatedNumber> | undefined,
+  completions: Levels<MatchedCompletionCounts>,
   assumption: SavedCustomerAssumption,
 ) {
   const finance = scenario.finance;
@@ -161,7 +206,56 @@ function forecast(
     );
   };
   const weekdayEconomics = menuEconomics(scenario, scenario.shop.menu);
-  const weekendEconomics = menuEconomics(scenario, baseline.shop.menu);
+  const economics = drinkEconomics(scenario);
+  function matchedSales({
+    counts,
+    arrivals,
+    source,
+  }: MatchedCompletionCounts): MatchedWeekendSales {
+    return {
+      arrivals,
+      tag: source.tag,
+      drinks: [...counts].map(([id, count]) => ({
+        ...count,
+        ...economics(id),
+      })),
+    };
+  }
+  const matchedWeekendSales = {
+    low: matchedSales(completions.low),
+    base: matchedSales(completions.base),
+    high: matchedSales(completions.high),
+  };
+  const { counts, source } = completions.base;
+  const assumptionSource = { tag: assumption.tag };
+  const hasRecovery = [...counts.values()].some(
+    ({ recovered }) => recovered > 0,
+  );
+  const completedMix = baseline.shop.menu.flatMap(({ id, name }) => {
+    const drink = counts.get(id);
+    const sold =
+      (drink?.common ?? 0) + (assumption.enabled ? (drink?.recovered ?? 0) : 0);
+    return sold > 0
+      ? [
+          {
+            id,
+            name,
+            weight: calculateMeasure(
+              sold,
+              source,
+              ...(hasRecovery ? [assumptionSource] : []),
+            ),
+          },
+        ]
+      : [];
+  });
+  const breakEvenWeekendMix = completedMix.length
+    ? ("base-case-completed" as const)
+    : ("arrival-mix-fallback" as const);
+  const weekendEconomics = menuEconomics(
+    scenario,
+    completedMix.length ? completedMix : baseline.shop.menu,
+  );
   const result = computeRunway({
     cash: finance.cash,
     startupCosts: [
@@ -174,6 +268,7 @@ function forecast(
     price: weekdayEconomics.price,
     ingredientCost: weekdayEconomics.ingredientCost,
     weekendUnitEconomics: weekendEconomics,
+    matchedWeekendSales,
     weekdays: {
       daysPerMonth: finance.weekdaysPerMonth,
       demand: finance.weekdayDemand,
@@ -187,10 +282,9 @@ function forecast(
       daysPerMonth: finance.weekendsPerMonth,
       demand: weekendDemand,
       baselineLosses: weekendLosses,
-      ...(candidateLosses ? { scenarioLosses: candidateLosses } : {}),
     },
     savedCustomers: assumption.enabled,
-    savedCustomersSource: { tag: assumption.tag },
+    savedCustomersSource: assumptionSource,
     ...(baseline.demand.pedestrian
       ? { passersByPerOpenDay: baseline.demand.pedestrian.count }
       : {}),
@@ -201,6 +295,7 @@ function forecast(
       ...result.assumptions,
       weekdayLegacyDrinks: weekdayEconomics.legacyDrinks,
       weekendLegacyDrinks: weekendEconomics.legacyDrinks,
+      breakEvenWeekendMix,
     },
   };
 }
@@ -283,17 +378,33 @@ export function calculateDecision(
             serviceSources(baseline.demand, b.shop, level, baseline.shop.menu),
           )
         : null;
+    const lossBaseline = projectedWeekendLoss(
+      taggedDemand,
+      sample.arrivals,
+      sample.lostBaseline,
+      serviceSources(baseline.demand, baseline.shop, level),
+    );
     return {
       sample,
       demand: taggedDemand,
+      completionsA: matchedCompletions(
+        baselineResult,
+        aResult,
+        sample.arrivals,
+        calculateMeasure(0, lossBaseline, lossA),
+      ),
+      completionsB:
+        lossB && bResult
+          ? matchedCompletions(
+              baselineResult,
+              bResult,
+              sample.arrivals,
+              calculateMeasure(0, lossBaseline, lossB),
+            )
+          : null,
       lossA,
       lossB,
-      lossBaseline: projectedWeekendLoss(
-        taggedDemand,
-        sample.arrivals,
-        sample.lostBaseline,
-        serviceSources(baseline.demand, baseline.shop, level),
-      ),
+      lossBaseline,
       serviceA: {
         summary: summaryA,
         playback: aResult.playback as ServiceRun["playback"],
@@ -335,7 +446,7 @@ export function calculateDecision(
     baseline,
     weekendDemand,
     baselineLosses,
-    a.id === baseline.id ? undefined : lossesA,
+    { low: low.completionsA, base: base.completionsA, high: high.completionsA },
     assumption,
   );
   const cashB = b
@@ -344,7 +455,11 @@ export function calculateDecision(
         baseline,
         weekendDemand,
         baselineLosses,
-        b.id === baseline.id ? undefined : lossesB,
+        {
+          low: low.completionsB!,
+          base: base.completionsB!,
+          high: high.completionsB!,
+        },
         assumption,
       )
     : null;

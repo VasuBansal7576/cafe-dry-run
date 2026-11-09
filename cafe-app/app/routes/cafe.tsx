@@ -25,6 +25,12 @@ export default function CafeRoute() {
   const alternatives =
     query.data?.scenarios.filter(({ id }) => id !== scenario?.id) ?? [];
   const comparison = alternatives.find(({ id }) => id === comparisonId);
+  const pair = useActionQuery(
+    "get-comparison",
+    { aId: scenario?.id ?? "", bId: comparison?.id },
+    { enabled: !!scenario && !!comparison },
+  );
+  const demandScenario = comparison ? pair.data?.arrivalSource : scenario;
   const create = useActionMutation("create-scenario", {
     onSuccess: ({ scenario }) =>
       setParams({ scenario: scenario.id }, { replace: true }),
@@ -160,7 +166,31 @@ export default function CafeRoute() {
                     : null
                 }
               />
-              <DemandForm scenario={scenario} />
+              {demandScenario ? (
+                <DemandForm
+                  key={demandScenario.id}
+                  scenario={demandScenario}
+                  shared={!!comparison}
+                  separateMenu={demandScenario.id !== scenario.id}
+                />
+              ) : pair.error ? (
+                <p className="cafe-notice" role="alert">
+                  {actionErrorMessage(pair.error) ??
+                    "Could not load the shared demand source."}{" "}
+                  <button
+                    className="cafe-link"
+                    onClick={() => void pair.refetch()}
+                  >
+                    Try again
+                  </button>
+                </p>
+              ) : (
+                <p role="status">
+                  {pair.isPending
+                    ? "Loading shared Saturday demand…"
+                    : "Shared demand source unavailable."}
+                </p>
+              )}
             </div>
             <div className="cafe-shop-board">
               <ShopForm scenario={scenario} />

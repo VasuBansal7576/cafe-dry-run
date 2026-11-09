@@ -292,9 +292,11 @@ function ComparisonResult({
           Count weekend customers who would have left but now place an order
         </label>
         <p>
-          <Stamp tag={savedCustomers.tag} /> · This changes projected revenue
-          for either shop that loses fewer weekend customers than the shared
-          baseline. Weekday assumptions stay separate.
+          <Stamp tag={savedCustomers.tag} /> · With the switch off, sales use
+          the lower of the shop and baseline completion counts for each drink on
+          each Saturday. With it on, a shop that lost fewer customers also
+          counts its additional completed drinks. Weekday assumptions stay
+          separate.
         </p>
         <dl>
           <div>
@@ -384,10 +386,13 @@ function PairedWorkspace({
         </header>
         <div className="cafe-board cafe-service">
           {controls}
-          <p>
-            Related variants share the hours, demand and drink mix of their
-            original scenario. For unrelated scenarios, A supplies those inputs.
-          </p>
+          {saved.data?.arrivalSource && (
+            <p>
+              Both shops use Saturday arrivals from{" "}
+              {saved.data.arrivalSource.label}.{" "}
+              <a href="#site-demand">Edit shared demand</a>
+            </p>
+          )}
           <form
             className="cafe-service-settings"
             onSubmit={submit}
@@ -446,7 +451,10 @@ function PairedWorkspace({
                 }
               />
             </label>
-            <button className="cafe-primary" disabled={compare.isPending}>
+            <button
+              className="cafe-primary"
+              disabled={compare.isPending || !saved.data?.arrivalSource}
+            >
               {compare.isPending
                 ? "Comparing Saturdays…"
                 : decision

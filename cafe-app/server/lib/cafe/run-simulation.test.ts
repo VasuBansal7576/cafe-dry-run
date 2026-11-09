@@ -170,7 +170,6 @@ it("distinguishes historical assumptions and invalidates linked runs when the sh
   });
 });
 
-
 it("keeps one saved-customer choice across both display orders and invalidates older choices", async () => {
   const { scenario: original } = await createScenario.run(
     { label: "Reference", baseHourlyDemand: 55 },
@@ -180,16 +179,32 @@ it("keeps one saved-customer choice across both display orders and invalidates o
     {
       ...revision(original),
       variantLabel: "Barista",
-      shop: { workers: [...original.shop.workers, {
-        id: "cover",
-        name: "Cover",
-        shifts: [{ startsAt: illustrative(10 * 3600), endsAt: illustrative(12 * 3600) }],
-      }] },
+      shop: {
+        workers: [
+          ...original.shop.workers,
+          {
+            id: "cover",
+            name: "Cover",
+            shifts: [
+              {
+                startsAt: illustrative(10 * 3600),
+                endsAt: illustrative(12 * 3600),
+              },
+            ],
+          },
+        ],
+      },
     },
     owner,
   );
   const { scenario: grinder } = await configureShop.run(
-    { ...revision(original), variantLabel: "Grinder", shop: { equipment: { ...original.shop.equipment, grinder: illustrative(2) } } },
+    {
+      ...revision(original),
+      variantLabel: "Grinder",
+      shop: {
+        equipment: { ...original.shop.equipment, grinder: illustrative(2) },
+      },
+    },
     owner,
   );
   const settings = { seed: 1, demandLevel: "base" as const, runCount: 1 };
@@ -199,22 +214,50 @@ it("keeps one saved-customer choice across both display orders and invalidates o
   const reverseScope = { aId: grinder.id, bId: barista.id };
   const on = { enabled: true, tag: "estimate" as const };
   const off = { enabled: false, tag: "estimate" as const };
-  const first = await compareScenarios.run({ ...forward, savedCustomers: on }, owner);
+  const first = await compareScenarios.run(
+    { ...forward, savedCustomers: on },
+    owner,
+  );
   const swapped = await compareScenarios.run(reverse, owner);
   expect(swapped.receipt.savedCustomers).toEqual(on);
-  expect(swapped.receipt.delta?.monthlyCash.value).toBe(-first.receipt.delta!.monthlyCash.value);
-  expect(swapped.receipt.weekend.base.arrivalDigest).toBe(first.receipt.weekend.base.arrivalDigest);
-  expect((await getComparison.run(forwardScope, owner)).decision).toMatchObject({ cashStale: false });
-  expect((await getComparison.run(reverseScope, owner)).decision).toMatchObject({ cashStale: false });
+  expect(swapped.receipt.delta?.monthlyCash.value).toBe(
+    -first.receipt.delta!.monthlyCash.value,
+  );
+  expect(swapped.receipt.weekend.base.arrivalDigest).toBe(
+    first.receipt.weekend.base.arrivalDigest,
+  );
+  expect((await getComparison.run(forwardScope, owner)).decision).toMatchObject(
+    { cashStale: false },
+  );
+  expect((await getComparison.run(reverseScope, owner)).decision).toMatchObject(
+    { cashStale: false },
+  );
 
-  const later = await compareScenarios.run({ ...reverse, savedCustomers: off }, owner);
-  expect((await getComparison.run(forwardScope, owner)).decision).toMatchObject({
-    serviceStale: false, cashStale: true, assumptionStale: true, currentSavedCustomers: off,
-  });
+  const later = await compareScenarios.run(
+    { ...reverse, savedCustomers: off },
+    owner,
+  );
+  expect((await getComparison.run(forwardScope, owner)).decision).toMatchObject(
+    {
+      serviceStale: false,
+      cashStale: true,
+      assumptionStale: true,
+      currentSavedCustomers: off,
+    },
+  );
   await compareScenarios.run({ ...forward, savedCustomers: on }, owner);
-  for (const [scope, receiptId] of [[forwardScope, first.receipt.id], [reverseScope, later.receipt.id]] as const) {
-    expect((await getComparison.run({ ...scope, receiptId }, owner)).decision).toMatchObject({
-      serviceStale: false, cashStale: true, assumptionStale: true, currentSavedCustomers: on, historical: true,
+  for (const [scope, receiptId] of [
+    [forwardScope, first.receipt.id],
+    [reverseScope, later.receipt.id],
+  ] as const) {
+    expect(
+      (await getComparison.run({ ...scope, receiptId }, owner)).decision,
+    ).toMatchObject({
+      serviceStale: false,
+      cashStale: true,
+      assumptionStale: true,
+      currentSavedCustomers: on,
+      historical: true,
     });
   }
 });
@@ -235,21 +278,44 @@ it("identifies the editable shared demand source before the first sibling compar
   const scope = { aId: a.id, bId: b.id };
   expect(await getComparison.run(scope, owner)).toMatchObject({
     decision: null,
-    arrivalSource: { id: original.id, revision: original.revision, label: original.label },
+    arrivalSource: {
+      id: original.id,
+      revision: original.revision,
+      label: original.label,
+    },
   });
   const outsider = { ...owner, userEmail: "outsider@example.invalid" };
-  expect(await getComparison.run(scope, outsider)).toMatchObject({ decision: null, arrivalSource: null });
-  const compare = () => compareScenarios.run(
-    { a: revision(a), b: revision(b), seed: 1, demandLevel: "base", runCount: 1 },
+  expect(await getComparison.run(scope, outsider)).toMatchObject({
+    decision: null,
+    arrivalSource: null,
+  });
+  const compare = () =>
+    compareScenarios.run(
+      {
+        a: revision(a),
+        b: revision(b),
+        seed: 1,
+        demandLevel: "base",
+        runCount: 1,
+      },
+      owner,
+    );
+  const first = await compare();
+  const { scenario: updated } = await setDemand.run(
+    { ...revision(original), baseHourlyDemand: 65 },
     owner,
   );
-  const first = await compare();
-  const { scenario: updated } = await setDemand.run({ ...revision(original), baseHourlyDemand: 65 }, owner);
   expect(await getComparison.run(scope, owner)).toMatchObject({
-    arrivalSource: { id: updated.id, revision: updated.revision, label: updated.label },
+    arrivalSource: {
+      id: updated.id,
+      revision: updated.revision,
+      label: updated.label,
+    },
     decision: { serviceStale: true, cashStale: true },
   });
   const refreshed = await compare();
   expect(refreshed.receipt.cashBaseline?.revision).toBe(updated.revision);
-  expect(refreshed.receipt.weekend.base.arrivalDigest).not.toBe(first.receipt.weekend.base.arrivalDigest);
+  expect(refreshed.receipt.weekend.base.arrivalDigest).not.toBe(
+    first.receipt.weekend.base.arrivalDigest,
+  );
 });

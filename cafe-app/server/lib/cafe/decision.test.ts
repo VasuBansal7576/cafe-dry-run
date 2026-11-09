@@ -2,11 +2,18 @@ import { describe, expect, it } from "vitest";
 
 import { defaultSpot } from "../../../shared/cafe/site-map";
 
+import { createArrivalPlan } from "./arrivals";
 import { calculateDecision } from "./decision";
 import { defaultFinance } from "./finance";
 import { illustrative } from "./provenance";
-import { defaultDemand, defaultShop } from "./scenario";
+import {
+  arrivalInputs,
+  defaultDemand,
+  defaultShop,
+  serviceInputs,
+} from "./scenario";
 import type { Scenario } from "./scenario-store";
+import { simulateSaturday, type SaturdayResult } from "./simulation";
 
 function scenario(id: string): Scenario {
   return {
@@ -228,7 +235,6 @@ describe("paired café decisions", () => {
   });
 });
 
-
 function twoDrinks(id: string) {
   const shop = scenario(id);
   shop.demand = defaultDemand(20);
@@ -238,44 +244,117 @@ function twoDrinks(id: string) {
   shop.finance.weekdaysPerMonth = illustrative(0);
   shop.finance.weekendsPerMonth = illustrative(1);
   shop.shop.menu[0]!.weight = illustrative(50);
-  shop.shop.menu[0]!.tasks = [{ station: "Brew", staffSeconds: illustrative(1), unattendedSeconds: illustrative(0) }];
-  shop.shop.menu[0]!.economics = { price: illustrative(100), ingredientCost: illustrative(10) };
+  shop.shop.menu[0]!.tasks = [
+    {
+      station: "Brew",
+      staffSeconds: illustrative(1),
+      unattendedSeconds: illustrative(0),
+    },
+  ];
+  shop.shop.menu[0]!.economics = {
+    price: illustrative(100),
+    ingredientCost: illustrative(10),
+  };
   shop.shop.menu[1]!.weight = illustrative(50);
-  shop.shop.menu[1]!.tasks = [{ station: "Grind", staffSeconds: illustrative(1), unattendedSeconds: illustrative(0) }];
-  shop.shop.menu[1]!.economics = { price: illustrative(1000), ingredientCost: illustrative(300) };
+  shop.shop.menu[1]!.tasks = [
+    {
+      station: "Grind",
+      staffSeconds: illustrative(1),
+      unattendedSeconds: illustrative(0),
+    },
+  ];
+  shop.shop.menu[1]!.economics = {
+    price: illustrative(1000),
+    ingredientCost: illustrative(300),
+  };
   return shop;
 }
 
-function completedCounts(run: ReturnType<typeof calculateDecision>["serviceA"]) {
-  const servedIds = new Set(run.playback.timeline.filter(({ kind }) => kind === "order_served").map(({ arrivalId }) => arrivalId));
-  return run.playback.arrivals.filter(({ id }) => servedIds.has(id)).reduce((counts, { itemId }) => counts.set(itemId, (counts.get(itemId) ?? 0) + 1), new Map<string, number>());
+function completedCounts({ timeline, arrivals }: SaturdayResult) {
+  const servedIds = new Set(
+    timeline
+      .filter(({ kind }) => kind === "order_served")
+      .map(({ arrivalId }) => arrivalId),
+  );
+  return arrivals
+    .filter(({ id }) => servedIds.has(id))
+    .reduce(
+      (counts, { itemId }) => counts.set(itemId, (counts.get(itemId) ?? 0) + 1),
+      new Map<string, number>(),
+    );
 }
 
 it("prices only completed drinks and adds the recovered drink at its own price with the switch on", () => {
-  const original = twoDrinks("original");
-  original.shop.equipment.grinder = illustrative(0);
-  const candidate = twoDrinks("candidate");
-  const off = calculateDecision(original, candidate, parameters, { enabled: false, tag: "estimate" });
-  const on = calculateDecision(original, candidate, parameters, { enabled: true, tag: "estimate" });
-  const counts = completedCounts(on.serviceB!);
+  const observedScenario = (id: string): Scenario =>
+    JSON.parse(
+      JSON.stringify(twoDrinks(id), (key, value) =>
+        key === "tag" && value === "illustrative" ? "observed" : value,
+      ),
+    );
+  const original = observedScenario("original");
+  original.shop.equipment.grinder.value = 0;
+  const candidate = observedScenario("candidate");
+  for (const shop of [original, candidate]) {
+    shop.finance.hourlyWage.value = 0;
+    shop.finance.otherRecurring.value = 0;
+    shop.finance.rent.value = 100;
+    shop.shop.menu[1]!.economics!.price.source = { tag: "estimate" };
+    shop.shop.menu[1]!.economics!.ingredientCost.source = { tag: "estimate" };
+  }
+  const off = calculateDecision(original, candidate, parameters, {
+    enabled: false,
+    tag: "observed",
+  });
+  const on = calculateDecision(original, candidate, parameters, {
+    enabled: true,
+    tag: "observed",
+  });
+  const counts = completedCounts(on.serviceB!.playback);
   const [cheap, costly] = candidate.shop.menu;
   const cheapCount = counts.get(cheap!.id)!;
   const costlyCount = counts.get(costly!.id)!;
   expect(cheapCount).toBeGreaterThan(0);
   expect(costlyCount).toBeGreaterThan(0);
-  expect(completedCounts(on.serviceA)).toEqual(new Map([[cheap!.id, cheapCount]]));
+  expect(completedCounts(on.serviceA.playback)).toEqual(
+    new Map([[cheap!.id, cheapCount]]),
+  );
   const scale = 20 / on.weekend.base.arrivals;
   const originalCash = on.cashA.outcomes.base;
   const offCash = off.cashB!.outcomes.base;
   const onCash = on.cashB!.outcomes.base;
-  expect(originalCash.monthlyRevenue.value).toBeCloseTo(scale * cheapCount * 100, 2);
-  expect(originalCash.monthlyIngredientCost.value).toBeCloseTo(scale * cheapCount * 10, 2);
+  expect(originalCash.monthlyRevenue.value).toBeCloseTo(
+    scale * cheapCount * 100,
+    2,
+  );
+  expect(originalCash.monthlyIngredientCost.value).toBeCloseTo(
+    scale * cheapCount * 10,
+    2,
+  );
   expect(offCash.monthlyRevenue).toEqual(originalCash.monthlyRevenue);
-  expect(offCash.monthlyIngredientCost).toEqual(originalCash.monthlyIngredientCost);
-  expect(onCash.monthlyRevenue.value).toBeCloseTo(scale * (cheapCount * 100 + costlyCount * 1000), 2);
-  expect(onCash.monthlyIngredientCost.value).toBeCloseTo(scale * (cheapCount * 10 + costlyCount * 300), 2);
-  expect(onCash.recoveredOrdersPerMonth.value).toBeCloseTo(scale * costlyCount, 9);
+  expect(offCash.monthlyIngredientCost).toEqual(
+    originalCash.monthlyIngredientCost,
+  );
+  expect(onCash.monthlyRevenue.value).toBeCloseTo(
+    scale * (cheapCount * 100 + costlyCount * 1000),
+    2,
+  );
+  expect(onCash.monthlyIngredientCost.value).toBeCloseTo(
+    scale * (cheapCount * 10 + costlyCount * 300),
+    2,
+  );
+  expect(onCash.recoveredOrdersPerMonth.value).toBeCloseTo(
+    scale * costlyCount,
+    9,
+  );
+  expect(offCash.monthlyRevenue.tag).toBe("observed");
+  expect(onCash.monthlyRevenue.tag).toBe("estimate");
+  expect(onCash.monthlyIngredientCost.tag).toBe("estimate");
   expect(off.cashB!.assumptions.weekendUnitEconomics.price.value).toBe(100);
+  expect(off.cashB!.assumptions.breakEvenWeekendMix).toBe(
+    "base-case-completed",
+  );
+  expect(off.cashB!.breakEvenOrdersPerDay.value).toBe(2);
+  expect(on.cashB!.breakEvenOrdersPerDay.value).toBe(1);
 });
 
 it("does not count a drink substitution as saved orders when total losses do not fall", () => {
@@ -283,15 +362,75 @@ it("does not count a drink substitution as saved orders when total losses do not
   original.shop.equipment.groupHead = illustrative(0);
   const candidate = twoDrinks("candidate");
   candidate.shop.equipment.grinder = illustrative(0);
-  const off = calculateDecision(original, candidate, parameters, { enabled: false, tag: "estimate" });
-  const on = calculateDecision(original, candidate, parameters, { enabled: true, tag: "estimate" });
+  const off = calculateDecision(original, candidate, parameters, {
+    enabled: false,
+    tag: "estimate",
+  });
+  const on = calculateDecision(original, candidate, parameters, {
+    enabled: true,
+    tag: "estimate",
+  });
   expect(on.weekend.base.lostB).toBeGreaterThanOrEqual(on.weekend.base.lostA);
-  const originalDrinks = completedCounts(on.serviceA);
-  const candidateDrinks = completedCounts(on.serviceB!);
+  const originalDrinks = completedCounts(on.serviceA.playback);
+  const candidateDrinks = completedCounts(on.serviceB!.playback);
   expect(originalDrinks.size).toBe(1);
   expect(candidateDrinks.size).toBe(1);
   expect([...candidateDrinks.keys()]).not.toEqual([...originalDrinks.keys()]);
   expect(off.cashB!.outcomes.base.monthlyRevenue.value).toBe(0);
   expect(on.cashB!.outcomes.base.monthlyRevenue.value).toBe(0);
   expect(on.cashB!.outcomes.base.recoveredOrdersPerMonth.value).toBe(0);
+  expect(on.cashB!.assumptions.breakEvenWeekendMix).toBe(
+    "arrival-mix-fallback",
+  );
+});
+
+it("prices completions across the whole sample, including runs without playback", () => {
+  const original = twoDrinks("original");
+  original.shop.equipment.grinder.value = 0;
+  const candidate = twoDrinks("candidate");
+  const settings = { ...parameters, runCount: 4 };
+  const { demand, menuMix } = arrivalInputs(original.demand, original.shop);
+  const plan = createArrivalPlan(
+    demand,
+    menuMix,
+    settings.seed,
+    settings.runCount,
+    settings.demandLevel,
+  );
+  const candidateShop = serviceInputs(candidate.shop);
+  const [cheap, costly] = candidate.shop.menu;
+  const sampled = plan.runs.map((arrivals) => ({
+    arrivals: arrivals.length,
+    costlyCompletions:
+      completedCounts(
+        simulateSaturday(candidateShop, { hours: plan.hours, arrivals }),
+      ).get(costly!.id) ?? 0,
+  }));
+  const { cashB } = calculateDecision(original, candidate, settings, {
+    enabled: true,
+    tag: "observed",
+  });
+  const sampledArrivals = sampled.reduce(
+    (total, day) => total + day.arrivals,
+    0,
+  );
+  const costlyCompletions = sampled.reduce(
+    (total, day) => total + day.costlyCompletions,
+    0,
+  );
+  const revenue = (arrivals: number, costlyOrders: number) =>
+    (20 *
+      ((arrivals - costlyOrders) * cheap!.economics!.price.value +
+        costlyOrders * costly!.economics!.price.value)) /
+    arrivals;
+  const expected = revenue(sampledArrivals, costlyCompletions);
+  expect(expected).not.toBeCloseTo(
+    revenue(sampled[0]!.arrivals, sampled[0]!.costlyCompletions),
+    2,
+  );
+  expect(cashB!.outcomes.base.monthlyRevenue.value).toBeCloseTo(expected, 2);
+  expect(cashB!.outcomes.base.recoveredOrdersPerMonth.value).toBeCloseTo(
+    (20 * costlyCompletions) / sampledArrivals,
+    9,
+  );
 });

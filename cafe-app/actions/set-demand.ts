@@ -21,7 +21,7 @@ import {
 
 export default defineAction({
   description:
-    "Edit a cafe scenario's tagged low/base/high hourly demand, Saturday opening hours, hourly curve, or observed Saturday footfall and conversion. Read list-scenarios for its expected revision.",
+    "Edit a cafe scenario's tagged low/base/high hourly demand, Saturday opening hours, hourly curve, or observed Saturday footfall and conversion. For a comparison, read get-comparison and edit its arrivalSource ID at the returned revision. Otherwise read list-scenarios.",
   schema: scenarioEditKey.extend({
     demand: demandFields
       .partial()

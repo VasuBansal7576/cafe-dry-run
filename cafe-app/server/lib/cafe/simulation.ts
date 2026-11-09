@@ -100,6 +100,7 @@ export interface SaturdayResult {
 
 export interface SeriesResult {
   readonly totals: Readonly<{ customersLost: number }>;
+  readonly completedDrinksByRun: readonly ReadonlyMap<string, number>[];
   readonly seed: number;
   readonly demandLevel: DemandLevel;
   readonly runCount: number;
@@ -120,6 +121,7 @@ type NonemptyTasks = readonly [Task, ...Task[]];
 
 interface Order {
   arrivalId: string;
+  itemId: string;
   tasks: readonly Task[];
   nextTask: number;
   waitSeconds: number;
@@ -310,6 +312,7 @@ function day(
     : undefined;
   const waits = resourceWaits();
   const servedWaits: number[] = [];
+  const completedDrinks = new Map<string, number>();
   let customersLost = 0;
   let at = hours.opensAt;
   let serviceEndsAt = hours.closesAt;
@@ -329,7 +332,8 @@ function day(
       );
       if (
         shift &&
-        (!available || shift.endsAt < earliestEnd ||
+        (!available ||
+          shift.endsAt < earliestEnd ||
           (shift.endsAt === earliestEnd && worker.id < available.id))
       ) {
         available = worker;
@@ -394,6 +398,10 @@ function day(
         enqueue(order, nextTask);
       } else {
         servedWaits.push(order.waitSeconds);
+        completedDrinks.set(
+          order.itemId,
+          (completedDrinks.get(order.itemId) ?? 0) + 1,
+        );
         timeline?.push(
           Object.freeze({
             kind: "order_served",
@@ -417,7 +425,10 @@ function day(
       timeline?.push(
         Object.freeze({ kind: "arrived", at, arrivalId: id, itemId }),
       );
-      enqueue({ arrivalId: id, tasks, nextTask: 0, waitSeconds: 0 }, tasks[0]);
+      enqueue(
+        { arrivalId: id, itemId, tasks, nextTask: 0, waitSeconds: 0 },
+        tasks[0],
+      );
     }
 
     // Dispatch in ready order and let other orders use any resources a blocked task cannot claim.
@@ -521,6 +532,7 @@ function day(
     arrivals: arrivals.map(({ arrival }) => arrival),
     timeline: timeline ?? [],
     servedWaits,
+    completedDrinks,
     customersLost,
     utilization,
     waits,
@@ -606,12 +618,14 @@ export function simulateSeries(shop: Shop, plan: ArrivalPlan): SeriesResult {
     true,
   );
   const servedWaits = [...first.servedWaits];
+  const completedDrinksByRun = [first.completedDrinks];
   let customersLost = first.customersLost;
   const totals = first.utilization.map((unit) => ({ ...unit }));
   const waits = first.waits.map((wait) => ({ ...wait }));
 
   for (const arrivals of remainingRuns) {
     const result = day(prepared, { hours: plan.hours, arrivals }, false);
+    completedDrinksByRun.push(result.completedDrinks);
     for (const seconds of result.servedWaits) servedWaits.push(seconds);
     customersLost += result.customersLost;
     // Runs use the same prepared shop, so resource identity and ordering are fixed.
@@ -644,6 +658,7 @@ export function simulateSeries(shop: Shop, plan: ArrivalPlan): SeriesResult {
     demandLevel: plan.demandLevel,
     runCount,
     playback: saturdayResult(first),
+    completedDrinksByRun,
     totals: Object.freeze({ customersLost }),
     stats: Object.freeze({
       meanOrdersServed: servedWaits.length / runCount,

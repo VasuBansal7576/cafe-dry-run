@@ -4,6 +4,7 @@ import {
   type CalculatedNumber,
   type TaggedNumber,
   type Source,
+  type SourceTag,
   type TaggedValue,
 } from "./provenance";
 import {
@@ -31,6 +32,17 @@ export interface CashDay {
   readonly scenarioLosses?: Levels<CashMeasure>;
 }
 
+type MatchedWeekendDrink = UnitEconomics & {
+  readonly common: number;
+  readonly recovered: number;
+};
+
+export interface MatchedWeekendSales {
+  readonly arrivals: number;
+  readonly tag: SourceTag;
+  readonly drinks: readonly MatchedWeekendDrink[];
+}
+
 export interface CashWage {
   readonly hourlyRate: TaggedNumber;
   readonly weekdayHoursPerDay: CashMeasure;
@@ -45,6 +57,7 @@ export interface CashInputs {
   readonly price: CashMeasure;
   readonly ingredientCost: CashMeasure;
   readonly weekendUnitEconomics?: UnitEconomics;
+  readonly matchedWeekendSales?: Levels<MatchedWeekendSales>;
   readonly weekdays: CashDay;
   readonly weekends: CashDay;
   readonly savedCustomers: boolean;
@@ -74,8 +87,8 @@ export interface CashOutcome {
 
 const horizonMonths = 6;
 
-function post(figure: DecimalFigure): Figure {
-  return derive(postedPaise(figure.value), figure);
+function post(figure: DecimalFigure, denominator = 1): Figure {
+  return derive(postedPaise(figure.value, denominator), figure);
 }
 
 function displayMoney(figure: Figure): Figure {
@@ -167,6 +180,39 @@ function displayCount(figure: DecimalFigure): Figure {
   return derive(decimalNumber(figure.value), figure);
 }
 
+function projectMatchedWeekend(
+  sample: MatchedWeekendSales,
+  demand: CashMeasure,
+  countSaved: boolean,
+  assumptionSource?: Source,
+) {
+  const denominator = sample.arrivals || 1;
+  const hasRecovery = sample.drinks.some(({ recovered }) => recovered > 0);
+  const sources = assumptionSource && hasRecovery
+    ? [sample, demand, assumptionSource]
+    : [sample, demand];
+  const lines = sample.drinks.flatMap((drink) => {
+    const sold = drink.common + (countSaved ? drink.recovered : 0);
+    return sold > 0 ? [{ drink, sold }] : [];
+  });
+  const scale = demand.value / denominator;
+  return {
+    denominator,
+    sold: derive(decimal(scale * lines.reduce((sum, { sold }) => sum + sold, 0)), ...sources),
+    recovered: derive(decimal(countSaved
+      ? scale * sample.drinks.reduce((sum, { recovered }) => sum + recovered, 0)
+      : 0), ...sources),
+    salesNumerator(key: keyof UnitEconomics): DecimalFigure {
+      const values = lines.map(({ drink, sold }) => {
+        const unit = drink[key];
+        return derive(multiply(decimal(sold), decimal(unit.value)), unit);
+      });
+      const total = sumDecimalFigures(values);
+      return derive(multiply(total.value, decimal(demand.value)), total, ...sources);
+    },
+  };
+}
+
 function orders(day: CashDay, level: keyof Levels<unknown>, savedCustomers: boolean, assumptionSource?: Source) {
   const demand = day.demand[level];
   const baseline = day.baselineLosses[level];
@@ -234,16 +280,31 @@ export function computeRunway(input: CashInputs) {
 
   function project(level: keyof Levels<unknown>, countSaved: boolean, assumptionSource?: Source): CashOutcome {
     const weekday = orders(weekdays, level, countSaved, assumptionSource);
-    const weekend = orders(weekends, level, countSaved, assumptionSource);
+    const sample = input.matchedWeekendSales?.[level];
+    const matched = sample && projectMatchedWeekend(sample, weekends.demand[level], countSaved, assumptionSource);
+    const weekend = matched ?? orders(weekends, level, countSaved, assumptionSource);
     const monthlyOrders = sumDecimalFigures([perMonth(weekday.sold, weekdayDays), perMonth(weekend.sold, weekendDays)]);
     const recovered = sumDecimalFigures([perMonth(weekday.recovered, weekdayDays), perMonth(weekend.recovered, weekendDays)]);
     const postMonthlyOrders = (key: keyof UnitEconomics) => {
       const weekdayUnit = weekdayUnits[key];
       const weekendUnit = weekendUnits[key];
-      return post(sumDecimalFigures([
-        perMonth(derive(multiply(weekday.sold.value, decimal(weekdayUnit.value)), weekday.sold, weekdayUnit), weekdayDays),
-        perMonth(derive(multiply(weekend.sold.value, decimal(weekendUnit.value)), weekend.sold, weekendUnit), weekendDays),
-      ]));
+      const weekdaySales = perMonth(
+        derive(multiply(weekday.sold.value, decimal(weekdayUnit.value)), weekday.sold, weekdayUnit),
+        weekdayDays,
+      );
+      if (matched) {
+        const scaledWeekdays = derive(
+          multiply(weekdaySales.value, decimal(matched.denominator)),
+          weekdaySales,
+        );
+        const scaledWeekends = perMonth(matched.salesNumerator(key), weekendDays);
+        return post(sumDecimalFigures([scaledWeekdays, scaledWeekends]), matched.denominator);
+      }
+      const weekendSales = perMonth(
+        derive(multiply(weekend.sold.value, decimal(weekendUnit.value)), weekend.sold, weekendUnit),
+        weekendDays,
+      );
+      return post(sumDecimalFigures([weekdaySales, weekendSales]));
     };
     const revenueCents = postMonthlyOrders("price");
     const ingredientCents = postMonthlyOrders("ingredientCost");

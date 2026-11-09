@@ -42,6 +42,7 @@ export default defineAction({
         serviceRun: receipt.a.service.id,
         bottleneck: receipt.a.service.summary.stats.bottleneck,
         breakEvenOrdersPerOpenDay: receipt.a.cash.breakEvenOrdersPerDay,
+        breakEvenWeekendMix: receipt.a.cash.assumptions.breakEvenWeekendMix,
         monthlyCash: receipt.a.cash.outcomes[level].monthlyCash,
         runway: receipt.a.cash.outcomes[level].runway,
       },
@@ -50,6 +51,7 @@ export default defineAction({
         serviceRun: receipt.b.service.id,
         bottleneck: receipt.b.service.summary.stats.bottleneck,
         breakEvenOrdersPerOpenDay: receipt.b.cash.breakEvenOrdersPerDay,
+        breakEvenWeekendMix: receipt.b.cash.assumptions.breakEvenWeekendMix,
         monthlyCash: receipt.b.cash.outcomes[level].monthlyCash,
         runway: receipt.b.cash.outcomes[level].runway,
       },
@@ -62,7 +64,7 @@ export default defineAction({
         test: "Use higherMonthlyCash to explain the current ordering and the ordering under each switch setting.",
       },
       basis:
-        "Both scenarios use the exact same Saturday arrivals and reference loss stream from the shared cash baseline. Weekdays use their own assumptions. Weekend daily losses use the matched sample loss share. Cash figures are INR per month except for cash after startup. Wait figures are seconds and losses are orders per Saturday.",
+        "Both scenarios use the exact same Saturday arrivals. Weekend sales use completed orders by drink, scaled to expected daily arrivals. With the switch off, sales use the lower of the shop and baseline completion counts for each drink on each Saturday. Turning it on adds the shop's additional completed drinks only when total sample losses fall. Break-even holds daily orders constant and uses the projected base-case weekend mix, or the arrival mix if there are no projected orders. Weekdays use their own assumptions. Cash figures are INR per month except for cash after startup. Wait figures are seconds and losses are orders per Saturday.",
     };
   },
 });

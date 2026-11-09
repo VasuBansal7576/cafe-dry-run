@@ -413,6 +413,21 @@ function Receipt({ decision }: { decision: StoredDecision }) {
       format: countFormat,
     },
     {
+      label: "Weekend orders per open day",
+      get: ({ cash }) => cash.outcomes[demandLevel].weekendOrdersPerDay,
+      format: countFormat,
+    },
+    {
+      label: "Monthly revenue",
+      get: ({ cash }) => cash.outcomes[demandLevel].monthlyRevenue,
+      format: cashFormat,
+    },
+    {
+      label: "Monthly ingredient costs",
+      get: ({ cash }) => cash.outcomes[demandLevel].monthlyIngredientCost,
+      format: cashFormat,
+    },
+    {
       label: "Monthly cash change",
       get: ({ cash }) => cash.outcomes[demandLevel].monthlyCash,
       format: cashFormat,
@@ -489,8 +504,8 @@ function Receipt({ decision }: { decision: StoredDecision }) {
           are paid before month one.
         </p>
         <p>
-          Weekend orders use expected daily arrivals and the loss share from the
-          actual seeded Saturdays. Weekdays use their own arrivals and loss
+          Weekend sales use completed drinks from the matched Saturdays, scaled
+          to expected daily arrivals. Weekdays use their own arrivals and loss
           assumptions.
         </p>
         {receipt.cashBaseline && (
@@ -514,8 +529,9 @@ function Receipt({ decision }: { decision: StoredDecision }) {
         <details>
           <summary>Prices and ingredient costs by day type</summary>
           <p>
-            Weekdays use each café's menu mix. Saturdays use the matched arrival
-            mix. Break-even assumes the same number of orders each open day.
+            Break-even assumes the same order count each open day. It uses each
+            café's weekday menu mix and its projected completed-drink mix in the
+            base Saturday demand case.
           </p>
           {(b ? [a, b] : [a]).map(({ label, cash, service }) => (
             <div key={service.scenarioId}>
@@ -528,7 +544,13 @@ function Receipt({ decision }: { decision: StoredDecision }) {
                     cash.assumptions.weekdayLegacyDrinks,
                   ],
                   [
-                    "Weekend",
+                    cash.assumptions.breakEvenWeekendMix ===
+                    "base-case-completed"
+                      ? "Weekend break-even · base case"
+                      : cash.assumptions.breakEvenWeekendMix ===
+                          "arrival-mix-fallback"
+                        ? "Weekend break-even · arrival mix used because no orders are projected"
+                        : "Weekend break-even · saved arrival mix",
                     cash.assumptions.weekendUnitEconomics,
                     cash.assumptions.weekendLegacyDrinks,
                   ],
@@ -562,8 +584,8 @@ function Receipt({ decision }: { decision: StoredDecision }) {
               No sampled weekend arrivals for{" "}
               {unsampled.map((level) => caseLabels[level]).join(", ")}.
             </strong>{" "}
-            These cases use an illustrative zero loss share. Increase the number
-            of Saturdays to sample the demand.
+            These cases project zero Saturday sales. Run more Saturdays to
+            sample this demand.
           </p>
         )}
         {b && (
