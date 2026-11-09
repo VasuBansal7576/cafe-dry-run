@@ -44,6 +44,20 @@ import { formatClock } from "./scenario-inputs";
 const playbackSpeeds = [30, 120, 600] as const;
 const playbackSyncInterval = 1000;
 const playbackStateKey = `cafe-playback:${TAB_ID}`;
+const playbackSeekBaselineKey = `${playbackStateKey}:seek-baseline`;
+
+function rememberPlaybackSeek(resultId: string, seekId: string | null) {
+  const prefix = `${resultId}:`;
+  const next = `${prefix}${seekId ?? ""}`;
+  try {
+    const previous = sessionStorage.getItem(playbackSeekBaselineKey);
+    if (previous !== next)
+      sessionStorage.setItem(playbackSeekBaselineKey, next);
+    return previous?.startsWith(prefix) === true && previous !== next;
+  } catch {
+    return false;
+  }
+}
 const number = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 1 });
 const comparisonNumber = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 2,
@@ -243,7 +257,8 @@ export function Playback({
       : {}),
   };
   const location = useLocation();
-  const scope = `${location.key}:${receiptId ?? run.id}`;
+  const resultId = receiptId ?? run.id;
+  const scope = `${location.key}:${resultId}`;
   const queryKey = ["app-state", playbackStateKey, scope];
   const queryClient = useQueryClient();
   const savedPosition = useQuery({
@@ -323,35 +338,45 @@ export function Playback({
   useEffect(() => {
     if (time >= end) setPlaying(false);
   }, [end, time]);
+  const localPlaybackIntent = useRef(false);
   const synced = useRef({
     ready: false,
     seekId: null as string | null,
+    rememberedResult: null as string | null,
     applied: null as string | null,
     remoteSecond: null as number | null,
   });
   const pending = useRef<{ position: string; queued: boolean } | null>(null);
-  const positionKey = (value: number) => `${receiptId ?? run.id}:${value}`;
+  const positionKey = (value: number) => `${resultId}:${value}`;
   const applySavedPosition = useEffectEvent(() => {
     if (!navigationReady || stale) return;
     const stored = savedPosition.data?.playback;
     const state = synced.current;
     const seekId = stored?.seekId ?? null;
-    const changed = !state.ready || state.seekId !== seekId;
+    const initial = !state.ready;
+    const changed = state.seekId !== seekId;
     state.ready = true;
     state.seekId = seekId;
     if (
-      changed &&
-      stored &&
-      samePlayback(stored, identity) &&
-      stored.second >= start &&
-      stored.second <= end
-    ) {
-      state.applied = positionKey(stored.second);
-      state.remoteSecond = stored.second;
-      clockGeneration.current += 1;
-      setTime(stored.second);
-      setPlaying(false);
+      !stored ||
+      !samePlayback(stored, identity) ||
+      stored.second < start ||
+      stored.second > end
+    )
+      return;
+    let changedSinceLastView = false;
+    if (state.rememberedResult !== resultId || changed) {
+      changedSinceLastView = rememberPlaybackSeek(resultId, seekId);
+      state.rememberedResult = resultId;
     }
+    const agentSeek =
+      seekId !== null && (initial ? changedSinceLastView : changed);
+    if (initial || agentSeek) state.applied = positionKey(stored.second);
+    if (!agentSeek && (!initial || localPlaybackIntent.current)) return;
+    state.remoteSecond = stored.second;
+    clockGeneration.current += 1;
+    setTime(stored.second);
+    setPlaying(false);
   });
   useEffect(
     () => applySavedPosition(),
@@ -450,6 +475,7 @@ export function Playback({
             className="cafe-primary"
             type="button"
             onClick={() => {
+              localPlaybackIntent.current = true;
               synced.current.remoteSecond = null;
               if (time >= end) setTime(start);
               setPlaying(!playing);
@@ -485,6 +511,7 @@ export function Playback({
             value={second}
             aria-valuetext={`${formatClock(second)}:${String(second % 60).padStart(2, "0")}`}
             onChange={(event) => {
+              localPlaybackIntent.current = true;
               synced.current.remoteSecond = null;
               setTime(Number(event.target.value));
             }}
