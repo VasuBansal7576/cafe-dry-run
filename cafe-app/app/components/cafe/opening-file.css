@@ -1,0 +1,174 @@
+.cafe-opening {
+  container-type: inline-size;
+  max-width: 1480px;
+  margin-inline: auto;
+}
+.cafe-opening-spread {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.17fr);
+  gap: clamp(14px, 3.75cqw, 55px);
+  align-items: center;
+  padding-block: 47px 24px;
+}
+.cafe-opening .cafe-opening-copy .cafe-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--cafe-signal);
+  font-weight: 650;
+}
+.cafe-opening-copy .cafe-kicker::before {
+  content: "";
+  width: 18px;
+  border-top: 1px solid currentColor;
+}
+.cafe-opening .cafe-opening-copy h1 {
+  font-size: clamp(62px, 11.15cqw, 145px);
+  letter-spacing: -0.091em;
+  line-height: 0.81;
+  margin-block: 15px 18px;
+}
+.cafe-opening-copy em {
+  color: var(--cafe-signal);
+}
+.cafe-opening-deck {
+  max-width: 37ch;
+  color: var(--cafe-muted);
+  font-size: clamp(14px, 1.82cqw, 19px);
+  line-height: 1.42;
+}
+.cafe-opening .cafe-opening-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  margin-top: 16px;
+  padding: 8px 11px;
+  border: 1px solid var(--cafe-signal);
+  border-radius: 2px;
+  background: var(--cafe-signal);
+  color: var(--cafe-signal-ink);
+  font-size: 13px;
+  font-weight: 680;
+  text-decoration: none;
+}
+.cafe-opening-action span {
+  font-size: 17px;
+  line-height: 1;
+}
+.cafe-opening-art {
+  display: grid;
+  align-items: center;
+  position: relative;
+  isolation: isolate;
+  min-height: clamp(246px, 34cqw, 437px);
+  margin-inline-end: 5px;
+}
+.cafe-opening-art::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 3% 1% 5%;
+  border: 1px solid #83614b;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 20px, #d6a07d24 20px 21px),
+    #584133;
+  box-shadow: 4px 9px 21px #0d0a078c;
+  transform: rotate(-4deg);
+}
+.cafe-opening-photo {
+  margin: 7px 3% 4% 4%;
+  padding: 7px 7px 6px;
+  border: 1px solid #c2aa88;
+  background: var(--cafe-paper);
+  color: var(--cafe-print);
+  box-shadow: 4px 7px 17px #070604b0;
+  transform: rotate(2.5deg);
+}
+.cafe-opening-photo img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1.65;
+  object-fit: cover;
+}
+.cafe-opening-photo figcaption {
+  padding: 6px 2px 0;
+  font: 650 11px/1.35 var(--cafe-mono);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.cafe-opening-clip {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  left: 11%;
+  width: 29px;
+  height: 16px;
+  border: 2px solid #9c8b74;
+  border-radius: 12px;
+  background: linear-gradient(#746d60, #312c26);
+  box-shadow: 1px 2px 4px #21191184;
+  transform: rotate(2.5deg);
+}
+.cafe-opening-slip {
+  --cafe-opening-receipt: #fff3d9;
+  position: absolute;
+  right: -1%;
+  bottom: 1%;
+  width: min(62%, 260px);
+  padding: 9px 11px;
+  border-top: 3px solid var(--cafe-signal);
+  background: var(--cafe-opening-receipt);
+  color: var(--cafe-print);
+  box-shadow: 3px 7px 12px #110e0aad;
+  font: 11px/1.35 var(--cafe-mono);
+  transform: rotate(-5deg);
+}
+.cafe-opening-slip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  height: 6px;
+  background:
+    linear-gradient(135deg, var(--cafe-opening-receipt) 25%, transparent 26%) 0
+      0 / 10px 10px,
+    linear-gradient(225deg, var(--cafe-opening-receipt) 25%, transparent 26%) 0
+      0 / 10px 10px;
+}
+.cafe-opening-slip-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 5px;
+  padding-bottom: 4px;
+  border-bottom: 1px dashed #9d896d;
+}
+.cafe-opening-slip strong {
+  display: block;
+  padding-block: 4px 2px;
+  font: 700 clamp(15px, 2.3cqw, 24px)/1.2 var(--cafe-serif);
+}
+@container (max-width: 604px) {
+  .cafe-opening-spread {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 19px;
+    padding-top: 39px;
+  }
+  .cafe-opening .cafe-opening-copy h1 {
+    font-size: clamp(59px, 14cqw, 90px);
+  }
+  .cafe-opening-copy br {
+    display: none;
+  }
+  .cafe-opening-art {
+    width: min(100%, 470px);
+    min-height: 0;
+    margin: 0 auto;
+    padding-bottom: 26px;
+  }
+  .cafe-opening-photo figcaption {
+    max-width: 14ch;
+  }
+}
