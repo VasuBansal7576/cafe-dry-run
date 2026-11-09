@@ -82,6 +82,44 @@ describe("paired café decisions", () => {
     expect(steam.cashA.outcomes.base.monthlyCash.tag).toBe("illustrative");
   });
 
+  it("tags unused utilization from only the mix weights that could use that machine", () => {
+    const a = scenario("a");
+    markObserved(a);
+    a.shop.menu[0]!.weight.source = { tag: "estimate" };
+    a.shop.menu[1]!.weight.value = 0;
+    a.shop.equipment.steamWand.source = {
+      tag: "public",
+      url: "https://example.com/synthetic-spec",
+      retrievedAt: "2026-11-09",
+      supportingValue: "1 steam wand",
+    };
+    const decide = () =>
+      calculateDecision(a, null, parameters, {
+        enabled: false,
+        tag: "observed",
+      }).serviceA.summary;
+    const steam = (summary: ReturnType<typeof decide>) =>
+      summary.stats.utilization.find(({ kind }) => kind === "steamWand");
+
+    expect(decide().provenance).toBe("estimate");
+    expect(steam(decide())).toMatchObject({
+      fraction: 0,
+      fractionProvenance: "public",
+    });
+
+    a.shop.menu[1]!.weight.source = { tag: "illustrative" };
+    expect(steam(decide())).toMatchObject({
+      fraction: 0,
+      fractionProvenance: "illustrative",
+    });
+
+    a.shop.menu.pop();
+    expect(steam(decide())).toMatchObject({
+      fraction: 0,
+      fractionProvenance: "public",
+    });
+  });
+
   it("includes zero mix weights, but not excluded drink prices, in weekday provenance", () => {
     const a = scenario("a");
     const b = scenario("b");

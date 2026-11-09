@@ -584,3 +584,133 @@ it("reruns legacy solo and paired settings with capacity evidence while preservi
   expect((await readRun(b.id, oldPairIds[1])).stale).toBe(true);
   expect((await readRun(b.id, newPairIds[1])).stale).toBe(true);
 });
+
+it("keeps legacy paired service deltas on a cash-only refresh", async () => {
+  const { scenario: initial } = await createScenario.run({}, owner);
+  function observed<T>(value: T): T {
+    if (typeof value !== "object" || value === null) return value;
+    if (Array.isArray(value)) return value.map(observed) as T;
+    if ("source" in value) return { ...value, source: { tag: "observed" } };
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [key, observed(child)]),
+    ) as T;
+  }
+  const { scenario: withDemand } = await setDemand.run(
+    {
+      id: initial.id,
+      expectedRevision: initial.revision,
+      demand: observed(initial.demand),
+    },
+    owner,
+  );
+  const shop = observed(withDemand.shop);
+  shop.menu[1]!.weight.value = 0;
+  shop.equipment.steamWand = illustrative(1);
+  const versionOf = ({ id, revision, financeRevision }: typeof initial) => ({
+    id,
+    expectedRevision: revision,
+    expectedFinanceRevision: financeRevision,
+  });
+  const { scenario: a } = await configureShop.run(
+    {
+      ...versionOf(withDemand),
+      shop,
+      finance: observed(withDemand.finance),
+    },
+    owner,
+  );
+  const { scenario: b } = await configureShop.run(
+    {
+      ...versionOf(a),
+      variantLabel: "Alternate",
+    },
+    owner,
+  );
+  const { receipt: current } = await compareScenarios.run(
+    {
+      a: versionOf(a),
+      b: versionOf(b),
+      ...settings,
+    },
+    owner,
+  );
+
+  const legacy = structuredClone(current);
+  const db = getDb();
+  for (const side of [legacy.a, legacy.b!]) {
+    const { id, scenarioId, scenarioRevision, summary } = side.service;
+    const parts = [
+      "paired-v3",
+      scenarioId,
+      scenarioRevision,
+      a.id,
+      a.revision,
+      settings.seed,
+      settings.runCount,
+      settings.demandLevel,
+      "playback-v2",
+    ];
+    const digest = createHash("sha256")
+      .update(JSON.stringify(parts))
+      .digest("hex");
+    side.service.id = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+    summary.provenance = "illustrative";
+    for (const utilization of summary.stats.utilization) {
+      delete utilization.fractionProvenance;
+    }
+    await db
+      .update(serviceRuns)
+      .set({ id: side.service.id, summary })
+      .where(eq(serviceRuns.id, id));
+  }
+  const serviceFields = [
+    "waitP50Seconds",
+    "waitP90Seconds",
+    "customersLostPerSaturday",
+  ] as const;
+  for (const field of serviceFields) {
+    expect(current.delta![field].tag).toBe("observed");
+    legacy.delta![field].tag = "illustrative";
+  }
+  await db
+    .update(decisionRuns)
+    .set({ receipt: legacy })
+    .where(eq(decisionRuns.id, legacy.id));
+
+  const { scenario: updatedB } = await configureFinance.run(
+    {
+      id: b.id,
+      expectedFinanceRevision: b.financeRevision,
+      finance: {
+        rent: {
+          value: b.finance.rent.value + 1000,
+          source: { tag: "observed" },
+        },
+      },
+    },
+    owner,
+  );
+  const { receipt: refreshed } = await computeRunway.run(
+    {
+      comparison: {
+        a: versionOf(a),
+        b: versionOf(updatedB),
+        receiptId: legacy.id,
+      },
+    },
+    owner,
+  );
+  expect(refreshed.a.service).toEqual(legacy.a.service);
+  expect(refreshed.b?.service).toEqual(legacy.b!.service);
+  for (const field of serviceFields) {
+    expect(refreshed.delta![field]).toEqual(legacy.delta![field]);
+  }
+  expect(refreshed.delta!.monthlyCash.value).toBe(
+    legacy.delta!.monthlyCash.value - 1000,
+  );
+  const [saved] = await db
+    .select({ receipt: decisionRuns.receipt })
+    .from(decisionRuns)
+    .where(eq(decisionRuns.id, legacy.id));
+  expect(saved?.receipt).toEqual(legacy);
+});

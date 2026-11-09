@@ -413,17 +413,31 @@ export function serviceInputs(shop: ScenarioShop): Shop {
   };
 }
 
-export function orderedTasks(shop: ScenarioShop, arrivalMenu: ScenarioShop["menu"]) {
-  const orderedDrinks = new Set(
-    arrivalMenu.filter(({ weight }) => weight.value > 0).map(({ id }) => id),
+export function serviceWorkload(
+  shop: ScenarioShop,
+  arrivalMenu: ScenarioShop["menu"],
+) {
+  const weights = new Map(arrivalMenu.map(({ id, weight }) => [id, weight]));
+  const equipmentMix: Record<keyof ScenarioShop["equipment"], Source[]> = {
+    grinder: [],
+    groupHead: [],
+    steamWand: [],
+  };
+  const tasks = shop.menu.flatMap(({ id, tasks }) => {
+    const weight = weights.get(id);
+    if (!weight) return [];
+    for (const task of tasks) {
+      if ("unattendedSeconds" in task)
+        equipmentMix[equipmentByStation[task.station]].push(weight.source);
+    }
+    return weight.value > 0 ? tasks : [];
+  });
+  const equipment = new Set(
+    tasks.flatMap((task) =>
+      "unattendedSeconds" in task ? [equipmentByStation[task.station]] : [],
+    ),
   );
-  const tasks = shop.menu
-    .filter(({ id }) => orderedDrinks.has(id))
-    .flatMap(({ tasks }) => tasks);
-  const equipment = new Set(tasks.flatMap((task) =>
-    "unattendedSeconds" in task ? [equipmentByStation[task.station]] : [],
-  ));
-  return { tasks, equipment };
+  return { tasks, equipment, equipmentMix };
 }
 
 export function serviceSources(
@@ -432,7 +446,7 @@ export function serviceSources(
   level: (typeof demandLevels)[number],
   arrivalMenu = shop.menu,
 ): Source[] {
-  const { tasks, equipment } = orderedTasks(shop, arrivalMenu);
+  const { tasks, equipment } = serviceWorkload(shop, arrivalMenu);
   return [
     ...demandSources(demand, level),
     ...[...equipment].map((machine) => shop.equipment[machine].source),

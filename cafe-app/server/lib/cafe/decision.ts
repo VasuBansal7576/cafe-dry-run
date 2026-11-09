@@ -19,12 +19,12 @@ import {
 import {
   arrivalInputs,
   demandSources,
-  orderedTasks,
   pedestrianDailyArrivals,
   sampledArrivalProvenance,
   serviceInputs,
   serviceProvenance,
   serviceSources,
+  serviceWorkload,
 } from "./scenario";
 import type { Scenario } from "./scenario-store";
 import type { ServiceRun } from "./service-run";
@@ -62,7 +62,7 @@ export function summarizeService(
   result: SeriesResult,
 ): ServiceRun["summary"] {
   const menu = arrivalScenario.shop.menu;
-  const { equipment } = orderedTasks(scenario.shop, menu);
+  const { equipment, equipmentMix } = serviceWorkload(scenario.shop, menu);
   const provenance = serviceProvenance(
     arrivalScenario.demand,
     scenario.shop,
@@ -90,7 +90,7 @@ export function summarizeService(
             ? provenance
             : weakestTag([
                 scenario.shop.equipment[resource.kind].source,
-                ...menu.map(({ weight }) => weight.source),
+                ...equipmentMix[resource.kind],
               ]),
       })),
     },

@@ -387,6 +387,7 @@ export async function saveDecision(
             },
           }
         : { id, scenarioId, scenarioRevision, arrivalSource, summary };
+    const savedDelta = matchedReceipt?.delta;
     const receipt = validateInput(decisionReceiptSchema, {
       id: crypto.randomUUID(),
       settings,
@@ -420,7 +421,15 @@ export async function saveDecision(
           : null,
       weekendDemand: calculated.weekendDemand,
       weekend: calculated.weekend,
-      delta: calculated.delta,
+      delta:
+        calculated.delta && savedDelta
+          ? {
+              ...calculated.delta,
+              waitP50Seconds: savedDelta.waitP50Seconds,
+              waitP90Seconds: savedDelta.waitP90Seconds,
+              customersLostPerSaturday: savedDelta.customersLostPerSaturday,
+            }
+          : calculated.delta,
     });
     if (runB && !matchedReceipt) {
       for (const { row, scenario } of inputs.values()) {
