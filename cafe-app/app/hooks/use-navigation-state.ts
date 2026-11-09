@@ -4,6 +4,7 @@ import {
 } from "@agent-native/core/client/api-path";
 import { useAgentRouteState } from "@agent-native/core/client/navigation";
 
+import { useCafeDocument, type CafeDocument } from "@/hooks/use-cafe-document";
 import {
   chatThreadPath,
   HOME_PATH,
@@ -13,13 +14,6 @@ import {
 } from "@/lib/chat-paths";
 import { TAB_ID } from "@/lib/tab-id";
 
-const cafeDocuments = [
-  "opening-file",
-  "site-demand",
-  "service-test",
-  "cash-ledger",
-] as const;
-
 export interface NavigationState {
   view?: string;
   path?: string;
@@ -28,25 +22,26 @@ export interface NavigationState {
   scenarioId?: string;
   comparisonScenarioId?: string;
   hash?: string;
-  document?: (typeof cafeDocuments)[number];
+  document?: CafeDocument;
+  documentHash?: `#${CafeDocument}`;
 }
 
 export function useNavigationState() {
+  const { document } = useCafeDocument();
   useAgentRouteState<NavigationState>({
     browserTabId: TAB_ID,
     requestSource: TAB_ID,
     getNavigationState: ({ pathname, hash, searchParams }) => {
       const navigation = navigationStateForPath(pathname);
       if (navigation.view !== "cafe") return navigation;
-      const document = cafeDocuments.find(
-        (name) => `#${name}` === (hash || "#opening-file"),
-      );
       const scenarioId = searchParams.get("scenario");
       const comparisonScenarioId = searchParams.get("compare");
       return {
         ...navigation,
         hash,
-        ...(document ? { document } : {}),
+        ...(document
+          ? { document, documentHash: `#${document}` as const }
+          : {}),
         ...(scenarioId ? { scenarioId } : {}),
         ...(comparisonScenarioId ? { comparisonScenarioId } : {}),
       };

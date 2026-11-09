@@ -48,7 +48,7 @@ Follow the project rules in `../AGENTS.md` and behavior specification in `../caf
 | `run-simulation` | Persist a seeded service result for the current revision. Use its metrics and provenance when explaining the result. |
 | `get-simulation` | Read a saved run and its stale status. Request playback only when the arrival and event timeline is needed. |
 
-Use `navigate` to open `/cafe?scenario=<id>` with `#opening-file`, `#site-demand`, `#service-test`, or `#cash-ledger`. `view-screen` includes the tab's current document, selected scenarios, saved spot, displayed run IDs and timeline position. Active playback refreshes the position once per second. A stale result describes the earlier run revision. Simulation numbers come from actions. Explain opens the built-in agent chat.
+Use `navigate` to open `/cafe?scenario=<id>` with `#opening-file`, `#site-demand`, `#service-test`, or `#cash-ledger`. `view-screen` returns the visible document and its `documentHash`, even after scrolling without changing the URL's `hash`. It also includes the selected scenarios, saved spot, displayed run IDs and timeline position. Active playback refreshes the position once per second. A stale result describes the earlier run revision. Simulation numbers come from actions. Explain opens the built-in agent chat.
 
 | Comparison and cash action | Use |
 | --- | --- |

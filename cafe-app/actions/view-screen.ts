@@ -6,7 +6,7 @@ import { findScenario } from "../server/lib/cafe/scenario-store.js";
 
 export default defineAction({
   description:
-    "Read the current tab's view. In the café, returns the active document hash, selected A and B, the saved site and the displayed run IDs and timeline position.",
+    "Read the current tab's view. In the café, returns the visible document and its documentHash, selected A and B, the saved site and the displayed run IDs and timeline position.",
   schema: z.object({}),
   http: false,
   readOnly: true,

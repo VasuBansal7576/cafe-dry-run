@@ -11,6 +11,11 @@ import { scenarioVersion } from "@/components/cafe/finance-ledger";
 import { OpeningFile } from "@/components/cafe/opening-file";
 import { DemandForm, ShopForm } from "@/components/cafe/scenario-inputs";
 import { SiteMap } from "@/components/cafe/site-map";
+import {
+  cafeDocuments,
+  useCafeDocument,
+  type CafeDocument,
+} from "@/hooks/use-cafe-document";
 
 import type { Scenario } from "../../server/lib/cafe/scenario-store.js";
 
@@ -20,6 +25,7 @@ export default function CafeRoute() {
   const query = useActionQuery("list-scenarios", {});
   const location = useLocation();
   const { hash } = location;
+  const { document: activeDocument, reportScroll } = useCafeDocument();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const selected = params.get("scenario");
@@ -29,6 +35,7 @@ export default function CafeRoute() {
     : query.data?.scenarios[0];
   const hasScenario = !!scenario;
   const workspace = useRef<HTMLDivElement>(null);
+  const documentRail = useRef<HTMLElement>(null);
   const lastFragment = useRef<{
     location: typeof location;
     id: string;
@@ -105,6 +112,45 @@ export default function CafeRoute() {
     }
   }, [hasScenario, location]);
 
+  useEffect(() => {
+    const node = workspace.current;
+    const rail = documentRail.current;
+    const scrollArea = node?.closest("main");
+    if (!node || !rail || !scrollArea) return;
+    const padding =
+      Number.parseFloat(getComputedStyle(scrollArea).scrollPaddingBlockStart) ||
+      0;
+    let frame = 0;
+    let lastVisible: CafeDocument | undefined;
+    const trackDocument = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        const line =
+          Math.max(
+            rail.getBoundingClientRect().bottom,
+            scrollArea.getBoundingClientRect().top + padding,
+          ) + 8;
+        let visible: CafeDocument = "opening-file";
+        for (const name of cafeDocuments) {
+          const section = node.querySelector(`#${name}`);
+          if (section && section.getBoundingClientRect().top <= line)
+            visible = name;
+        }
+        if (visible !== lastVisible) {
+          lastVisible = visible;
+          reportScroll(visible);
+        }
+      });
+    };
+    scrollArea.addEventListener("scroll", trackDocument, { passive: true });
+    if (!hash) trackDocument();
+    return () => {
+      scrollArea.removeEventListener("scroll", trackDocument);
+      cancelAnimationFrame(frame);
+    };
+  }, [hash, hasScenario, reportScroll]);
+
   return (
     <div className="cafe-workspace" ref={workspace}>
       <header className="cafe-masthead">
@@ -113,30 +159,40 @@ export default function CafeRoute() {
         </span>
         <span className="cafe-masthead-note">Café opening simulator</span>
       </header>
-      <nav className="cafe-rail" aria-label="Café Dry Run documents">
+      <nav
+        ref={documentRail}
+        className="cafe-rail"
+        aria-label="Café Dry Run documents"
+      >
         <a
           href="#opening-file"
           aria-current={
-            !hash || hash === "#opening-file" ? "location" : undefined
+            activeDocument === "opening-file" ? "location" : undefined
           }
         >
           <span>00</span> Opening file
         </a>
         <a
           href="#site-demand"
-          aria-current={hash === "#site-demand" ? "location" : undefined}
+          aria-current={
+            activeDocument === "site-demand" ? "location" : undefined
+          }
         >
           <span>01</span> Site & demand
         </a>
         <a
           href="#service-test"
-          aria-current={hash === "#service-test" ? "location" : undefined}
+          aria-current={
+            activeDocument === "service-test" ? "location" : undefined
+          }
         >
           <span>02</span> Service test
         </a>
         <a
           href="#cash-ledger"
-          aria-current={hash === "#cash-ledger" ? "location" : undefined}
+          aria-current={
+            activeDocument === "cash-ledger" ? "location" : undefined
+          }
         >
           <span>03</span> Cash ledger
         </a>

@@ -23,6 +23,7 @@ import type { LinksFunction } from "react-router";
 
 import { Layout as AppLayout } from "@/components/layout/Layout";
 import { AppToolkitProvider } from "@/components/ui/toolkit-provider";
+import { CafeDocumentProvider } from "@/hooks/use-cafe-document";
 import { useNavigationState } from "@/hooks/use-navigation-state";
 import { APP_TITLE } from "@/lib/app-config";
 import {
@@ -196,8 +197,10 @@ export default function Root() {
         skeletonLayout={skeletonLayoutForPath(pathname)}
         i18n={{ catalog: i18nCatalog }}
       >
-        <DbSyncSetup />
-        <AppContent />
+        <CafeDocumentProvider>
+          <DbSyncSetup />
+          <AppContent />
+        </CafeDocumentProvider>
       </AppProviders>
     </AppToolkitProvider>
   );
