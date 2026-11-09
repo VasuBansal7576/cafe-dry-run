@@ -143,7 +143,10 @@ function quoteTexts(value: unknown): string[] {
 // Only a whole saved value can supply names or exact quotes. Buffer fragments by
 // the action-returned version and match the offset requested in the same tool call.
 function scenarioInputReader() {
-  const pending = new Map<string, { nextOffset: number; text: string }>();
+  const pending = new Map<
+    string,
+    { nextOffset: number; text: string; scenario: Record<string, unknown> }
+  >();
   return (
     parsed: Record<string, unknown> | undefined,
     call: Record<string, unknown> | undefined,
@@ -152,8 +155,9 @@ function scenarioInputReader() {
     const requested = object(call?.input);
     if (!page || typeof page.section !== "string") return;
     const path = Array.isArray(requested?.path) ? requested.path : [];
-    if (page.value !== undefined)
-      return { section: page.section, path, value: page.value };
+    const scenario = object(parsed?.scenario);
+    if (page.value !== undefined && scenario)
+      return { section: page.section, path, value: page.value, scenario };
     if (
       typeof page.text !== "string" ||
       typeof page.version !== "string" ||
@@ -161,17 +165,25 @@ function scenarioInputReader() {
     )
       return;
 
-    const offset = requested.offset ?? 0;
+    const offset = typeof requested.offset === "number" ? requested.offset : 0;
     const previous = pending.get(page.version);
     if (offset !== 0 && previous?.nextOffset !== offset) return;
+    const observedScenario = offset === 0 ? scenario : previous?.scenario;
+    if (!observedScenario) return;
     const text = offset === 0 ? page.text : previous!.text + page.text;
     if (typeof page.nextOffset === "number") {
-      pending.set(page.version, { text, nextOffset: page.nextOffset });
+      if (page.nextOffset !== offset + page.text.length) return;
+      pending.set(page.version, {
+        text,
+        nextOffset: page.nextOffset,
+        scenario: observedScenario,
+      });
       return;
     }
     pending.delete(page.version);
     const value = page.nextOffset === null ? parseJson(text) : undefined;
-    if (value !== undefined) return { section: page.section, path, value };
+    if (value !== undefined)
+      return { section: page.section, path, value, scenario: observedScenario };
   };
 }
 
@@ -249,11 +261,22 @@ function turnQuoteSources({
     index,
     { name, content, isError, toolCallId },
   ] of toolResults.entries()) {
+    const input = calls.get(toolCallId);
+    if (isError) {
+      if (
+        name === "list-scenarios" &&
+        input &&
+        /\(errorCode: scenario_(?:conflict|not_found)\)$/.test(content)
+      ) {
+        const id = object(input.input)?.id;
+        unknownEdits.push({ index, ...(typeof id === "string" ? { id } : {}) });
+      }
+      continue;
+    }
     if (
-      isError ||
-      (!resultActions.has(name) &&
-        !scenarioActions.has(name) &&
-        !siteActions.has(name))
+      !resultActions.has(name) &&
+      !scenarioActions.has(name) &&
+      !siteActions.has(name)
     )
       continue;
     const parsed = object(parseJson(content));
@@ -268,18 +291,16 @@ function turnQuoteSources({
     } else if (name === "view-screen") {
       recordSites(index, [object(object(parsed?.site)?.spot)?.label]);
     }
-    const input = calls.get(toolCallId);
     const inputPage =
       name === "list-scenarios" ? readInputPage(parsed, input) : undefined;
     const catalog =
       name === "list-scenarios"
         ? object(parsed?.scenarioPage)?.entries
         : undefined;
-    const selectedScenario = object(parsed?.scenario);
     const returnedScenarios = [
-      selectedScenario && inputPage
+      inputPage
         ? {
-            ...selectedScenario,
+            ...inputPage.scenario,
             ...scenarioInputQuoteFields(inputPage),
           }
         : parsed?.scenario,

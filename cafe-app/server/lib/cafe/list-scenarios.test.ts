@@ -232,6 +232,21 @@ it("authorizes complete quote pages and retires the quote after a newer catalog 
   expect(
     await check(results, "The grinder supports 999 orders."),
   ).toBeDefined();
+  const latestRequest = { input: { ...input, version } };
+  const conflictId = "call_read_conflict";
+  calls.push({
+    toolCallId: conflictId,
+    name: "list-scenarios",
+    input: latestRequest,
+  });
+  const conflict = {
+    ...tool({}, conflictId),
+    content:
+      "Error running list-scenarios: Scenario not found or changed. (errorCode: scenario_conflict)",
+    isError: true,
+  };
+  expect(await check([...results, conflict])).toBeDefined();
+
   const revised = { id: scenario.id, revision: scenario.revision + 1 };
   expect(
     await check([

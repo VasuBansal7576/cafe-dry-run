@@ -280,7 +280,8 @@ async function readInput(
     );
 
   const fragment = (end: number) => ({
-    ...reference,
+    scenarios: [],
+    ...(offset === 0 ? { scenario: reference.scenario } : {}),
     inputPage: {
       section,
       version,
@@ -310,7 +311,7 @@ async function readInput(
 
 export default defineAction({
   description:
-    "List your cafe scenarios before editing or simulating. Full scenarios include all saved inputs. A scenarioPage is a catalog only: if hasMore, call with catalog using the last entry ID and version. Read one scenario with input and a section. Prefer a specific path for a large input. An inputPage value is complete; text is a JSON fragment. Repeat the same id, section, path and version with nextOffset until null, then concatenate text before parsing. Never use a partial value.",
+    "List your cafe scenarios before editing or simulating. Full scenarios include all saved inputs. A scenarioPage is a catalog only: if hasMore, call with catalog using the last entry ID and version. Read one scenario with input and a section. Prefer a specific path for a large input. An inputPage value is complete; text is a JSON fragment. Repeat the same id, section, path and version with nextOffset until null, then concatenate text before parsing. The first page carries the scenario revisions. Never use a partial value.",
   schema: z.object({
     catalog: catalogCursor.optional(),
     input: inputRequest.optional(),
