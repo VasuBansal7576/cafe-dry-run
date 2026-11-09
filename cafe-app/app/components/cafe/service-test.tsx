@@ -40,10 +40,12 @@ import {
   playbackSpeedSchema,
   precisePlaybackClock,
   restorePlayback,
+  updateRunningPlaybackPreview,
   type PlaybackChange,
   type PlaybackClockCalibration,
   type PlaybackIdentity,
   type PlaybackState,
+  type RunningPlaybackPreview,
 } from "../../../shared/cafe/playback-position";
 import { useCalculationState } from "./calculation-state";
 import { Stamp } from "./provenance-stamp";
@@ -306,9 +308,11 @@ export function Playback({
     Math.max(0, Math.floor(local + (calibration?.offset ?? 0)));
   const localClock = Math.max(localNow, receivedAt);
   const now = clockAt(localClock);
-  const earliestNow = Math.floor(
-    localClock + (calibration?.earliestOffset ?? 0),
+  const earliestOffset = Math.min(
+    calibration?.earliestOffset ?? 0,
+    calibration?.conflicting?.earliestOffset ?? Infinity,
   );
+  const earliestNow = Math.floor(localClock + earliestOffset);
   const { state: base, exact: exactResult } = restorePlayback(
     identity,
     stored,
@@ -324,11 +328,19 @@ export function Playback({
   useEffect(() => {
     if (!navigationReady || !calibration || loadedClock) return;
     setLoadedClock({
-      before: Math.floor(mountedAt + calibration.earliestOffset),
+      before: Math.floor(mountedAt + earliestOffset),
       epoch,
       revision,
     });
-  }, [navigationReady, calibration, loadedClock, mountedAt, epoch, revision]);
+  }, [
+    navigationReady,
+    calibration,
+    loadedClock,
+    mountedAt,
+    earliestOffset,
+    epoch,
+    revision,
+  ]);
   const mountedClock = loadedClock?.before ?? 0;
   const pauseOnLoad =
     exactResult &&
@@ -355,10 +367,19 @@ export function Playback({
       ? changePlayback(base, { playing: false }, bounds, mountedClock)
       : base,
   );
-  const { second, speed } = playbackFrame(current, end, now);
+  const [preview, setPreview] = useState<RunningPlaybackPreview | null>(null);
+  const nextPreview = updateRunningPlaybackPreview(
+    preview,
+    current,
+    calibration?.offset ?? 0,
+    localClock,
+  );
+  if (nextPreview !== preview) setPreview(nextPreview);
+  const previewNow = Math.max(now, Math.floor(nextPreview?.holdThrough ?? 0));
+  const { second, speed } = playbackFrame(current, end, previewNow);
   const { playing } = playbackFrame(current, end, earliestNow);
   const approximateTime =
-    !preciseClock &&
+    (!preciseClock || previewNow > now) &&
     (playing ||
       (edits.length > 0 && playbackFrame(base, end, earliestNow).playing));
   const clockText = formatClock(second);
@@ -383,7 +404,7 @@ export function Playback({
     const edit = {
       change,
       when,
-      ...(preciseClock ? { effectiveAtMs: when } : {}),
+      ...(preciseClock && !approximateTime ? { effectiveAtMs: when } : {}),
     };
     setLocalNow(local);
     setFailure(null);

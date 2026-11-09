@@ -21,6 +21,7 @@ import {
   changePlayback,
   playbackBounds,
   precisePlaybackClock,
+  updateRunningPlaybackPreview,
 } from "../../../shared/cafe/playback-position.js";
 import migrate from "../../plugins/db.js";
 
@@ -107,6 +108,61 @@ it("uses healthy slower reads and narrows the estimate when latency switches dir
     earliestOffset: 4_995,
     latestOffset: 5_006,
   });
+});
+
+it("a contradictory timestamp cannot replace trusted timing or claim precision by itself", () => {
+  const trusted = calibratePlaybackClock(undefined, 100, 120, 5_110);
+  const contradicted = calibratePlaybackClock(trusted, 200, 220, 8_210);
+  expect(contradicted.offset).toBe(trusted.offset);
+  expect(precisePlaybackClock(contradicted)).toBe(false);
+  const recovered = calibratePlaybackClock(contradicted, 300, 320, 5_310);
+  expect(recovered.offset).toBe(trusted.offset);
+  expect(precisePlaybackClock(recovered)).toBe(true);
+  const corroborated = calibratePlaybackClock(contradicted, 400, 420, 8_410);
+  expect(corroborated.offset).toBe(8_000.5);
+  expect(precisePlaybackClock(corroborated)).toBe(true);
+});
+
+it("holds the displayed frame during recalibration and releases it for a different anchor", () => {
+  const anchor = {
+    scenarioId: crypto.randomUUID(),
+    runId: crypto.randomUUID(),
+    startedAtMs: 5_000,
+    second: 30_000,
+    speed: 600 as const,
+  };
+  const approximate = updateRunningPlaybackPreview(null, anchor, 5_420, 1_000);
+  const refined = updateRunningPlaybackPreview(
+    approximate,
+    anchor,
+    5_000,
+    1_050,
+  );
+  expect(refined?.holdThrough).toBe(6_470);
+  const repeatedPlay = {
+    ...anchor,
+    seekId: crypto.randomUUID(),
+    clockRevision: 2,
+  };
+  expect(
+    updateRunningPlaybackPreview(refined, repeatedPlay, 5_000, 1_200),
+  ).toBe(refined);
+  expect(
+    updateRunningPlaybackPreview(
+      refined,
+      { ...anchor, second: 29_500 },
+      5_000,
+      1_220,
+    )?.holdThrough,
+  ).toBe(0);
+  expect(
+    updateRunningPlaybackPreview(
+      refined,
+      { scenarioId: anchor.scenarioId, runId: anchor.runId, second: 29_000 },
+      5_000,
+      1_230,
+    ),
+  ).toBeNull();
 });
 
 it("an explicit pause settles a running anchor that has already reached the end", () => {

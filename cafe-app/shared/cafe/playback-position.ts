@@ -29,18 +29,28 @@ export type PlaybackChange =
       speed?: z.infer<typeof playbackSpeedSchema> | undefined;
     };
 
-export type PlaybackClockCalibration = {
-  offset: number;
+type ClockInterval = {
   earliestOffset: number;
   latestOffset: number;
+};
+export type PlaybackClockCalibration = ClockInterval & {
+  offset: number;
+  conflicting?: ClockInterval;
 };
 const preciseClockIntervalMs = 250;
 
 export function precisePlaybackClock(calibration: PlaybackClockCalibration) {
   return (
+    !calibration.conflicting &&
     calibration.latestOffset - calibration.earliestOffset <=
-    preciseClockIntervalMs
+      preciseClockIntervalMs
   );
+}
+
+function intersectClockIntervals(a: ClockInterval, b: ClockInterval) {
+  const earliestOffset = Math.max(a.earliestOffset, b.earliestOffset);
+  const latestOffset = Math.min(a.latestOffset, b.latestOffset);
+  if (earliestOffset <= latestOffset) return { earliestOffset, latestOffset };
 }
 
 export function calibratePlaybackClock(
@@ -49,22 +59,21 @@ export function calibratePlaybackClock(
   receivedAt: number,
   sampledAtMs: number,
 ): PlaybackClockCalibration {
-  const earliest = sampledAtMs - receivedAt;
-  const latest = sampledAtMs + 1 - sentAt;
-  if (previous) {
-    const earliestOffset = Math.max(previous.earliestOffset, earliest);
-    const latestOffset = Math.min(previous.latestOffset, latest);
-    if (earliestOffset <= latestOffset)
-      return {
-        offset: (earliestOffset + latestOffset) / 2,
-        earliestOffset,
-        latestOffset,
-      };
-  }
+  const observed = {
+    earliestOffset: sampledAtMs - receivedAt,
+    latestOffset: sampledAtMs + 1 - sentAt,
+  };
+  const interval = previous
+    ? (intersectClockIntervals(previous, observed) ??
+      (previous.conflicting &&
+        intersectClockIntervals(previous.conflicting, observed)))
+    : observed;
+  if (!interval && previous) return { ...previous, conflicting: observed };
+  const { earliestOffset, latestOffset } = interval ?? observed;
   return {
-    offset: (earliest + latest) / 2,
-    earliestOffset: earliest,
-    latestOffset: latest,
+    offset: (earliestOffset + latestOffset) / 2,
+    earliestOffset,
+    latestOffset,
   };
 }
 
@@ -75,6 +84,37 @@ function samePlaybackRuns(a: PlaybackIdentity, b: PlaybackIdentity) {
     a.comparisonScenarioId === b.comparisonScenarioId &&
     a.comparisonRunId === b.comparisonRunId
   );
+}
+
+export type RunningPlaybackPreview = {
+  anchor: PlaybackState;
+  offset: number;
+  holdThrough: number;
+};
+
+export function updateRunningPlaybackPreview(
+  previous: RunningPlaybackPreview | null,
+  anchor: PlaybackState,
+  offset: number,
+  localTime: number,
+): RunningPlaybackPreview | null {
+  if (anchor.startedAtMs === undefined) return null;
+  const sameAnchor =
+    previous &&
+    previous.anchor.startedAtMs === anchor.startedAtMs &&
+    previous.anchor.second === anchor.second &&
+    (previous.anchor.speed ?? defaultPlaybackSpeed) ===
+      (anchor.speed ?? defaultPlaybackSpeed) &&
+    previous.anchor.historical === anchor.historical &&
+    samePlaybackRuns(previous.anchor, anchor);
+  if (sameAnchor && previous.offset === offset) return previous;
+  return {
+    anchor,
+    offset,
+    holdThrough: sameAnchor
+      ? Math.max(previous.holdThrough, localTime + previous.offset)
+      : 0,
+  };
 }
 
 export function playbackBounds(
