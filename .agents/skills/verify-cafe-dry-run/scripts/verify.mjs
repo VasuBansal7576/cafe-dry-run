@@ -151,9 +151,9 @@ async function readScenarios(page) {
   return scenarios.map(({ id, baseHourlyDemand, revision }) => ({ id, baseHourlyDemand, revision }));
 }
 
-function demand(page, count) {
+function demand(page, count, tag = "Illustrative") {
   return page.getByRole("region", { name: "Your scenario" }).getByText(
-    `Current base demand: ${count} customers per hour · Illustrative`,
+    `Current base demand: ${count} customers per hour · ${tag}`,
     { exact: true },
   );
 }
@@ -258,14 +258,14 @@ try {
     await screenshot(demand(page, 20), "created-demand.png");
     check("founder creates illustrative demand", created);
     phase = "founder edit";
-    const input = page.getByRole("spinbutton", { name: "Base customers per hour Illustrative" });
+    const input = page.getByRole("spinbutton", { name: "Base customers per hour", exact: true });
     await input.fill("28");
     await screenshot(page.getByRole("region", { name: "Your scenario" }), "demand-edit-input.png");
     await page.getByRole("button", { name: "Save demand", exact: true }).click();
-    await demand(page, 28).waitFor({ state: "visible" });
+    await demand(page, 28, "Estimate").waitFor({ state: "visible" });
     let expected = { ...created, baseHourlyDemand: 28, revision: 1 };
     assert.deepEqual(await readScenarios(page), [expected]);
-    await screenshot(demand(page, 28), "founder-saved-demand.png");
+    await screenshot(demand(page, 28, "Estimate"), "founder-saved-demand.png");
     check("founder saves demand on same scenario", expected);
     if (mode === "live") {
       phase = "real provider chat edit";
@@ -281,9 +281,9 @@ try {
     phase = "restart and browser readback";
     check("owned server restarted", { pids: await startServer() });
     await openCafe(page);
-    await demand(page, expected.baseHourlyDemand).waitFor({ state: "visible" });
+    await demand(page, expected.baseHourlyDemand, mode === "live" ? "Illustrative" : "Estimate").waitFor({ state: "visible" });
     assert.deepEqual(await readScenarios(page), [expected]);
-    await screenshot(demand(page, expected.baseHourlyDemand), "restarted-demand.png");
+    await screenshot(demand(page, expected.baseHourlyDemand, mode === "live" ? "Illustrative" : "Estimate"), "restarted-demand.png");
     check("same row and revision after restart", expected);
   }
 
