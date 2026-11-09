@@ -442,6 +442,7 @@ export async function runFounder({ context, page, origin, map, record, section, 
   section("S5 matched arrival records and paired playback", ["S4", "S5", "a4", "b6", "demo.4"]);
   await select(page, "Scenario").selectOption(barista.id);
   await page.waitForURL(`${origin}/cafe?scenario=${barista.id}`);
+  await results.getByText("A · Two baristas", { exact: true }).waitFor();
   await pairPicker.selectOption(grinder.id);
   await page.waitForURL(workspace(barista.id, grinder.id));
   const shared = page.getByRole("form", { name: "Shared Saturday demand" });
