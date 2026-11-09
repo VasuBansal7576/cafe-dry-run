@@ -141,7 +141,7 @@
 }
 
 .cafe-map-surface text {
-  fill: #463c2d;
+  fill: var(--cafe-print, #29241d);
   stroke: #f3e6cf;
   stroke-width: 8px;
   stroke-linejoin: round;
@@ -187,7 +187,7 @@
 .cafe-map-scale {
   position: absolute;
   pointer-events: none;
-  color: #463c2d;
+  color: var(--cafe-print, #29241d);
   background: var(--cafe-paper, #eee2cc);
   font: 700 11px/1.2 var(--cafe-mono, ui-monospace, Menlo, monospace);
 }
@@ -259,6 +259,7 @@
 .cafe-map-list-dot {
   background: var(--cafe-paper, #eee2cc);
   color: var(--cafe-print, #29241d);
+  font-size: 12px;
 }
 
 .cafe-map-plate figcaption {
@@ -268,7 +269,7 @@
   justify-content: center;
   column-gap: 6px;
   padding-block: 3px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .cafe-map-plate a {
@@ -299,6 +300,7 @@
   display: grid;
   justify-items: end;
   gap: 3px;
+  font-size: 12px;
 }
 
 .cafe-site-map .cafe-map-save {
@@ -357,6 +359,7 @@
   min-height: 44px;
   padding-block: 3px;
   color: inherit;
+  font-size: 13px;
   text-decoration: none;
 }
 
@@ -369,7 +372,7 @@
 .cafe-map-nearby li a small {
   display: block;
   color: var(--cafe-muted, #cbc2b4);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 @container cafe-canvas (max-width: 645px) {

@@ -251,7 +251,7 @@
   margin-block-start: 5px;
 }
 .cafe-workspace .cafe-source-control {
-  font: 12px var(--cafe-mono);
+  font: 12px system-ui, sans-serif;
   color: var(--cafe-muted);
 }
 .cafe-source-detail {
@@ -630,7 +630,7 @@
     linear-gradient(225deg, #fff3d9 50%, transparent 0) 0 0 / 16px 9px repeat-x;
 }
 .cafe-receipt .cafe-kicker {
-  color: #67493a;
+  color: var(--cafe-print);
 }
 .cafe-receipt :focus-visible {
   outline-color: #a43615;
@@ -690,11 +690,12 @@
   display: grid;
   gap: 6px;
   overflow-wrap: anywhere;
-  color: #67493a;
+  color: var(--cafe-print);
   font: 11px/1.45 var(--cafe-mono);
 }
 .cafe-receipt footer button {
   justify-self: start;
+  font-family: system-ui, sans-serif;
 }
 .cafe-cash-chart {
   align-self: start;
