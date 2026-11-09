@@ -521,7 +521,11 @@ it("reruns legacy solo and paired settings with capacity evidence while preservi
         original.scenarioId === row.scenarioId &&
         oldPairIds.includes(original.id) === newPairIds.includes(row.id),
     )!;
-    expect(row.summary).toEqual(old.summary);
+    const expectedSummary = structuredClone(old.summary);
+    for (const utilization of expectedSummary.stats.utilization) {
+      utilization.fractionProvenance ??= old.summary.provenance;
+    }
+    expect(row.summary).toEqual(expectedSummary);
     const { arrivals, timeline, stats } = row.playback;
     expect({ arrivals, timeline, stats }).toEqual(old.playback);
   }
