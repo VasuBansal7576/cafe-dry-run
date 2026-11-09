@@ -1,3 +1,6 @@
+.agent-native-app-main:has(> .cafe-workspace) {
+  scroll-padding-block-start: 52px;
+}
 .cafe-workspace {
   --cafe-workspace: #20201e;
   --cafe-board: #272624;
@@ -119,9 +122,13 @@
   );
 }
 .cafe-rail {
+  position: sticky;
+  top: 0;
+  z-index: 4;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(0, 1fr);
+  background: var(--cafe-workspace);
   border-bottom: 1px solid var(--cafe-rule);
 }
 .cafe-rail a {
@@ -156,7 +163,7 @@
 }
 .cafe-section {
   margin-block-start: 44px;
-  scroll-margin-top: 16px;
+  scroll-margin-top: 4px;
 }
 .cafe-section > header {
   margin-block-end: 16px;
@@ -219,7 +226,7 @@
 }
 .cafe-field-control {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 114px;
+  grid-template-columns: minmax(0, 1fr) 126px;
   gap: 6px;
   margin-block-start: 5px;
 }
@@ -268,9 +275,30 @@
   background: var(--cafe-panel);
   color: var(--cafe-ink);
 }
-.cafe-link {
+.cafe-link,
+.cafe-shared-demand a {
   color: var(--cafe-signal);
   text-decoration: underline;
+}
+.cafe-shared-demand a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 44px;
+}
+.cafe-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  cursor: pointer;
+}
+.cafe-workspace .cafe-checkbox-label input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  min-height: 0;
+  flex: 0 0 auto;
+  accent-color: var(--cafe-signal);
 }
 .cafe-workspace details {
   border-top: 1px solid var(--cafe-rule);
@@ -306,6 +334,21 @@
 .cafe-run-heading {
   border-top: 1px solid var(--cafe-rule);
   padding-top: 16px;
+}
+.cafe-paired-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 10px;
+  border-top: 0;
+  padding-top: 0;
+}
+.cafe-paired-heading p {
+  margin-top: 0;
+}
+.cafe-paired-heading button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 .cafe-stamp {
   display: inline-block;
@@ -470,6 +513,13 @@
 .cafe-paired-boards h3 {
   font-size: clamp(24px, 3vw, 34px);
 }
+.cafe-paired-boards .cafe-frame-counts {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  overflow-wrap: anywhere;
+}
+.cafe-paired-boards .cafe-frame-counts div {
+  padding-inline: 5px;
+}
 .cafe-paired-boards .cafe-stations {
   gap: 3px;
 }
@@ -491,19 +541,7 @@
   font-size: 16px;
 }
 .cafe-customer-assumption label {
-  display: flex;
-  min-height: 44px;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
   font-weight: 650;
-}
-.cafe-workspace .cafe-customer-assumption input[type="checkbox"] {
-  width: 20px;
-  height: 20px;
-  min-height: 0;
-  flex: 0 0 auto;
-  accent-color: var(--cafe-signal);
 }
 .cafe-customer-assumption dl {
   display: flex;
@@ -600,8 +638,9 @@
   background: var(--cafe-paper);
   padding: clamp(9px, 2vw, 18px);
 }
-.cafe-cash-chart svg {
+.cafe-cash-chart > svg {
   width: 100%;
+  aspect-ratio: 390 / 164;
   font: 11px var(--cafe-mono);
   fill: var(--cafe-print);
 }
@@ -647,8 +686,73 @@
   .cafe-paired-boards {
     grid-template-columns: minmax(0, 1fr);
   }
+  .cafe-paired-heading h3 {
+    grid-column: 1 / -1;
+  }
+  .cafe-paired-heading button {
+    grid-row: 2;
+  }
+  .cafe-playback:has(> .cafe-paired-boards) {
+    gap: 10px;
+    padding-block-start: 8px;
+  }
+  .cafe-clock {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: 5px 8px;
+  }
+  .cafe-clock .cafe-controls {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .cafe-clock .cafe-primary {
+    padding-inline: 8px;
+  }
+  .cafe-clock .cafe-kicker {
+    line-height: 1.25;
+    letter-spacing: 0;
+  }
+  .cafe-seek {
+    grid-column: 1 / -1;
+  }
+  .cafe-playback .cafe-paired-boards {
+    gap: 8px;
+  }
+  .cafe-paired-boards > .cafe-station-board {
+    gap: 6px;
+    padding: 7px;
+    overflow-wrap: anywhere;
+  }
+  .cafe-paired-boards .cafe-station-board h3 {
+    font-size: 22px;
+  }
   .cafe-paired-boards .cafe-stations {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .cafe-paired-boards .cafe-frame-counts div {
+    padding: 3px 4px;
+    font-size: 11px;
+  }
+  .cafe-paired-boards .cafe-frame-counts dd {
+    font-size: 16px;
+  }
+  .cafe-paired-boards .cafe-pressure {
+    padding: 3px 7px;
+    font-size: 12px;
+  }
+  .cafe-paired-boards .cafe-station {
+    min-height: 52px;
+    padding: 3px;
+  }
+  .cafe-paired-boards .cafe-station-counts {
+    font: 11px/1.25 system-ui, sans-serif;
+  }
+  .cafe-paired-boards .cafe-station-counts span {
+    display: block;
+  }
+  .cafe-paired-boards .cafe-station-counts [aria-hidden] {
+    display: none;
   }
 }
 @media print {

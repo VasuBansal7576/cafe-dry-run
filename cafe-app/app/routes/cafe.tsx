@@ -4,7 +4,7 @@ import {
   useActionQuery,
 } from "@agent-native/core/client/hooks";
 import { useEffect } from "react";
-import { useLocation, useSearchParams } from "react-router";
+import { useLocation, useNavigate, useSearchParams } from "react-router";
 
 import { ComparisonWorkspace } from "@/components/cafe/comparison";
 import { OpeningFile } from "@/components/cafe/opening-file";
@@ -19,6 +19,7 @@ import "@/components/cafe/cafe.css";
 export default function CafeRoute() {
   const query = useActionQuery("list-scenarios", {});
   const { hash } = useLocation();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const selected = params.get("scenario");
   const comparisonId = params.get("compare");
@@ -54,15 +55,14 @@ export default function CafeRoute() {
   });
   const setSpot = useActionMutation("set-spot");
   useEffect(() => {
-    if (!selected && scenario)
-      setParams(
-        (previous) => {
-          previous.set("scenario", scenario.id);
-          return previous;
-        },
-        { replace: true, preventScrollReset: true },
-      );
-  }, [scenario, selected, setParams]);
+    if (selected || !scenario) return;
+    const next = new URLSearchParams(params);
+    next.set("scenario", scenario.id);
+    void navigate(
+      { search: next.toString(), hash },
+      { replace: true, preventScrollReset: true },
+    );
+  }, [scenario, selected, params, hash, navigate]);
 
   return (
     <div className="cafe-workspace">
@@ -93,7 +93,10 @@ export default function CafeRoute() {
         >
           <span>02</span> Service test
         </a>
-        <a href="#cash-ledger">
+        <a
+          href="#cash-ledger"
+          aria-current={hash === "#cash-ledger" ? "location" : undefined}
+        >
           <span>03</span> Cash ledger
         </a>
       </nav>
@@ -219,16 +222,15 @@ export default function CafeRoute() {
             options={alternatives}
             compare={compare}
             rerunAfterShopSave={rerunAfterShopSave}
-            select={(id) =>
-              setParams(
-                (previous) => {
-                  if (id) previous.set("compare", id);
-                  else previous.delete("compare");
-                  return previous;
-                },
+            select={(id) => {
+              const next = new URLSearchParams(params);
+              if (id) next.set("compare", id);
+              else next.delete("compare");
+              void navigate(
+                { search: next.toString(), hash },
                 { replace: true, preventScrollReset: true },
-              )
-            }
+              );
+            }}
           />
         </section>
       )}

@@ -300,8 +300,10 @@ function StationBoard({
               }
             >
               <h4>{station}</h4>
-              <p>
-                {active.length} active · {queued.length} waiting
+              <p className="cafe-station-counts">
+                <span>{active.length} active</span>{" "}
+                <span aria-hidden="true">·</span>{" "}
+                <span>{queued.length} waiting</span>
               </p>
               {[...active.slice(0, 2), ...queued.slice(0, 3)].map(
                 ([id, ticket]) => (

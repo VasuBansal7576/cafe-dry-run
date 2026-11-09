@@ -273,7 +273,7 @@ export function DemandForm({
             </p>
           )}
         </header>
-        <label>
+        <label className="cafe-checkbox-label">
           <input
             type="checkbox"
             checked={!!pedestrian}

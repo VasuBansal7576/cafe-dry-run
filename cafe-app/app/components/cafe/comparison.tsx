@@ -173,43 +173,26 @@ function MatchedPlayback({ receipt }: { receipt: DecisionReceipt }) {
   );
 }
 
-function ComparisonResult({
+function ComparisonPlayback({
   decision,
   disabled,
-  setSavedCustomers,
 }: {
   decision: StoredDecision;
   disabled: boolean;
-  setSavedCustomers: (enabled: boolean) => void;
 }) {
   const { receipt, serviceStale, cashStale } = decision;
-  const { a, b, delta, settings, savedCustomers, cashBaseline } = receipt;
-  if (!b || !delta) return null;
+  const { a, b, settings } = receipt;
+  if (!b || !receipt.delta) return null;
   const sample = receipt.weekend[settings.demandLevel];
-  const cashOff = delta.monthlyCashSavedCustomersOff.value;
-  const cashOn = delta.monthlyCashSavedCustomersOn.value;
-  const moneyDeltas = [
-    ["Monthly staff cost", delta.staffPerMonth],
-    ["Monthly cash change", delta.monthlyCash],
-    ["Cash after startup", delta.closingCashAfterStartup],
-  ] as const;
   return (
     <>
-      <div className="cafe-run-heading">
-        <div>
-          <h3>Matched Saturday results</h3>
-          <p>
-            Seed {settings.seed} · {settings.demandLevel} demand ·{" "}
-            {countFormat.format(sample.arrivals)} shared arrivals across{" "}
-            {settings.runCount} Saturdays
-          </p>
-          {cashBaseline && (
-            <p>
-              Shared arrival and cash baseline · {cashBaseline.label} · revision{" "}
-              {cashBaseline.revision}
-            </p>
-          )}
-        </div>
+      <div className="cafe-run-heading cafe-paired-heading">
+        <h3>Matched Saturday results</h3>
+        <p>
+          Seed {settings.seed} · {settings.demandLevel} demand ·{" "}
+          {countFormat.format(sample.arrivals)} shared arrivals across{" "}
+          {settings.runCount} Saturdays
+        </p>
         <button
           type="button"
           className="cafe-secondary"
@@ -241,14 +224,49 @@ function ComparisonResult({
           current cash assumptions.
         </p>
       )}
-      <div className="cafe-paired-boards">
-        <SideStats side={a} label={`A · ${a.label}`} />
-        <SideStats side={b} label={`B · ${b.label}`} />
-      </div>
       <MatchedPlayback
         key={`${a.service.id}:${b.service.id}`}
         receipt={receipt}
       />
+    </>
+  );
+}
+
+function ComparisonMetrics({
+  decision,
+  disabled,
+  setSavedCustomers,
+}: {
+  decision: StoredDecision;
+  disabled: boolean;
+  setSavedCustomers: (enabled: boolean) => void;
+}) {
+  const { receipt, cashStale } = decision;
+  const { a, b, delta, savedCustomers, cashBaseline } = receipt;
+  if (!b || !delta) return null;
+  const cashOff = delta.monthlyCashSavedCustomersOff.value;
+  const cashOn = delta.monthlyCashSavedCustomersOn.value;
+  const moneyDeltas = [
+    ["Monthly staff cost", delta.staffPerMonth],
+    ["Monthly cash change", delta.monthlyCash],
+    ["Cash after startup", delta.closingCashAfterStartup],
+  ] as const;
+  return (
+    <>
+      {cashBaseline && (
+        <p>
+          Shared arrival and cash baseline · {cashBaseline.label} · revision{" "}
+          {cashBaseline.revision}
+        </p>
+      )}
+      <div
+        className="cafe-paired-boards"
+        role="group"
+        aria-label="Metrics across all simulated Saturdays"
+      >
+        <SideStats side={a} label={`A · ${a.label}`} />
+        <SideStats side={b} label={`B · ${b.label}`} />
+      </div>
       <div className="cafe-decision-summary">
         <h3>What changes in B?</h3>
         {delta.higherMonthlyCash && (
@@ -285,7 +303,7 @@ function ComparisonResult({
       </div>
       <aside className="cafe-customer-assumption">
         <h4>Assumption that can change the decision</h4>
-        <label>
+        <label className="cafe-checkbox-label">
           <input
             type="checkbox"
             checked={savedCustomers.enabled}
@@ -390,9 +408,15 @@ function PairedWorkspace({
           <h2 id="service-title">Service test</h2>
         </header>
         <div className="cafe-board cafe-service">
+          {decision && (
+            <ComparisonPlayback
+              decision={decision}
+              disabled={compare.isPending}
+            />
+          )}
           {controls}
           {saved.data?.arrivalSource && (
-            <p>
+            <p className="cafe-shared-demand">
               Both shops use Saturday arrivals from{" "}
               {saved.data.arrivalSource.label}.{" "}
               <a href="#site-demand">Edit shared demand</a>
@@ -489,7 +513,7 @@ function PairedWorkspace({
             <p>Compare to see the same customers pass through both shops.</p>
           )}
           {decision && (
-            <ComparisonResult
+            <ComparisonMetrics
               decision={decision}
               disabled={busy}
               setSavedCustomers={rerun}

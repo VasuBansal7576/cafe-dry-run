@@ -248,8 +248,11 @@ function CashChart({ receipt }: { receipt: DecisionReceipt }) {
     ...a.map(({ value }) => value),
     ...(b?.map(({ value }) => value) ?? []),
   );
-  const x = (index: number) => 20 + index * 50;
+  const x = (index: number) => 20 + index * 47;
   const y = (value: number) => 18 + ((max - value) / (max - min || 1)) * 120;
+  const labelX = (position: number) => `${(position / 390) * 100}%`;
+  const labelY = (position: number) => `${(position / 164) * 100}%`;
+  const labelColumn = labelX(309);
   const aEnd = y(a[a.length - 1]!.value);
   const bEnd = b ? y(b[b.length - 1]!.value) : null;
   const zeroY = y(0);
@@ -259,43 +262,50 @@ function CashChart({ receipt }: { receipt: DecisionReceipt }) {
   return (
     <div className="cafe-cash-chart">
       <h4>Cash after startup and each month</h4>
-      <svg viewBox="0 0 390 164" role="img" aria-labelledby={title}>
+      <svg role="img" aria-labelledby={title}>
         <title id={title}>
           {caseLabels[demandLevel]} case closing cash projection. Exact values
           follow.
         </title>
-        <line
-          x1="20"
-          y1={zeroY}
-          x2="320"
-          y2={zeroY}
-          className="cafe-zero-line"
-        />
-        <text x="327" y={zeroY + 4}>
+        <svg viewBox="0 0 390 164" width="100%" height="100%">
+          <line
+            x1={x(0)}
+            y1={zeroY}
+            x2={x(a.length - 1)}
+            y2={zeroY}
+            className="cafe-zero-line"
+          />
+          <polyline points={points(a)} className="cafe-chart-a" />
+          {b && <polyline points={points(b)} className="cafe-chart-b" />}
+        </svg>
+        <text x={labelColumn} y={labelY(zeroY)} dy="4">
           ₹0 cash
         </text>
-        <polyline points={points(a)} className="cafe-chart-a" />
-        {b && <polyline points={points(b)} className="cafe-chart-b" />}
         <text
           className="cafe-chart-label-a"
-          x="327"
-          y={aEnd + (endLabelsOverlap || Math.abs(aEnd - zeroY) < 12 ? -7 : 4)}
+          x={labelColumn}
+          y={labelY(aEnd)}
+          dy={endLabelsOverlap || Math.abs(aEnd - zeroY) < 16 ? -8 : 4}
         >
           A
         </text>
         {bEnd !== null && (
           <text
             className="cafe-chart-label-b"
-            x="327"
-            y={
-              bEnd + (endLabelsOverlap || Math.abs(bEnd - zeroY) < 12 ? 15 : 4)
-            }
+            x={labelColumn}
+            y={labelY(bEnd)}
+            dy={endLabelsOverlap || Math.abs(bEnd - zeroY) < 16 ? 16 : 4}
           >
             B
           </text>
         )}
         {a.map((_, index) => (
-          <text key={index} x={x(index)} y="158" textAnchor="middle">
+          <text
+            key={index}
+            x={labelX(x(index))}
+            y={labelY(158)}
+            textAnchor="middle"
+          >
             {index}
           </text>
         ))}
