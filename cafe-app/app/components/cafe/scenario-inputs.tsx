@@ -388,13 +388,15 @@ export function DemandForm({
             curve spreads it across opening hours.
           </p>
         ) : (
-          <p>
-            Without a count, run the cash projection to see{" "}
-            <a className="cafe-link" href="#cash-ledger">
-              required conversion in the cash ledger
-            </a>{" "}
-            at illustrative footfall levels.
-          </p>
+          <div>
+            <p>
+              Without a count, the cash projection uses illustrative footfall
+              levels.
+            </p>
+            <a className="cafe-link cafe-conversion-link" href="#cash-ledger">
+              See required conversion in the cash ledger
+            </a>
+          </div>
         )}
         <details>
           <summary>Saturday arrival curve</summary>

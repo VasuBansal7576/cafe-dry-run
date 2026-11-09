@@ -301,6 +301,14 @@
   font-size: 13px;
   text-decoration: underline;
 }
+.cafe-conversion-link {
+  display: inline-flex;
+  align-items: center;
+  margin-block-start: 8px;
+  min-height: 45px;
+  min-width: 44px;
+  max-width: 100%;
+}
 .cafe-shared-demand a {
   display: inline-flex;
   align-items: center;
