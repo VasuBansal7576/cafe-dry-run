@@ -5,9 +5,10 @@ import { z } from "zod";
 import { getDb } from "../../db/index.js";
 import { decisionRuns, scenarios, serviceRuns } from "../../db/schema.js";
 import {
-  decisionReceiptSchema,
-  type StoredDecision,
-} from "./decision-receipt.js";
+  decisionObservations,
+  type ObservedDecision,
+} from "./chat-figure-basis.js";
+import { decisionReceiptSchema } from "./decision-receipt.js";
 import { calculateDecision, type DecisionParameters } from "./decision.js";
 import {
   defaultSavedCustomers,
@@ -127,7 +128,7 @@ export async function readArrivalSource(
 export async function saveDecision(
   owner: string,
   request: DecisionRequest,
-): Promise<StoredDecision> {
+): Promise<ObservedDecision> {
   return getDb().transaction(async (tx) => {
     const paired = "b" in request;
     if (paired && request.a.id === request.b.id) {
@@ -330,6 +331,20 @@ export async function saveDecision(
       historical: false,
       assumptionStale: false,
       currentSavedCustomers: savedCustomers,
+      quoteObservations: decisionObservations(
+        [
+          ...(b ? [a, b] : [a]).map(
+            ({ id, revision, financeRevision, latestRunId }) => ({
+              id,
+              revision,
+              financeRevision,
+              latestRunId,
+            }),
+          ),
+          arrivalSource,
+        ],
+        receipt,
+      ),
     };
   });
 }
@@ -337,7 +352,7 @@ export async function saveDecision(
 export async function readDecision(
   owner: string,
   { aId, bId, receiptId }: z.infer<typeof decisionScopeSchema>,
-): Promise<StoredDecision | null> {
+): Promise<ObservedDecision | null> {
   const b = alias(scenarios, "b_scenario");
   const source = alias(scenarios, "arrival_source");
   const db = getDb();
@@ -364,6 +379,7 @@ export async function readDecision(
       aLatestRunId: scenarios.latestRunId,
       bRevision: b.revision,
       bFinanceRevision: b.financeRevision,
+      bLatestRunId: b.latestRunId,
       arrivalRevision: source.revision,
     })
     .from(decisionRuns)
@@ -433,5 +449,29 @@ export async function readDecision(
     historical,
     assumptionStale,
     currentSavedCustomers,
+    quoteObservations: decisionObservations(
+      [
+        {
+          id: receipt.a.service.scenarioId,
+          revision: row.aRevision,
+          financeRevision: row.aFinanceRevision,
+          latestRunId: row.aLatestRunId,
+        },
+        ...(receipt.b && row.bRevision !== null && row.bFinanceRevision !== null
+          ? [
+              {
+                id: receipt.b.service.scenarioId,
+                revision: row.bRevision,
+                financeRevision: row.bFinanceRevision,
+                latestRunId: row.bLatestRunId,
+              },
+            ]
+          : []),
+        ...(receipt.cashBaseline && row.arrivalRevision !== null
+          ? [{ id: receipt.cashBaseline.id, revision: row.arrivalRevision }]
+          : []),
+      ],
+      assumption.receipt,
+    ),
   };
 }

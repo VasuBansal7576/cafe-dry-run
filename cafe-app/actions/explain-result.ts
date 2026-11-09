@@ -24,7 +24,7 @@ export default defineAction({
       return { status: "Run a comparison or calculate runway first." };
     if (decision.cashStale)
       return {
-        chatFigureBasis: decisionFigureBasis(decision.receipt),
+        chatFigureBasis: decisionFigureBasis(decision),
         chatFigures: null,
         status: decision.assumptionStale
           ? "This historical receipt used a superseded saved-customer assumption. Read the latest comparison for the current decision."

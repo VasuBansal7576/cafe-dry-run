@@ -3,11 +3,11 @@ import { z } from "zod";
 import {
   chatFigureBasisSchema,
   decisionFigureBasis,
+  type ObservedDecision,
 } from "./chat-figure-basis.js";
 import {
   storedDecisionSchema,
   type DecisionReceipt,
-  type StoredDecision,
 } from "./decision-receipt.js";
 import { sourceTagSchema, weakestTag, type SourceTag } from "./provenance.js";
 import type { Scenario } from "./scenario-store.js";
@@ -298,9 +298,10 @@ function decisionSideFigures(
   };
 }
 
-export function withDecisionChatFigures(decision: StoredDecision) {
+export function withDecisionChatFigures(observed: ObservedDecision) {
+  const { quoteObservations: _, ...decision } = observed;
   const { receipt, serviceStale, cashStale } = decision;
-  const chatFigureBasis = decisionFigureBasis(receipt);
+  const chatFigureBasis = decisionFigureBasis(observed);
   if (serviceStale || cashStale)
     return { chatFigureBasis, chatFigures: null, ...decision };
   const level = receipt.settings.demandLevel;

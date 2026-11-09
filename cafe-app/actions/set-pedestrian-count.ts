@@ -137,7 +137,7 @@ export default defineAction({
       decision.receipt.cashBaseline.revision === scenario.revision
     ) {
       return {
-        chatFigureBasis: decisionFigureBasis(decision.receipt),
+        chatFigureBasis: decisionFigureBasis(decision),
         chatFigures: {
           ...prefixChatFigures(
             "scenarioA",
@@ -165,8 +165,10 @@ export default defineAction({
       };
     }
     return {
-      chatFigureBasis: decision?.cashStale
-        ? decisionFigureBasis(decision.receipt)
+      chatFigureBasis: decision
+        ? decision.cashStale
+          ? decisionFigureBasis(decision)
+          : { scenarios: [], observations: decision.quoteObservations }
         : null,
       chatFigures: null,
       ...result,

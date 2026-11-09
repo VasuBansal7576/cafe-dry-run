@@ -59,6 +59,7 @@ export default defineAction({
       .select({
         label: scenarios.label,
         revision: scenarios.revision,
+        latestRunId: scenarios.latestRunId,
         runId: serviceRuns.id,
         scenarioRevision: serviceRuns.scenarioRevision,
         arrivalSourceId: serviceRuns.arrivalSourceId,
@@ -90,6 +91,20 @@ export default defineAction({
       return scenarioErrors.fail("Scenario not found.", "scenario_not_found", {
         statusCode: 404,
       });
+    const observations = {
+      scenarios: [
+        {
+          id,
+          revision: row.revision,
+          ...(runId === undefined && { latestRunId: row.latestRunId }),
+        },
+        ...(row.arrivalSourceId &&
+        row.arrivalSourceId !== id &&
+        row.currentArrivalRevision !== null
+          ? [{ id: row.arrivalSourceId, revision: row.currentArrivalRevision }]
+          : []),
+      ],
+    };
     if (
       !row.runId ||
       row.scenarioRevision === null ||
@@ -97,7 +112,11 @@ export default defineAction({
       !row.arrivalSourceId ||
       row.arrivalSourceRevision === null
     )
-      return { chatFigureBasis: null, chatFigures: null, run: null };
+      return {
+        chatFigureBasis: { scenarios: [], observations },
+        chatFigures: null,
+        run: null,
+      };
     const scenario = { id, revision: row.scenarioRevision };
     const arrivalSource = {
       id: row.arrivalSourceId,
@@ -119,19 +138,10 @@ export default defineAction({
       playback: row.playback ?? undefined,
       stale,
     };
-    const chatFigureBasis = serviceFigureBasis(run);
-    if (stale) {
-      chatFigureBasis.scenarios = [{ id, revision: row.revision }];
-      if (arrivalSource.id !== id && row.currentArrivalRevision !== null) {
-        chatFigureBasis.scenarios.push({
-          id: arrivalSource.id,
-          revision: row.currentArrivalRevision,
-        });
-      }
-    }
     return {
       chatFigureBasis: {
-        ...chatFigureBasis,
+        ...serviceFigureBasis(run),
+        observations,
         ...(runId === undefined && {
           latestRun: { scenarioId: id, id: run.id },
         }),

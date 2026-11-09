@@ -259,6 +259,9 @@ it("revokes a solo runway when a current read reveals a later service run withou
   );
   const historicalTool = tool("get-simulation", historical);
   expect(historical.run).toMatchObject({ id: run.id, stale: false });
+  expect(
+    historical.chatFigureBasis?.observations?.scenarios[0],
+  ).not.toHaveProperty("latestRunId");
   expect(await check(cash, [original, historicalTool])).toBeUndefined();
 
   const current = await getSimulation.run(
@@ -402,6 +405,191 @@ it("keeps complete scenario quotes visible within Agent-Native's real list cutof
   expect(await check(`Choose ${complete[0]!.label}.`, [shown])).toBeUndefined();
   expect(
     await check(`Choose ${complete[0]!.label} minutes sooner.`, [shown]),
+  ).toBeDefined();
+});
+
+it.each(["finance", "service", "shared arrivals", "saved customers"] as const)(
+  "revokes older paired receipts when a stale decision read observes changed %s",
+  async (change) => {
+    const { scenario: source } = await createScenario.run(
+      { label: `${change} reference`, baseHourlyDemand: 55 },
+      owner,
+    );
+    const variant = async (label: string) =>
+      (
+        await configureShop.run(
+          { ...versions(source), variantLabel: `${change} ${label}` },
+          owner,
+        )
+      ).scenario;
+    const a = await variant("A");
+    const b = await variant("B");
+    const scope = { aId: a.id, bId: b.id };
+    const older = await compareScenarios.run(
+      { a: versions(a), b: versions(b), ...settings },
+      owner,
+    );
+    const newer = await compareScenarios.run(
+      { a: versions(a), b: versions(b), ...settings, seed: 43 },
+      owner,
+    );
+    const oldTool = tool("compare-scenarios", older);
+    const oldCash = older.chatFigures!["scenarioA.monthlyCash"]!.text;
+    const historical = await getComparison.run(
+      { ...scope, receiptId: older.receipt.id },
+      owner,
+    );
+    expect(historical.decision).toMatchObject({
+      historical: true,
+      cashStale: false,
+    });
+    expect(
+      await check(oldCash, [tool("get-comparison", historical)]),
+    ).toBeUndefined();
+
+    let arrivalRevision = source.revision;
+    let otherPair: typeof older | undefined;
+    if (change === "finance") {
+      await configureFinance.run(
+        { ...versions(a), finance: { rent: estimated(62_000) } },
+        owner,
+      );
+    } else if (change === "service") {
+      await setDemand.run(
+        { ...serviceVersion(a), baseHourlyDemand: 70 },
+        owner,
+      );
+    } else if (change === "shared arrivals") {
+      arrivalRevision = (
+        await setDemand.run(
+          { ...serviceVersion(source), baseHourlyDemand: 70 },
+          owner,
+        )
+      ).scenario.revision;
+    } else {
+      const c = await variant("C");
+      otherPair = await compareScenarios.run(
+        { a: versions(a), b: versions(c), ...settings },
+        owner,
+      );
+      await compareScenarios.run(
+        {
+          a: versions(b),
+          b: versions(a),
+          ...settings,
+          savedCustomers: { enabled: true, tag: "estimate" },
+        },
+        owner,
+      );
+    }
+
+    const stale = await getComparison.run(scope, owner);
+    expect(stale.decision).toMatchObject({
+      cashStale: true,
+      receipt: { id: newer.receipt.id },
+      chatFigures: null,
+    });
+    const observed = stale.decision!.chatFigureBasis.observations!;
+    expect(observed.scenarios).toEqual(
+      expect.arrayContaining([
+        {
+          id: a.id,
+          revision: a.revision + Number(change === "service"),
+          financeRevision: a.financeRevision + Number(change === "finance"),
+          latestRunId: null,
+        },
+        { id: source.id, revision: arrivalRevision },
+      ]),
+    );
+    if (change === "saved customers") {
+      expect(observed.assumption).toMatchObject({
+        revision: (newer.receipt.assumptionRevision ?? 0) + 1,
+        savedCustomers: { enabled: true, tag: "estimate" },
+      });
+    }
+    expect(
+      await getComparison.run({ ...scope, receiptId: newer.receipt.id }, other),
+    ).toEqual({ decision: null, arrivalSource: null });
+    const explanation = await explainResult.run(
+      { ...scope, receiptId: newer.receipt.id },
+      owner,
+    );
+    const capture = await setPedestrianCount.run(
+      { id: source.id, expectedRevision: arrivalRevision, comparison: scope },
+      owner,
+    );
+    expect(capture.requiredConversion?.kind).toBe("stale-runway");
+    for (const read of [
+      tool("get-comparison", stale),
+      tool("explain-result", explanation),
+      tool("set-pedestrian-count", capture),
+    ]) {
+      expect(await check(oldCash, [oldTool, read]), read.name).toBeDefined();
+      if (otherPair) {
+        const unrelatedDelta =
+          otherPair.chatFigures!["bMinusA.monthlyCash"]!.text;
+        expect(
+          await check(unrelatedDelta, [
+            tool("compare-scenarios", otherPair),
+            read,
+          ]),
+          read.name,
+        ).toBeUndefined();
+      }
+    }
+  },
+);
+
+it("revokes an earlier runway when a stale decision read observes a different latest solo run", async () => {
+  const { scenario } = await createScenario.run(
+    { label: "Runway identity" },
+    owner,
+  );
+  const run = await runSimulation.run(
+    { ...serviceVersion(scenario), ...settings },
+    owner,
+  );
+  const older = await computeRunway.run(
+    { ...versions(scenario), runId: run.id },
+    owner,
+  );
+  const newer = await computeRunway.run(
+    { ...versions(scenario), runId: run.id },
+    owner,
+  );
+  const oldCash = older.chatFigures!["scenarioA.monthlyCash"]!.text;
+  const oldTool = tool("compute-runway", older);
+  const historical = await getComparison.run(
+    { aId: scenario.id, receiptId: older.receipt.id },
+    owner,
+  );
+  expect(historical.decision).toMatchObject({
+    historical: true,
+    cashStale: false,
+  });
+  expect(
+    await check(oldCash, [tool("get-comparison", historical)]),
+  ).toBeUndefined();
+  const replacement = await runSimulation.run(
+    { ...serviceVersion(scenario), ...settings, seed: 43 },
+    owner,
+  );
+  const stale = await getComparison.run({ aId: scenario.id }, owner);
+  expect(stale.decision).toMatchObject({
+    cashStale: true,
+    receipt: { id: newer.receipt.id },
+    chatFigures: null,
+  });
+  expect(
+    stale.decision!.chatFigureBasis.observations?.scenarios,
+  ).toContainEqual({
+    id: scenario.id,
+    revision: scenario.revision,
+    financeRevision: scenario.financeRevision,
+    latestRunId: replacement.id,
+  });
+  expect(
+    await check(oldCash, [oldTool, tool("get-comparison", stale)]),
   ).toBeDefined();
 });
 

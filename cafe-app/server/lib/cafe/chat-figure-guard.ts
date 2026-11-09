@@ -6,6 +6,7 @@ import type {
 import {
   chatFigureBasisSchema,
   type ChatFigureBasis,
+  type ChatFigureObservations,
 } from "./chat-figure-basis.js";
 import { chatFiguresSchema } from "./chat-figures.js";
 
@@ -107,7 +108,8 @@ function visibleScenarioHeaders(content: string) {
   });
 }
 
-type ScenarioVersion = ChatFigureBasis["scenarios"][number];
+type ScenarioVersion = ChatFigureObservations["scenarios"][number];
+type AssumptionVersion = NonNullable<ChatFigureBasis["assumption"]>;
 type QuoteSource = { index: number; basis: ChatFigureBasis; quotes: string[] };
 
 function quoteTexts(value: unknown): string[] {
@@ -125,7 +127,7 @@ function turnQuoteSources({
 }: AgentLoopFinalResponseGuardContext) {
   const sources: QuoteSource[] = [];
   const scenarios = new Map<string, ScenarioVersion>();
-  const assumptionRevisions = new Map<string, number>();
+  const assumptions = new Map<string, AssumptionVersion>();
   const latestRuns = new Map<string, string | null>();
   const staleRuns = new Set<string>();
   const staleReceipts = new Set<string>();
@@ -136,6 +138,12 @@ function turnQuoteSources({
 
   const observeScenario = (version: ScenarioVersion) => {
     const previous = scenarios.get(version.id);
+    if (
+      version.latestRunId !== undefined &&
+      (version.revision ?? -1) >= (previous?.revision ?? -1)
+    ) {
+      latestRuns.set(version.id, version.latestRunId);
+    }
     scenarios.set(version.id, {
       id: version.id,
       revision: Math.max(previous?.revision ?? -1, version.revision ?? -1),
@@ -175,14 +183,11 @@ function turnQuoteSources({
         ...(typeof scenario.financeRevision === "number"
           ? { financeRevision: scenario.financeRevision }
           : {}),
+        ...(scenario.latestRunId === null ||
+        typeof scenario.latestRunId === "string"
+          ? { latestRunId: scenario.latestRunId }
+          : {}),
       };
-      if (
-        (scenario.latestRunId === null ||
-          typeof scenario.latestRunId === "string") &&
-        scenario.revision >= (scenarios.get(scenario.id)?.revision ?? -1)
-      ) {
-        latestRuns.set(scenario.id, scenario.latestRunId);
-      }
       observeScenario(version);
       const quotes = quoteTexts(scenario.chatFigures);
       if (typeof scenario.label === "string") {
@@ -221,27 +226,23 @@ function turnQuoteSources({
     const scope = chatFigureBasisSchema.safeParse(payload?.chatFigureBasis);
     if (!scope.success) continue;
     const basis = scope.data;
-    for (const version of basis.scenarios) observeScenario(version);
+    for (const version of basis.observations?.scenarios ?? [])
+      observeScenario(version);
+    const assumption = basis.observations?.assumption;
     if (
-      basis.latestRun &&
-      (name === "get-simulation" || payload?.chatFigures !== null)
+      assumption &&
+      assumption.revision >= (assumptions.get(assumption.pair)?.revision ?? -1)
     ) {
-      latestRuns.set(basis.latestRun.scenarioId, basis.latestRun.id);
+      assumptions.set(assumption.pair, assumption);
     }
     if (payload?.chatFigures === null) {
       if (basis.receiptId) staleReceipts.add(basis.receiptId);
       else for (const id of basis.runIds ?? []) staleRuns.add(id);
       continue;
     }
-    if (basis.assumption) {
-      const { pair, revision } = basis.assumption;
-      assumptionRevisions.set(
-        pair,
-        Math.max(revision, assumptionRevisions.get(pair) ?? -1),
-      );
-    }
+    for (const version of basis.scenarios) observeScenario(version);
     if (name === "run-simulation" && basis.scenarios[0] && basis.runIds?.[0]) {
-      latestRuns.set(basis.scenarios[0].id, basis.runIds[0]);
+      observeScenario({ ...basis.scenarios[0], latestRunId: basis.runIds[0] });
     }
     sources.push({ index, basis, quotes: quoteTexts(payload?.chatFigures) });
   }
@@ -253,12 +254,19 @@ function turnQuoteSources({
       if (latestId !== undefined && latestId !== basis.latestRun.id)
         return false;
     }
-    if (
-      basis.assumption &&
-      (assumptionRevisions.get(basis.assumption.pair) ?? -1) >
-        basis.assumption.revision
-    )
-      return false;
+    if (basis.assumption) {
+      const observed = assumptions.get(basis.assumption.pair);
+      if (
+        observed &&
+        (observed.revision > basis.assumption.revision ||
+          (observed.revision === basis.assumption.revision &&
+            (observed.savedCustomers.enabled !==
+              basis.assumption.savedCustomers.enabled ||
+              observed.savedCustomers.tag !==
+                basis.assumption.savedCustomers.tag)))
+      )
+        return false;
+    }
     if (
       unknownEdits.some(
         (edit) =>
