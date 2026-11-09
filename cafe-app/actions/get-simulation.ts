@@ -119,9 +119,19 @@ export default defineAction({
       playback: row.playback ?? undefined,
       stale,
     };
+    const chatFigureBasis = serviceFigureBasis(run);
+    if (stale) {
+      chatFigureBasis.scenarios = [{ id, revision: row.revision }];
+      if (arrivalSource.id !== id && row.currentArrivalRevision !== null) {
+        chatFigureBasis.scenarios.push({
+          id: arrivalSource.id,
+          revision: row.currentArrivalRevision,
+        });
+      }
+    }
     return {
       chatFigureBasis: {
-        ...serviceFigureBasis(run),
+        ...chatFigureBasis,
         ...(runId === undefined && {
           latestRun: { scenarioId: id, id: run.id },
         }),

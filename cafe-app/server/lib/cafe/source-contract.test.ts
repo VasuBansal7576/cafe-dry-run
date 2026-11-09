@@ -279,6 +279,91 @@ it("revokes a solo runway when a current read reveals a later service run withou
   ).toBeUndefined();
 });
 
+it("revokes earlier run quotes when a stale read observes a newer service or shared-arrival revision", async () => {
+  const { scenario: baseline } = await createScenario.run(
+    { label: "Original test site", baseHourlyDemand: 55 },
+    owner,
+  );
+  const { scenario: variant } = await configureShop.run(
+    { ...versions(baseline), variantLabel: "Test alternative" },
+    owner,
+  );
+  const { scenario: separate } = await createScenario.run(
+    { label: "Separate site" },
+    owner,
+  );
+  const { scenario: separateVariant } = await configureShop.run(
+    { ...versions(separate), variantLabel: "Separate alternative" },
+    owner,
+  );
+  const unaffected = await compareScenarios.run(
+    { a: versions(separate), b: versions(separateVariant), ...settings },
+    owner,
+  );
+  const before = await runSimulation.run(
+    { ...serviceVersion(baseline), ...settings },
+    owner,
+  );
+  await runSimulation.run(
+    { ...serviceVersion(baseline), ...settings, seed: 43 },
+    owner,
+  );
+  const earlier = await getSimulation.run(
+    { id: baseline.id, runId: before.id, includePlayback: false },
+    owner,
+  );
+  const comparison = await compareScenarios.run(
+    { a: versions(baseline), b: versions(variant), ...settings },
+    owner,
+  );
+  const secondComparison = await compareScenarios.run(
+    { a: versions(baseline), b: versions(variant), ...settings, seed: 43 },
+    owner,
+  );
+  const earlierTool = tool("get-simulation", earlier);
+  const earlierQuote = earlier.chatFigures!.waitP50!.text;
+  expect(earlier.run?.stale).toBe(false);
+  expect(await check(earlierQuote, [earlierTool])).toBeUndefined();
+
+  await setDemand.run(
+    { ...serviceVersion(baseline), baseHourlyDemand: 56 },
+    owner,
+  );
+  const staleDefault = await getSimulation.run(
+    { id: baseline.id, includePlayback: false },
+    owner,
+  );
+  expect(staleDefault.run?.stale).toBe(true);
+  expect(
+    await check(earlierQuote, [
+      earlierTool,
+      tool("get-simulation", staleDefault),
+    ]),
+  ).toBeDefined();
+
+  const stalePair = await getSimulation.run(
+    {
+      id: variant.id,
+      runId: secondComparison.receipt.b!.service.id,
+      includePlayback: false,
+    },
+    owner,
+  );
+  expect(stalePair.run?.stale).toBe(true);
+  expect(stalePair.run?.scenarioRevision).toBe(variant.revision);
+  const results = [
+    tool("compare-scenarios", comparison),
+    tool("compare-scenarios", unaffected),
+    tool("get-simulation", stalePair),
+  ];
+  expect(
+    await check(comparison.chatFigures!["scenarioB.waitP50"]!.text, results),
+  ).toBeDefined();
+  expect(
+    await check(unaffected.chatFigures!["scenarioB.waitP50"]!.text, results),
+  ).toBeUndefined();
+});
+
 it("keeps complete scenario quotes visible within Agent-Native's real list cutoff", async () => {
   const listOwner = { ...owner, userEmail: "list-cutoff@example.invalid" };
   for (let i = 0; i < 14; i++) {

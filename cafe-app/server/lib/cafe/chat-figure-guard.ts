@@ -221,6 +221,7 @@ function turnQuoteSources({
     const scope = chatFigureBasisSchema.safeParse(payload?.chatFigureBasis);
     if (!scope.success) continue;
     const basis = scope.data;
+    for (const version of basis.scenarios) observeScenario(version);
     if (
       basis.latestRun &&
       (name === "get-simulation" || payload?.chatFigures !== null)
@@ -232,7 +233,6 @@ function turnQuoteSources({
       else for (const id of basis.runIds ?? []) staleRuns.add(id);
       continue;
     }
-    for (const version of basis.scenarios) observeScenario(version);
     if (basis.assumption) {
       const { pair, revision } = basis.assumption;
       assumptionRevisions.set(
