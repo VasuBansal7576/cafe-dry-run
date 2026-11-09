@@ -166,6 +166,9 @@ async function submitRun(page, formName, action, submitName) {
 }
 
 async function clickAction(page, action, control) {
+  await poll(`${action} control to become ready`, async () =>
+    (await control.isEnabled()) && (await control.getAttribute("aria-disabled")) !== "true",
+  );
   const [response] = await Promise.all([
     page.waitForResponse((reply) => reply.url().endsWith(`/actions/${action}`) && reply.request().method() === "POST"),
     control.click(),
