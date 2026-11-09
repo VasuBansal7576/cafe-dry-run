@@ -24,8 +24,8 @@ import {
 } from "../server/lib/cafe/scenario-store.js";
 import { sampledArrivalProvenance } from "../server/lib/cafe/scenario.js";
 import {
-  pairedRunId,
-  soloRunId,
+  matchesPairedRunId,
+  matchesSoloRunId,
 } from "../server/lib/cafe/service-run-identity.js";
 import {
   servicePlaybackSchema,
@@ -173,8 +173,8 @@ export default defineAction({
       revision: row.arrivalSourceRevision,
     };
     const currentRunId =
-      row.runId === soloRunId(scenario, row.summary) ||
-      row.runId === pairedRunId(scenario, arrivalSource, row.summary);
+      matchesSoloRunId(row.runId, scenario, row.summary) ||
+      matchesPairedRunId(row.runId, scenario, arrivalSource, row.summary);
     const stale =
       !currentRunId ||
       row.scenarioRevision !== row.revision ||

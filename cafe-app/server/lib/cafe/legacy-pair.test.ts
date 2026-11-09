@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 
 import type { ActionRunContext } from "@agent-native/core/action";
 import { closeDbExec, getDbExec } from "@agent-native/core/db";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 
 import createScenario from "../../../actions/create-scenario.js";
@@ -16,10 +16,12 @@ import migrate from "../../plugins/db.js";
 import {
   compareScenarios,
   computeRunway,
+  configureFinance,
   configureShop,
   setDemand,
 } from "./full-action-fixtures.js";
 import { illustrative } from "./provenance.js";
+import type { ServiceRun } from "./service-run.js";
 
 const defaults = vi.hoisted(() => ({ changed: false }));
 vi.mock(import("./scenario.js"), async (importOriginal) => {
@@ -325,4 +327,218 @@ it("separates the counted total and sample source when reading and refreshing ea
     (await getComparison.run(scope, owner)).decision?.receipt.a.service.summary
       .arrivalProvenance,
   ).toBe("illustrative");
+});
+
+it("reruns legacy solo and paired settings with capacity evidence while preserving their saved service and cash history", async () => {
+  const { scenario: a } = await createScenario.run(
+    { label: "Legacy playback" },
+    owner,
+  );
+  const versionOf = ({ id, revision, financeRevision }: typeof a) => ({
+    id,
+    expectedRevision: revision,
+    expectedFinanceRevision: financeRevision,
+  });
+  const { scenario: b } = await configureShop.run(
+    { ...versionOf(a), variantLabel: "Legacy alternative" },
+    owner,
+  );
+  const soloInput = { id: a.id, expectedRevision: a.revision, ...settings };
+  const pairInput = { a: versionOf(a), b: versionOf(b), ...settings };
+  const scope = { aId: a.id, bId: b.id };
+
+  const db = getDb();
+  const storedRuns = (ids: string[]) =>
+    db
+      .select()
+      .from(serviceRuns)
+      .where(inArray(serviceRuns.id, ids))
+      .orderBy(serviceRuns.id);
+  async function saveLegacy(
+    service: Pick<ServiceRun, "id" | "scenarioId" | "scenarioRevision">,
+    paired: boolean,
+  ) {
+    const [row] = await storedRuns([service.id]);
+    const { arrivals, timeline, stats } = row!.playback;
+    const { scenarioId, scenarioRevision } = service;
+    const parts = paired
+      ? [
+          "paired-v3",
+          scenarioId,
+          scenarioRevision,
+          a.id,
+          a.revision,
+          settings.seed,
+          settings.runCount,
+          settings.demandLevel,
+        ]
+      : [
+          1,
+          scenarioId,
+          scenarioRevision,
+          settings.seed,
+          settings.demandLevel,
+          settings.runCount,
+        ];
+    const digest = createHash("sha256")
+      .update(JSON.stringify(parts))
+      .digest("hex");
+    const id = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+    await db
+      .update(serviceRuns)
+      .set({ id, playback: { arrivals, timeline, stats } })
+      .where(eq(serviceRuns.id, service.id));
+    return id;
+  }
+
+  const soloId = await saveLegacy(
+    await runSimulation.run(soloInput, owner),
+    false,
+  );
+  await db
+    .update(scenarios)
+    .set({ latestRunId: soloId })
+    .where(eq(scenarios.id, a.id));
+  const oldSoloCash = await computeRunway.run(
+    { ...versionOf(a), runId: soloId },
+    owner,
+  );
+  const pair = structuredClone(
+    (await compareScenarios.run(pairInput, owner)).receipt,
+  );
+  pair.a.service.id = await saveLegacy(pair.a.service, true);
+  pair.b!.service.id = await saveLegacy(pair.b!.service, true);
+  await db
+    .update(decisionRuns)
+    .set({ receipt: pair })
+    .where(eq(decisionRuns.id, pair.id));
+  const oldPairIds = [pair.a.service.id, pair.b!.service.id];
+  const oldIds = [soloId, ...oldPairIds];
+  const originalRows = await storedRuns(oldIds);
+  const readRun = async (id: string, runId?: string) =>
+    (await getSimulation.run({ id, runId, includePlayback: true }, owner)).run!;
+  const pairedIds = ({ a, b }: typeof pair) => [a.service.id, b!.service.id];
+
+  expect(await readRun(a.id)).toMatchObject({ id: soloId, stale: false });
+  expect((await readRun(a.id)).playback?.capacity).toBeUndefined();
+  expect(
+    (await getComparison.run({ aId: a.id }, owner)).decision,
+  ).toMatchObject({
+    receipt: { id: oldSoloCash.receipt.id },
+    serviceStale: false,
+    cashStale: false,
+  });
+  expect((await getComparison.run(scope, owner)).decision).toMatchObject({
+    receipt: pair,
+    serviceStale: false,
+    cashStale: false,
+  });
+  for (const side of [pair.a, pair.b!]) {
+    const run = await readRun(side.service.scenarioId, side.service.id);
+    expect(run.stale).toBe(false);
+    expect(run.playback?.capacity).toBeUndefined();
+  }
+
+  const { scenario: updatedB } = await configureFinance.run(
+    {
+      id: b.id,
+      expectedFinanceRevision: b.financeRevision,
+      finance: { rent: illustrative(b.finance.rent.value + 1_000) },
+    },
+    owner,
+  );
+  const freshPair = { ...pairInput, b: versionOf(updatedB) };
+  const cashOnly = await computeRunway.run(
+    {
+      comparison: { a: freshPair.a, b: freshPair.b, receiptId: pair.id },
+    },
+    owner,
+  );
+  expect(pairedIds(cashOnly.receipt)).toEqual(oldPairIds);
+  expect(cashOnly.receipt.b?.finance.rent).toEqual(updatedB.finance.rent);
+  expect(await storedRuns(oldIds)).toEqual(originalRows);
+
+  const freshSolo = await runSimulation.run(soloInput, owner);
+  const savedSolo = await readRun(a.id);
+  expect.soft(freshSolo.id).not.toBe(soloId);
+  expect.soft(savedSolo.playback?.capacity).toBeDefined();
+  expect(savedSolo).toMatchObject({ id: freshSolo.id, stale: false });
+  expect(await runSimulation.run(soloInput, owner)).toEqual(freshSolo);
+  expect(await readRun(a.id)).toEqual(savedSolo);
+  expect
+    .soft((await getComparison.run({ aId: a.id }, owner)).decision)
+    .toMatchObject({
+      receipt: { id: oldSoloCash.receipt.id },
+      serviceStale: true,
+    });
+
+  const fresh = await compareScenarios.run(
+    { ...freshPair, expectedReceiptId: cashOnly.receipt.id },
+    owner,
+  );
+  const newPairIds = pairedIds(fresh.receipt);
+  expect.soft(newPairIds).not.toEqual(oldPairIds);
+  for (const side of [fresh.receipt.a, fresh.receipt.b!]) {
+    const run = await readRun(side.service.scenarioId, side.service.id);
+    expect(run.stale).toBe(false);
+    expect.soft(run.playback?.capacity).toBeDefined();
+  }
+  const newRows = await storedRuns([freshSolo.id, ...newPairIds]);
+  const rerun = await compareScenarios.run(freshPair, owner);
+  expect(pairedIds(rerun.receipt)).toEqual(newPairIds);
+  expect(await storedRuns([freshSolo.id, ...newPairIds])).toEqual(newRows);
+  for (const row of newRows) {
+    const old = originalRows.find(
+      (original) =>
+        original.scenarioId === row.scenarioId &&
+        oldPairIds.includes(original.id) === newPairIds.includes(row.id),
+    )!;
+    expect(row.summary).toEqual(old.summary);
+    const { arrivals, timeline, stats } = row.playback;
+    expect({ arrivals, timeline, stats }).toEqual(old.playback);
+  }
+
+  const after = await computeRunway.run(
+    {
+      comparison: {
+        a: freshPair.a,
+        b: freshPair.b,
+        receiptId: rerun.receipt.id,
+      },
+    },
+    owner,
+  );
+  expect(pairedIds(after.receipt)).toEqual(newPairIds);
+  await expect(
+    computeRunway.run(
+      {
+        comparison: {
+          a: freshPair.a,
+          b: freshPair.b,
+          receiptId: cashOnly.receipt.id,
+        },
+      },
+      owner,
+    ),
+  ).rejects.toThrow("Read the latest receipt");
+  expect(
+    (await getComparison.run({ ...scope, receiptId: pair.id }, owner)).decision,
+  ).toMatchObject({
+    receipt: pair,
+    historical: true,
+    serviceStale: false,
+  });
+  expect(await storedRuns(oldIds)).toEqual(originalRows);
+
+  await setDemand.run(
+    { id: a.id, expectedRevision: a.revision, baseHourlyDemand: 25 },
+    owner,
+  );
+  expect((await getComparison.run(scope, owner)).decision).toMatchObject({
+    serviceStale: true,
+    cashStale: true,
+  });
+  expect((await readRun(a.id, soloId)).stale).toBe(true);
+  expect((await readRun(b.id, oldPairIds[1])).stale).toBe(true);
+  expect((await readRun(b.id, newPairIds[1])).stale).toBe(true);
 });

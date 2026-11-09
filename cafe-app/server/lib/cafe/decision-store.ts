@@ -29,7 +29,11 @@ import {
   type Scenario,
 } from "./scenario-store.js";
 import { pedestrianDailyArrivals } from "./scenario.js";
-import { pairedRunId, pairedRunVersion } from "./service-run-identity.js";
+import {
+  matchesPairedRunId,
+  pairedRunId,
+  pairedRunVersion,
+} from "./service-run-identity.js";
 import { serviceRunSchema } from "./service-run.js";
 
 export const decisionScopeSchema = z.object({
@@ -242,8 +246,14 @@ export async function saveDecision(
           latest.pairedRunVersion !== pairedRunVersion ||
           latest.cashBaseline?.id !== baseline.id ||
           latest.cashBaseline.revision !== baseline.revision ||
-          latest.a.service.id !== pairedRunId(a, baseline, latest.settings) ||
-          latest.b?.service.id !== pairedRunId(b, baseline, latest.settings)
+          !matchesPairedRunId(
+            latest.a.service.id,
+            a,
+            baseline,
+            latest.settings,
+          ) ||
+          !latest.b ||
+          !matchesPairedRunId(latest.b.service.id, b, baseline, latest.settings)
         ) {
           return scenarioErrors.fail(
             "Run a fresh Saturday comparison before computing this runway.",
