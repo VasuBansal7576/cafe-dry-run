@@ -369,6 +369,9 @@
   inline-size: max-content;
   max-inline-size: 100%;
   margin-block-start: 3px;
+  padding-inline: 3px;
+  letter-spacing: 0;
+  overflow-wrap: normal;
 }
 .cafe-metrics,
 .cafe-frame-counts {
@@ -382,6 +385,9 @@
 .cafe-frame-counts div {
   padding: 8px 10px;
   background: var(--cafe-panel);
+}
+.cafe-frame-counts {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 102px), 1fr));
 }
 .cafe-metrics dt,
 .cafe-frame-counts dt {
@@ -413,7 +419,7 @@
 }
 .cafe-stations {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 102px), 1fr));
   gap: 6px;
   padding: 0;
   list-style: none;
@@ -478,9 +484,6 @@
   .cafe-station {
     min-height: 76px;
   }
-  .cafe-frame-counts {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
   .cafe-workspace :is(input, select) {
     font-size: 16px;
   }
@@ -528,14 +531,11 @@
 .cafe-paired-boards h3 {
   font-size: clamp(24px, 3vw, 34px);
 }
-.cafe-paired-boards .cafe-frame-counts {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  overflow-wrap: anywhere;
-}
 .cafe-paired-boards .cafe-frame-counts div {
   padding-inline: 5px;
 }
 .cafe-paired-boards .cafe-stations {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 102px), 1fr));
   gap: 3px;
 }
 .cafe-paired-boards .cafe-station {
@@ -692,12 +692,6 @@
 .cafe-chart-label-b {
   fill: #a43615;
 }
-@container cafe-canvas (max-width: 1050px) {
-  .cafe-paired-boards .cafe-frame-counts,
-  .cafe-paired-boards .cafe-stations {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
 @container cafe-canvas (max-width: 645px) {
   .cafe-receipt {
     grid-template-columns: minmax(0, 1fr);
@@ -776,7 +770,7 @@
   .cafe-paired-boards .cafe-station-counts {
     font: 11px/1.25 system-ui, sans-serif;
   }
-  .cafe-paired-boards .cafe-station-counts > span:not(.cafe-stamp) {
+  .cafe-paired-boards .cafe-station-counts > span:not(.cafe-stamp, [aria-hidden]) {
     display: block;
   }
   .cafe-paired-boards .cafe-station-counts [aria-hidden] {
@@ -836,16 +830,17 @@
     margin-block: 0;
     padding: 1px 3px;
     letter-spacing: 0;
+    white-space: nowrap;
   }
   .cafe-receipt :is(tr, .cafe-receipt-sensitivity, .cafe-cash-chart, footer) {
     break-inside: avoid;
   }
   .cafe-receipt::after,
   .cafe-receipt button,
-  .cafe-receipt-main details:not([open]) {
+  .cafe-receipt details:not([open]) {
     display: none;
   }
-  .cafe-cash-chart details::details-content {
-    content-visibility: visible;
+  .cafe-cash-chart thead th:first-child {
+    width: 19%;
   }
 }

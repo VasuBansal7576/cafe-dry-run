@@ -235,6 +235,27 @@ async function assertStamp(figure, tag, stale = false) {
   assert(await figure.getByText(new RegExp(`^${text}$`, "i")).isVisible(), `Missing adjacent ${text} stamp`);
 }
 
+async function assertPlaybackStampLayout(page, width) {
+  const badCells = await page.locator(".cafe-station, .cafe-frame-counts > div").evaluateAll((cells) =>
+    cells.flatMap((cell) => {
+      const stamp = cell.querySelector(".cafe-stamp");
+      if (!stamp || cell.scrollWidth > cell.clientWidth + 1) return [cell.innerText];
+      const words = /[A-Za-z]+/g;
+      const text = document.createTreeWalker(stamp, NodeFilter.SHOW_TEXT);
+      while (text.nextNode()) {
+        for (const match of text.currentNode.textContent.matchAll(words)) {
+          const range = document.createRange();
+          range.setStart(text.currentNode, match.index);
+          range.setEnd(text.currentNode, match.index + match[0].length);
+          if (range.getClientRects().length !== 1) return [cell.innerText];
+        }
+      }
+      return [];
+    }),
+  );
+  assert.deepEqual(badCells, [], `Playback stamps must fit and keep every word intact at ${width} px`);
+}
+
 async function boardCounts(board, tag) {
   const rows = board.locator('dl[aria-label="Counts at the selected time"] > div');
   await rows.first().waitFor();
@@ -294,6 +315,7 @@ async function checkPlayback(page, runs, labels) {
     assert.deepEqual(actual, timelineCounts(runs[index].playback.timeline, second), `${label} counts must match the timeline at the shared playhead`);
     frames.push({ label, counts: actual });
   }
+  await assertPlaybackStampLayout(page, page.viewportSize().width);
   await slider.press("End");
   assert.equal(Number(await slider.inputValue()), end, "End must seek to the last frame");
   await slider.press("Home");
@@ -683,13 +705,26 @@ export async function runFounder({ context, page, origin, map, record, section, 
     await receiptAssumption.getByText(new RegExp(`^${on.receipt.savedCustomers.tag}$`, "i")).waitFor();
   };
   await checkReceiptSensitivity();
+  const balances = receiptPanel.locator(".cafe-cash-chart table");
+  const balanceSummary = receiptPanel.getByText("Exact monthly balances", { exact: true });
   for (const width of base.widths) {
     await page.setViewportSize({ width, height: 900 });
     await page.emulateMedia({ media: "print" });
     await checkReceiptSensitivity();
     assert.equal(await results.isVisible(), false, "Only the receipt should print");
     assert.equal(await button(receiptPanel, "Print receipt").isVisible(), false);
+    assert.equal(await balances.isVisible(), false, "A closed monthly-balance table should remain closed in print");
     await print(`paired-receipt-${width}.pdf`);
+    await page.emulateMedia({ media: "screen" });
+    await balanceSummary.click();
+    await page.emulateMedia({ media: "print" });
+    await checkReceiptSensitivity();
+    const finalBalance = on.receipt.a.cash.outcomes.base.closingCash.at(-1);
+    assert(await balances.getByRole("cell").filter({ hasText: ledgerCash.format(finalBalance.value) }).isVisible(),
+      "An expanded monthly-balance table must print its exact figures");
+    await print(`paired-receipt-expanded-${width}.pdf`);
+    await page.emulateMedia({ media: "screen" });
+    await balanceSummary.click();
   }
   await page.emulateMedia({ media: "screen" });
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -804,6 +839,12 @@ export async function runFounder({ context, page, origin, map, record, section, 
     .locator('dl[aria-label="Counts at the selected time"] > div')
     .filter({ hasText: "Arrived" });
   await assertStamp(staleArrived, runA.summary.provenance, true);
+  for (const width of base.widths) {
+    await page.setViewportSize({ width, height: 900 });
+    await assertPlaybackStampLayout(page, width);
+    await viewportCapture(page, page.locator("#service-test .cafe-paired-heading"), screenshot, `stale-service-${width}.png`);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
   await receiptPanel.getByText("Stale cash receipt.").waitFor();
   assert.equal((await service(barista.id, runA.id)).stale, true);
   const combinedStale = await decision(barista.id, grinder.id, on.receipt.id);
@@ -893,10 +934,7 @@ export async function runFounder({ context, page, origin, map, record, section, 
     await page.setViewportSize({ width, height: 900 });
     const dimensions = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
     assert.equal(dimensions.document, dimensions.viewport, `No document overflow at ${width} px`);
-    const overflowingServiceFigures = await page.locator(".cafe-station, .cafe-frame-counts > div").evaluateAll((cells) =>
-      cells.filter((cell) => cell.scrollWidth > cell.clientWidth + 1).map((cell) => cell.innerText),
-    );
-    assert.deepEqual(overflowingServiceFigures, [], `No clipped playback counts at ${width} px`);
+    await assertPlaybackStampLayout(page, width);
     for (const [name, selector] of [
       ["cover", "#opening-file"],
       ["site-demand", "#site-demand"],
