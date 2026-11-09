@@ -79,7 +79,14 @@ afterAll(closeDbExec);
 
 it("freezes effective inputs for both legacy sides and their separate shared source", async () => {
   const input = { a: version(aId), b: version(bId), ...settings };
-  const before = await compareScenarios.run(input, owner);
+  const reversedInput = { ...input, a: input.b, b: input.a };
+  const [before, beforeReversed] = await Promise.all([
+    compareScenarios.run(input, owner),
+    compareScenarios.run(reversedInput, owner),
+  ]);
+  expect(beforeReversed.receipt.b?.service.id).toBe(
+    before.receipt.a.service.id,
+  );
   const beforePlayback = await getSimulation.run(
     { id: aId, runId: before.receipt.a.service.id, includePlayback: true },
     owner,
@@ -88,7 +95,7 @@ it("freezes effective inputs for both legacy sides and their separate shared sou
   defaults.changed = true;
   const [after, reversed] = await Promise.all([
     compareScenarios.run(input, owner),
-    compareScenarios.run({ ...input, a: input.b, b: input.a }, owner),
+    compareScenarios.run(reversedInput, owner),
   ]);
   const afterPlayback = await getSimulation.run(
     { id: aId, runId: after.receipt.a.service.id, includePlayback: true },
