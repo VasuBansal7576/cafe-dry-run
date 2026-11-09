@@ -3,6 +3,7 @@ import type {
   AgentLoopFinalResponseGuardContext,
 } from "@agent-native/core/server";
 
+import { isSnapshotPlaceName } from "../../../shared/cafe/site-map.js";
 import {
   chatFigureBasisSchema,
   type ChatFigureBasis,
@@ -31,6 +32,7 @@ const scenarioActions = new Set([
   "create-scenario",
   ...revisionWrites,
 ]);
+const siteActions = new Set(["set-spot", "view-screen"]);
 
 const uuid =
   /(?<![\p{L}\p{N}])[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}(?![\p{L}\p{N}])/giu;
@@ -104,7 +106,10 @@ function visibleScenarioHeaders(content: string) {
         return typeof name === "string" && value ? [[name, value]] : [];
       }),
     );
-    return [{ ...scenario, chatFigures }];
+    const spot = remainder.match(
+      /^ {6}"spot": (\{\n[\s\S]*?^ {6}\})(?=,?$)/m,
+    )?.[1];
+    return [{ ...scenario, chatFigures, spot: spot && parseJson(spot) }];
   });
 }
 
@@ -126,6 +131,7 @@ function turnQuoteSources({
   toolCalls,
 }: AgentLoopFinalResponseGuardContext) {
   const sources: QuoteSource[] = [];
+  const sites: { index: number; names: string[] }[] = [];
   const scenarios = new Map<string, ScenarioVersion>();
   const assumptions = new Map<string, AssumptionVersion>();
   const latestRuns = new Map<string, string | null>();
@@ -135,6 +141,13 @@ function turnQuoteSources({
   const calls = new Map(
     toolCalls.map(({ toolCallId, input }) => [toolCallId, object(input)]),
   );
+  const recordSites = (index: number, values: unknown[]) => {
+    const names = values.filter(
+      (value): value is string =>
+        typeof value === "string" && isSnapshotPlaceName(value),
+    );
+    if (names.length) sites.push({ index, names });
+  };
 
   const observeScenario = (version: ScenarioVersion) => {
     const previous = scenarios.get(version.id);
@@ -158,9 +171,25 @@ function turnQuoteSources({
     index,
     { name, content, isError, toolCallId },
   ] of toolResults.entries()) {
-    if (isError || (!resultActions.has(name) && !scenarioActions.has(name)))
+    if (
+      isError ||
+      (!resultActions.has(name) &&
+        !scenarioActions.has(name) &&
+        !siteActions.has(name))
+    )
       continue;
     const parsed = object(parseJson(content));
+    if (name === "set-spot") {
+      const places = object(parsed?.map)?.places;
+      recordSites(index, [
+        object(parsed?.spot)?.label,
+        ...(Array.isArray(places)
+          ? places.map((place) => object(place)?.name)
+          : []),
+      ]);
+    } else if (name === "view-screen") {
+      recordSites(index, [object(object(parsed?.site)?.spot)?.label]);
+    }
     const input = calls.get(toolCallId);
     const returnedScenarios = [
       parsed?.scenario,
@@ -189,6 +218,7 @@ function turnQuoteSources({
           : {}),
       };
       observeScenario(version);
+      recordSites(index, [object(scenario.spot)?.label]);
       const quotes = quoteTexts(scenario.chatFigures);
       if (typeof scenario.label === "string") {
         quotes.push(
@@ -246,7 +276,7 @@ function turnQuoteSources({
     }
     sources.push({ index, basis, quotes: quoteTexts(payload?.chatFigures) });
   }
-  return sources.filter(({ index, basis }) => {
+  const figures = sources.filter(({ index, basis }) => {
     if (basis.receiptId && staleReceipts.has(basis.receiptId)) return false;
     if (basis.runIds?.some((id) => staleRuns.has(id))) return false;
     if (basis.latestRun) {
@@ -284,6 +314,7 @@ function turnQuoteSources({
       );
     });
   });
+  return { figures, sites };
 }
 
 function currentDrafts({
@@ -341,6 +372,7 @@ function hasUnsupportedNumber(
   text: string,
   allowed: Set<string>,
   toolIds: string[],
+  siteNames: Set<string>,
 ) {
   let remainder = text.replace(/^[ \t]{0,3}(?:[-*+]|\d{1,2}[.)])[ \t]+/gm, " ");
   if (allowed.size) {
@@ -368,6 +400,25 @@ function hasUnsupportedNumber(
       " ",
     );
   }
+  if (siteNames.size) {
+    const quantitySuffix =
+      "(?![ \\t*_\\x60~]+(?:m|km|ft|metres?|meters?|kilometres?|kilometers?|miles?|seconds?|minutes?|hours?|rupees?|orders?|customers?)\\b)";
+    const literals = [...siteNames]
+      .sort((a, b) => b.length - a.length)
+      .map(
+        (name) =>
+          escapeRegex(name) + (/\p{N}$/u.test(name) ? quantitySuffix : ""),
+      );
+    remainder = remainder.replace(
+      new RegExp(
+        "(?<![\\p{L}\\p{N}])(?:" +
+          literals.join("|") +
+          ")(?![\\p{L}\\p{N}%/]|[.,]\\p{N})",
+        "gu",
+      ),
+      " ",
+    );
+  }
   remainder = remainder
     .replace(uuid, " ")
     .replace(/\bp(?:50|90)(?=\s+(?:wait|is|was)\b)/giu, " ");
@@ -390,17 +441,22 @@ function hasUnsupportedNumber(
 }
 
 export const guardCafeFigures: AgentLoopFinalResponseGuard = (details) => {
-  const sources = turnQuoteSources(details);
+  const { figures, sites } = turnQuoteSources(details);
   const ids = details.toolResults.flatMap(({ toolCallId }) =>
     toolCallId && /^[A-Za-z_][\w-]{7,}$/.test(toolCallId) ? [toolCallId] : [],
   );
   const unsupported = currentDrafts(details).some(({ text, through }) => {
     const allowed = new Set(
-      sources
+      figures
         .filter(({ index }) => index <= through)
         .flatMap(({ quotes }) => quotes),
     );
-    return hasUnsupportedNumber(text, allowed, ids);
+    const siteNames = new Set(
+      sites
+        .filter(({ index }) => index <= through)
+        .flatMap(({ names }) => names),
+    );
+    return hasUnsupportedNumber(text, allowed, ids, siteNames);
   });
   if (!unsupported) return;
 

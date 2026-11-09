@@ -70,6 +70,13 @@ function normalizeName(name: string): string {
   return name.normalize("NFKC").trim().toLowerCase();
 }
 
+export function isSnapshotPlaceName(name: string): boolean {
+  return (
+    siteMap.anchors.some(({ label }) => label === name) ||
+    places.some((place) => place.name === name)
+  );
+}
+
 export function findNamedSpot(name: string): Spot | undefined {
   const query = normalizeName(name);
   if (query === "indiranagar" || query === normalizeName(siteMap.name)) {

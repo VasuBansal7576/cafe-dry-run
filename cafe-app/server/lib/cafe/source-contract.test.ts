@@ -24,6 +24,7 @@ import listScenarios from "../../../actions/list-scenarios.js";
 import runSimulation from "../../../actions/run-simulation.js";
 import setDemand from "../../../actions/set-demand.js";
 import setPedestrianCount from "../../../actions/set-pedestrian-count.js";
+import setSpot from "../../../actions/set-spot.js";
 import migrate from "../../plugins/db.js";
 import { guardCafeFigures } from "./chat-figure-guard.js";
 import type { Scenario } from "./scenario-store.js";
@@ -67,6 +68,81 @@ const check = (text: string, toolResults: ReturnType<typeof tool>[]) =>
 
 beforeAll(() => migrate({}));
 afterAll(() => closeDbExec());
+
+it("allows exact returned map names without authorizing other numbers from the map", async () => {
+  const { scenario } = await createScenario.run({}, owner);
+  const move = await setSpot.run(
+    {
+      id: scenario.id,
+      expectedSpotRevision: scenario.spotRevision,
+      location: { placeName: "12th Main & 5th Cross" },
+    },
+    owner,
+  );
+  const venue = move.map.places.find(
+    ({ name }) => name === "Third Wave Coffee Roasters",
+  )!;
+  expect(venue).toBeDefined();
+  const siteText = "I moved the pin to 12th Main & 5th Cross.";
+  const venueText = "Third Wave Coffee Roasters is nearby.";
+  const result = tool("set-spot", move);
+  expect(await check(siteText, [result])).toBeUndefined();
+  expect(await check(venueText, [result])).toBeUndefined();
+  expect(await check(siteText, [{ ...result, isError: true }])).toBeDefined();
+
+  const listed = await listScenarios.run({}, owner);
+  expect(
+    await check(siteText, [tool("list-scenarios", listed)]),
+  ).toBeUndefined();
+  expect(
+    await check(venueText, [tool("list-scenarios", listed)]),
+  ).toBeDefined();
+  const saved = tool("list-scenarios", listed);
+  const cut = saved.content.indexOf('"spotRevision"');
+  expect(cut).toBeGreaterThan(0);
+  expect(
+    await check(siteText, [
+      { ...saved, content: saved.content.slice(0, cut) + "\n\n...[truncated]" },
+    ]),
+  ).toBeUndefined();
+  expect(
+    await check(siteText, [tool("view-screen", { site: { spot: move.spot } })]),
+  ).toBeUndefined();
+  for (const text of [
+    "I moved the pin to 12th Main & 7th Cross.",
+    "I moved the pin to 6th Main & Double Road.",
+    `${siteText} Expect 250 customers an hour.`,
+    `${venueText} It is ${venue.distanceMetres} metres away.`,
+    `${venueText} Its map ID is ${venue.osmId}.`,
+    `The pin is at ${move.spot.lat}, ${move.spot.lon}.`,
+  ]) {
+    expect(await check(text, [result]), text).toBeDefined();
+  }
+  const unsupported = "250 customers an hour";
+  expect(
+    await check(`Expect ${unsupported}.`, [
+      tool("set-spot", { ...move, spot: { ...move.spot, label: unsupported } }),
+    ]),
+  ).toBeDefined();
+  const numbered = await setSpot.run(
+    {
+      id: scenario.id,
+      expectedSpotRevision: move.spotRevision,
+      location: { placeName: "Beginest Harbor 1" },
+    },
+    owner,
+  );
+  expect(
+    await check("The pin is at Beginest Harbor 1.", [
+      tool("set-spot", numbered),
+    ]),
+  ).toBeUndefined();
+  expect(
+    await check("It is Beginest Harbor 1 metres away.", [
+      tool("set-spot", numbered),
+    ]),
+  ).toBeDefined();
+});
 
 it.each(["invented number", "coincidentally correct number"])(
   "clears pre-tool text with an %s and retains the real tool result",
