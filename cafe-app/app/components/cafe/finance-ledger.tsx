@@ -667,16 +667,18 @@ export function FinanceLedger({
   a,
   b,
   decision,
-  busy,
-  refreshPair,
+  pending,
+  error,
+  onCompute,
 }: {
   a: Scenario;
   b?: Scenario;
   decision: StoredDecision | null | undefined;
-  busy: boolean;
-  refreshPair: () => void;
+  pending: boolean;
+  error: Error | null;
+  onCompute: () => void;
 }) {
-  const compute = useActionMutation("compute-runway");
+  const needsService = b ? !decision || decision.serviceStale : !a.latestRunId;
   return (
     <section
       id="cash-ledger"
@@ -698,25 +700,25 @@ export function FinanceLedger({
       <div className="cafe-controls cafe-ledger-controls">
         <button
           className="cafe-primary"
-          disabled={busy || compute.isPending || (!b && !a.latestRunId)}
-          onClick={() => {
-            if (b) refreshPair();
-            else if (a.latestRunId)
-              compute.mutate({ ...scenarioVersion(a), runId: a.latestRunId });
-          }}
+          disabled={pending || needsService}
+          onClick={onCompute}
         >
-          {busy || compute.isPending
+          {pending
             ? "Calculating cash…"
             : decision
               ? "Refresh cash projection"
               : "Compute runway"}
         </button>
-        {!b && !a.latestRunId && (
-          <p>Run a Saturday simulation to compute runway.</p>
+        {needsService && (
+          <p>
+            {b
+              ? "Run a fresh Saturday comparison to compute paired runway."
+              : "Run a Saturday simulation to compute runway."}
+          </p>
         )}
-        {compute.error && (
+        {error && (
           <p className="cafe-notice" role="alert">
-            {actionErrorMessage(compute.error) ?? "Could not calculate runway."}
+            {actionErrorMessage(error) ?? "Could not calculate runway."}
           </p>
         )}
       </div>

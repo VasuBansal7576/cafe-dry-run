@@ -8,7 +8,11 @@ import {
   decisionObservations,
   type ObservedDecision,
 } from "./chat-figure-basis.js";
-import { decisionReceiptSchema } from "./decision-receipt.js";
+import {
+  decisionReceiptSchema,
+  type DecisionReceipt,
+  type StoredDecision,
+} from "./decision-receipt.js";
 import { calculateDecision, type DecisionParameters } from "./decision.js";
 import {
   defaultSavedCustomers,
@@ -60,12 +64,11 @@ function verifyVersion(
 }
 
 type DecisionRequest =
-  | {
+  | ({
       a: Version;
       b: Version;
-      settings: DecisionParameters;
       savedCustomers?: SavedCustomerAssumption;
-    }
+    } & ({ settings: DecisionParameters } | { receiptId: string }))
   | { a: Version; runId: string };
 
 function sharedBaselineId(
@@ -167,10 +170,10 @@ export async function saveDecision(
       : null;
     const baseline = inputs.get(baselineId)?.scenario ?? scenarioConflict();
     let settings: DecisionParameters;
+    let matchedReceipt: DecisionReceipt | undefined;
     let savedCustomers = defaultSavedCustomers;
     let assumptionRevision = 0;
     if (paired) {
-      settings = request.settings;
       const [prior] = await tx
         .select({ receipt: decisionRuns.receipt })
         .from(decisionRuns)
@@ -180,6 +183,73 @@ export async function saveDecision(
       const previous = prior?.receipt.savedCustomers ?? defaultSavedCustomers;
       savedCustomers = request.savedCustomers ?? previous;
       assumptionRevision = prior?.receipt.assumptionRevision ?? 0;
+      if ("receiptId" in request) {
+        const latest =
+          prior?.receipt.a.service.scenarioId === a.id
+            ? prior.receipt
+            : (
+                await tx
+                  .select({ receipt: decisionRuns.receipt })
+                  .from(decisionRuns)
+                  .where(decisionScope(owner, a.id, b?.id))
+                  .orderBy(desc(decisionRuns.sequence))
+                  .limit(1)
+              )[0]?.receipt;
+        if (latest?.id !== request.receiptId) {
+          return scenarioErrors.fail(
+            "Read the latest receipt for this pair before refreshing its cash projection.",
+            "scenario_conflict",
+            { statusCode: 409 },
+          );
+        }
+        if (
+          !b ||
+          latest.pairedRunVersion !== pairedRunVersion ||
+          latest.cashBaseline?.id !== baseline.id ||
+          latest.cashBaseline.revision !== baseline.revision ||
+          latest.a.service.id !== pairedRunId(a, baseline, latest.settings) ||
+          latest.b?.service.id !== pairedRunId(b, baseline, latest.settings)
+        ) {
+          return scenarioErrors.fail(
+            "Run a fresh Saturday comparison before computing this runway.",
+            "invalid_scenario",
+          );
+        }
+        const runs = await tx
+          .select({ id: serviceRuns.id })
+          .from(serviceRuns)
+          .where(
+            and(
+              eq(serviceRuns.ownerEmail, owner),
+              inArray(serviceRuns.id, [
+                latest.a.service.id,
+                latest.b.service.id,
+              ]),
+              eq(serviceRuns.arrivalSourceId, baseline.id),
+              eq(serviceRuns.arrivalSourceRevision, baseline.revision),
+            ),
+          );
+        if (runs.length !== 2) {
+          return scenarioErrors.fail(
+            "Run a fresh Saturday comparison before computing this runway.",
+            "invalid_scenario",
+          );
+        }
+        if (
+          request.savedCustomers &&
+          (latest.assumptionRevision ?? 0) !== assumptionRevision
+        ) {
+          return scenarioErrors.fail(
+            "The saved-customer assumption changed. Refresh the cash projection before editing it.",
+            "scenario_conflict",
+            { statusCode: 409 },
+          );
+        }
+        settings = latest.settings;
+        matchedReceipt = latest;
+      } else {
+        settings = request.settings;
+      }
       if (
         savedCustomers.enabled !== previous.enabled ||
         savedCustomers.tag !== previous.tag
@@ -269,7 +339,7 @@ export async function saveDecision(
         label: a.label,
         finance: a.finance,
         financeRevision: a.financeRevision,
-        service: withoutPlayback(runA),
+        service: matchedReceipt?.a.service ?? withoutPlayback(runA),
         weekendLosses: calculated.weekendLossA,
         cash: calculated.cashA,
       },
@@ -279,7 +349,7 @@ export async function saveDecision(
               label: b.label,
               finance: b.finance,
               financeRevision: b.financeRevision,
-              service: withoutPlayback(runB),
+              service: matchedReceipt?.b?.service ?? withoutPlayback(runB),
               weekendLosses: calculated.weekendLossB,
               cash: calculated.cashB,
             }
@@ -288,7 +358,7 @@ export async function saveDecision(
       weekend: calculated.weekend,
       delta: calculated.delta,
     });
-    if (runB) {
+    if (runB && !matchedReceipt) {
       for (const { row, scenario } of inputs.values()) {
         if (row.demand !== null && row.shop !== null) continue;
         await tx

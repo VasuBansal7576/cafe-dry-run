@@ -604,7 +604,7 @@ export async function runFounder({ context, page, origin, map, record, section, 
   assert.equal(a.cash.outcomes.base.recoveredOrdersPerMonth.value, 0, "Switch off must exclude recovered orders");
   await page.getByRole("heading", { name: "Assumption that can change the decision" }).waitFor();
   const assumption = exact(page, "Count weekend customers who would have left but now place an order");
-  await assumption.click();
+  const switched = await clickAction(page, "compute-runway", assumption);
   const on = await poll("cash receipt with saved customers on", async () => {
     const next = await decision(barista.id, grinder.id);
     return next?.receipt.savedCustomers.enabled && next;
@@ -619,6 +619,7 @@ export async function runFounder({ context, page, origin, map, record, section, 
   assert(on.receipt.a.cash.outcomes.base.monthlyRevenue.value > a.cash.outcomes.base.monthlyRevenue.value, "Faster service revenue must increase only after enabling the assumption");
   assert.equal(on.receipt.a.cash.outcomes.base.weekdayOrdersPerDay.value, a.cash.outcomes.base.weekdayOrdersPerDay.value);
   assert.notEqual(on.receipt.delta.higherMonthlyCash.on, on.receipt.delta.higherMonthlyCash.off, "Fixture must reverse the higher-monthly-cash option");
+  assert.deepEqual(switched.receipt, on.receipt);
   await visibleDeltas(page, on.receipt.delta);
   const ledgerValue = receiptPanel.getByRole("row", { name: /Monthly cash change/ })
     .getByRole("cell").filter({ hasText: ledgerCash.format(on.receipt.a.cash.outcomes.base.monthlyCash.value) });
@@ -628,8 +629,21 @@ export async function runFounder({ context, page, origin, map, record, section, 
     "Weekday wages per month", "Weekend wages per month", "Weekday arrivals per open day", "Weekend arrivals per open day",
   ]) await receiptPanel.getByRole("row", { name: new RegExp(name) }).waitFor();
   assert.equal(on.receipt.a.cash.outcomes.base.monthlyCash.tag, "illustrative", "Weakest input must propagate into cash");
+  const refreshed = await clickAction(page, "compute-runway", button(page, "Refresh cash projection"));
+  assert.notEqual(refreshed.receipt.id, on.receipt.id);
+  assert.deepEqual({ ...refreshed.receipt, id: on.receipt.id }, on.receipt, "Cash refresh must preserve the matched service and settings");
+  const currentVersion = async (id) => {
+    const row = await find(id);
+    return { id, expectedRevision: row.revision, expectedFinanceRevision: row.financeRevision };
+  };
+  const fromAction = await post("compute-runway", {
+    comparison: { a: await currentVersion(barista.id), b: await currentVersion(grinder.id), receiptId: refreshed.receipt.id },
+  });
+  assert.deepEqual({ ...fromAction.receipt, id: refreshed.receipt.id }, refreshed.receipt, "The public action must return the same paired cash as the founder control");
+  await verifyPublishedPlayback(page, origin, fromAction.receipt.id, runA, runB, pairedFrame.second);
   record("calendar and reversing assumption", {
     offReceipt: direct.receipt.id, onReceipt: on.receipt.id,
+    refreshedReceipt: refreshed.receipt.id, actionReceipt: fromAction.receipt.id,
     weekdayOrders: a.cash.outcomes.base.weekdayOrdersPerDay, weekendOrders: a.cash.outcomes.base.weekendOrdersPerDay,
     costs: a.cash.costs, breakEven: a.cash.breakEvenOrdersPerDay, delta: on.receipt.delta,
   });
@@ -671,7 +685,7 @@ export async function runFounder({ context, page, origin, map, record, section, 
   assert.equal(forwardScreen.playback?.runId, runA.id, "view-screen must report the displayed saved run");
   assert.equal(forwardScreen.playback.comparisonRunId, runB.id);
   assert.equal(forwardScreen.playback.second, pairedFrame.second);
-  assert.equal(forwardScreen.playback.receiptId, on.receipt.id);
+  assert.equal(forwardScreen.playback.receiptId, fromAction.receipt.id);
   assert.equal(reverseScreen.playback?.receiptId, reverseAction.receipt.id, "The other tab must report its own saved receipt");
   assert.deepEqual([reverseScreen.playback.runId, reverseScreen.playback.comparisonRunId], reverseRuns);
   assert.equal(reverseScreen.playback.second, reverseSecond);
@@ -694,9 +708,9 @@ export async function runFounder({ context, page, origin, map, record, section, 
 
   section("grounded explanation links saved action results", ["S5", "a7"]);
   const explanation = await firstTab.action("explain-result", {
-    aId: barista.id, bId: grinder.id, receiptId: on.receipt.id,
+    aId: barista.id, bId: grinder.id, receiptId: fromAction.receipt.id,
   });
-  assert.equal(explanation.receiptId, on.receipt.id, "Explain action must identify the selected saved receipt");
+  assert.equal(explanation.receiptId, fromAction.receipt.id, "Explain action must identify the selected saved receipt");
   assert.deepEqual([explanation.scenarioA.serviceRun, explanation.scenarioB.serviceRun], [runA.id, runB.id]);
   assert.deepEqual(explanation.matchedWeekendSample, on.receipt.weekend.base);
   assert.deepEqual(explanation.scenarioBMinusScenarioA, on.receipt.delta);

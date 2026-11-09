@@ -902,6 +902,136 @@ it("reads both sides of a fresh matched receipt using the shared arrival source 
   ).rejects.toThrow("shared arrival source");
 });
 
+it("computes matched runway from a current pair without replacing its runs", async () => {
+  const { scenario: a } = await createScenario.run({}, owner);
+  const { scenario: b } = await configureShop.run(
+    { ...versions(a), variantLabel: "Second shop" },
+    owner,
+  );
+  const { receipt } = await compareScenarios.run(
+    { a: versions(a), b: versions(b), ...settings },
+    owner,
+  );
+  const { scenario: cheaper } = await configureFinance.run(
+    {
+      id: b.id,
+      expectedFinanceRevision: b.financeRevision,
+      finance: { rent: estimated(b.finance.rent.value - 1_000) },
+    },
+    owner,
+  );
+  const comparison = {
+    a: versions(a),
+    b: versions(cheaper),
+    receiptId: receipt.id,
+  };
+  await expect(computeRunway.run({ comparison }, other)).rejects.toThrow();
+  await expect(
+    computeRunway.run({ comparison: { ...comparison, b: versions(b) } }, owner),
+  ).rejects.toThrow();
+  await expect(
+    computeRunway.run(
+      { comparison: { ...comparison, a: comparison.b, b: comparison.a } },
+      owner,
+    ),
+  ).rejects.toThrow();
+  const [first, second] = await Promise.allSettled([
+    computeRunway.run({ comparison }, owner),
+    computeRunway.run({ comparison }, owner),
+  ]);
+  const winner = first.status === "fulfilled" ? first : second;
+  const loser = first.status === "fulfilled" ? second : first;
+  expect(winner.status).toBe("fulfilled");
+  expect(loser.status).toBe("rejected");
+  if (winner.status !== "fulfilled") throw winner.reason;
+  const fresh = winner.value.receipt;
+  expect(fresh.id).not.toBe(receipt.id);
+  expect(fresh.settings).toEqual(receipt.settings);
+  expect(fresh.a.service).toEqual(receipt.a.service);
+  expect(fresh.b?.service).toEqual(receipt.b?.service);
+  expect(fresh.weekend).toEqual(receipt.weekend);
+  expect(fresh.delta?.monthlyCash.value).toBe(
+    receipt.delta!.monthlyCash.value + 1_000,
+  );
+  expect(
+    (await getComparison.run({ aId: a.id, bId: b.id }, owner)).decision,
+  ).toMatchObject({ receipt: fresh, cashStale: false });
+  const replayed = await compareScenarios.run(
+    { a: comparison.a, b: comparison.b, ...settings },
+    owner,
+  );
+  expect({ ...replayed.receipt, id: fresh.id }).toEqual(fresh);
+});
+
+it("uses current paired assumptions and rejects a stale service sample or obsolete switch edit", async () => {
+  const { scenario: source } = await createScenario.run({}, owner);
+  const { scenario: a } = await configureShop.run(
+    { ...versions(source), variantLabel: "A" },
+    owner,
+  );
+  const { scenario: b } = await configureShop.run(
+    { ...versions(source), variantLabel: "B" },
+    owner,
+  );
+  const pair = { a: versions(a), b: versions(b) };
+  const forward = await compareScenarios.run({ ...pair, ...settings }, owner);
+  const reverse = await compareScenarios.run(
+    { a: pair.b, b: pair.a, ...settings },
+    owner,
+  );
+  const savedCustomers = { enabled: true, tag: "estimate" as const };
+  const updated = await computeRunway.run(
+    {
+      comparison: {
+        a: pair.b,
+        b: pair.a,
+        receiptId: reverse.receipt.id,
+        savedCustomers,
+      },
+    },
+    owner,
+  );
+  expect(updated.receipt.savedCustomers).toEqual(savedCustomers);
+  const comparison = { ...pair, receiptId: forward.receipt.id };
+  await expect(
+    computeRunway.run(
+      {
+        comparison: {
+          ...comparison,
+          savedCustomers: { ...savedCustomers, enabled: false },
+        },
+      },
+      owner,
+    ),
+  ).rejects.toThrow();
+  const refreshed = await computeRunway.run({ comparison }, owner);
+  expect(refreshed.receipt.savedCustomers).toEqual(savedCustomers);
+  expect(refreshed.receipt.a.service.id).toBe(forward.receipt.a.service.id);
+  await setPedestrianCount.run(
+    {
+      ...serviceVersion(source),
+      pedestrian: {
+        count: { value: 100, source: { tag: "observed" } },
+        conversionPercent: estimated(20),
+      },
+    },
+    owner,
+  );
+  await expect(
+    computeRunway.run(
+      { comparison: { ...pair, receiptId: refreshed.receipt.id } },
+      owner,
+    ),
+  ).rejects.toThrow();
+  expect(
+    (await getComparison.run({ aId: a.id, bId: b.id }, owner)).decision,
+  ).toMatchObject({
+    receipt: { id: refreshed.receipt.id },
+    serviceStale: true,
+    cashStale: true,
+  });
+});
+
 it("still saves and clears observed counts without substituting an assumed count", async () => {
   const { scenario } = await createScenario.run({}, owner);
   const pedestrian = {

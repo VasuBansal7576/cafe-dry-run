@@ -361,9 +361,13 @@ function PairedWorkspace({
   rerunAfterShopSave: (scenario: Scenario) => void;
 }) {
   const saved = useActionQuery("get-comparison", { aId: a.id, bId: b.id });
+  const compute = useActionMutation("compute-runway", {
+    onError: () => void saved.refetch(),
+  });
   const currentPair =
     compare.variables?.a.id === a.id && compare.variables?.b.id === b.id;
-  const busy = currentPair && compare.isPending;
+  const busy = (currentPair && compare.isPending) || compute.isPending;
+  const switchEdit = !!compute.variables?.comparison?.savedCustomers;
   const [draft, setDraft] = useState<{
     seed?: string;
     runCount?: string;
@@ -375,26 +379,29 @@ function PairedWorkspace({
     ...(decision?.receipt.settings ?? initialSettings),
     ...draft,
   };
-  function rerun(assumption?: boolean, useDraft = false) {
-    if (busy) return;
-    compare.mutate({
-      a: scenarioVersion(a),
-      b: scenarioVersion(b),
-      ...(useDraft
-        ? {
-            seed: Number(settings.seed),
-            runCount: Number(settings.runCount),
-            demandLevel: settings.demandLevel,
-          }
-        : (decision?.receipt.settings ?? initialSettings)),
-      ...(assumption === undefined
-        ? {}
-        : { savedCustomers: { enabled: assumption, tag: "estimate" } }),
+  function refresh(assumption?: boolean) {
+    if (busy || !decision || decision.serviceStale) return;
+    compute.mutate({
+      comparison: {
+        a: scenarioVersion(a),
+        b: scenarioVersion(b),
+        receiptId: decision.receipt.id,
+        ...(assumption === undefined
+          ? {}
+          : { savedCustomers: { enabled: assumption, tag: "estimate" } }),
+      },
     });
   }
   function submit(event: FormEvent) {
     event.preventDefault();
-    rerun(undefined, true);
+    if (busy) return;
+    compare.mutate({
+      a: scenarioVersion(a),
+      b: scenarioVersion(b),
+      seed: Number(settings.seed),
+      runCount: Number(settings.runCount),
+      demandLevel: settings.demandLevel,
+    });
   }
   return (
     <>
@@ -410,10 +417,7 @@ function PairedWorkspace({
         </header>
         <div className="cafe-board cafe-service">
           {decision && (
-            <ComparisonPlayback
-              decision={decision}
-              disabled={compare.isPending}
-            />
+            <ComparisonPlayback decision={decision} disabled={busy} />
           )}
           {controls}
           {saved.data?.arrivalSource && (
@@ -485,7 +489,7 @@ function PairedWorkspace({
               className="cafe-primary"
               disabled={busy || !saved.data?.arrivalSource}
             >
-              {busy
+              {currentPair && compare.isPending
                 ? "Comparing Saturdays…"
                 : decision
                   ? "Rerun comparison"
@@ -517,8 +521,14 @@ function PairedWorkspace({
             <ComparisonMetrics
               decision={decision}
               disabled={busy}
-              setSavedCustomers={rerun}
+              setSavedCustomers={refresh}
             />
+          )}
+          {switchEdit && compute.error && (
+            <p className="cafe-notice" role="alert">
+              {actionErrorMessage(compute.error) ??
+                "Could not change the saved-customer assumption."}
+            </p>
           )}
           <details className="cafe-alternative-edit">
             <summary>Edit B · {b.label}</summary>
@@ -534,8 +544,9 @@ function PairedWorkspace({
         a={a}
         b={b}
         decision={decision}
-        busy={busy}
-        refreshPair={() => rerun()}
+        pending={busy}
+        error={switchEdit ? null : compute.error}
+        onCompute={() => refresh()}
       />
     </>
   );
@@ -549,6 +560,7 @@ function SingleWorkspace({
   controls: ReactNode;
 }) {
   const saved = useActionQuery("get-comparison", { aId: scenario.id });
+  const compute = useActionMutation("compute-runway");
   const previous = saved.data?.decision;
   const decision = previous ? staleAgainst(previous, scenario) : previous;
   return (
@@ -562,8 +574,15 @@ function SingleWorkspace({
       <FinanceLedger
         a={scenario}
         decision={decision}
-        busy={false}
-        refreshPair={() => undefined}
+        pending={compute.isPending}
+        error={compute.error}
+        onCompute={() => {
+          if (scenario.latestRunId)
+            compute.mutate({
+              ...scenarioVersion(scenario),
+              runId: scenario.latestRunId,
+            });
+        }}
       />
     </>
   );
@@ -700,7 +719,7 @@ export function ComparisonWorkspace({
   );
   return b ? (
     <PairedWorkspace
-      key={b.id}
+      key={`${a.id}:${b.id}`}
       a={a}
       b={b}
       controls={controls}
