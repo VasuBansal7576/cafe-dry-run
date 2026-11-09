@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
@@ -19,11 +17,13 @@ import {
   scenarioConflict,
   scenarioErrors,
   scenarioFields,
+  scenarioScope,
   scenarioVersionKey,
   toScenario,
   validateInput,
   type Scenario,
 } from "./scenario-store.js";
+import { pairedRunId, pairedRunVersion } from "./service-run-identity.js";
 import { serviceRunSchema } from "./service-run.js";
 
 export const decisionScopeSchema = z.object({
@@ -56,28 +56,6 @@ function verifyVersion(
     return scenarioConflict();
   }
   return scenario;
-}
-
-function pairedRunId(
-  scenario: Scenario,
-  arrivalScenario: Scenario,
-  settings: DecisionParameters,
-): string {
-  const digest = createHash("sha256")
-    .update(
-      JSON.stringify([
-        "paired-v2",
-        scenario.id,
-        scenario.revision,
-        arrivalScenario.id,
-        arrivalScenario.revision,
-        settings.seed,
-        settings.runCount,
-        settings.demandLevel,
-      ]),
-    )
-    .digest("hex");
-  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
 }
 
 type DecisionRequest =
@@ -179,12 +157,14 @@ export async function saveDecision(
       .where(and(eq(scenarios.ownerEmail, owner), inArray(scenarios.id, ids)))
       .orderBy(scenarios.id)
       .for("update");
-    const inputs = new Map(rows.map((row) => [row.id, toScenario(row)]));
-    const a = verifyVersion(inputs.get(request.a.id), request.a);
+    const inputs = new Map(
+      rows.map((row) => [row.id, { row, scenario: toScenario(row) }]),
+    );
+    const a = verifyVersion(inputs.get(request.a.id)?.scenario, request.a);
     const b = paired
-      ? verifyVersion(inputs.get(request.b.id), request.b)
+      ? verifyVersion(inputs.get(request.b.id)?.scenario, request.b)
       : null;
-    const baseline = inputs.get(baselineId) ?? scenarioConflict();
+    const baseline = inputs.get(baselineId)?.scenario ?? scenarioConflict();
     let settings: DecisionParameters;
     let savedCustomers = defaultSavedCustomers;
     let assumptionRevision = 0;
@@ -278,6 +258,7 @@ export async function saveDecision(
       savedCustomers,
       pedestrian: baseline.demand.pedestrian ?? null,
       assumptionRevision,
+      pairedRunVersion: paired ? pairedRunVersion : undefined,
       cashBaseline: {
         ...arrivalSource,
         label: baseline.label,
@@ -307,6 +288,16 @@ export async function saveDecision(
       delta: calculated.delta,
     });
     if (runB) {
+      for (const { row, scenario } of inputs.values()) {
+        if (row.demand !== null && row.shop !== null) continue;
+        await tx
+          .update(scenarios)
+          .set({
+            demand: row.demand === null ? scenario.demand : undefined,
+            shop: row.shop === null ? scenario.shop : undefined,
+          })
+          .where(scenarioScope(row.id, owner));
+      }
       await tx
         .insert(serviceRuns)
         .values([
@@ -421,6 +412,7 @@ export async function readDecision(
     receipt.savedCustomers.tag !== currentSavedCustomers.tag;
   const historical = !row.isLatestForOrder || assumptionStale;
   const serviceStale =
+    (!!receipt.b && receipt.pairedRunVersion !== pairedRunVersion) ||
     receipt.a.service.scenarioRevision !== row.aRevision ||
     (!!receipt.cashBaseline &&
       receipt.cashBaseline.revision !== row.arrivalRevision) ||

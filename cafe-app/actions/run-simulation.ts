@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 import { defineAction } from "@agent-native/core/action";
 
 import { getDb } from "../server/db/index.js";
@@ -21,6 +19,7 @@ import {
   validateInput,
 } from "../server/lib/cafe/scenario-store.js";
 import { arrivalInputs, serviceInputs } from "../server/lib/cafe/scenario.js";
+import { soloRunId } from "../server/lib/cafe/service-run-identity.js";
 import {
   serviceParameters,
   serviceRunSchema,
@@ -74,19 +73,7 @@ export default defineAction({
         demandLevel,
       );
       const result = simulateSeries(serviceInputs(scenario.shop), plan);
-      const digest = createHash("sha256")
-        .update(
-          JSON.stringify([
-            1,
-            id,
-            expectedRevision,
-            seed,
-            demandLevel,
-            runCount,
-          ]),
-        )
-        .digest("hex");
-      const runId = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+      const runId = soloRunId(scenario, { seed, demandLevel, runCount });
       const run = validateInput(serviceRunSchema, {
         id: runId,
         scenarioId: id,

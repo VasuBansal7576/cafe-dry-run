@@ -84,6 +84,7 @@ export const decisionReceiptSchema = z.object({
   savedCustomers: savedCustomerAssumptionSchema,
   pedestrian: pedestrianSchema.nullable().optional(),
   assumptionRevision: z.number().int().nonnegative().optional(),
+  pairedRunVersion: z.number().int().positive().optional(),
   cashBaseline: z
     .object({
       id: z.string().uuid(),

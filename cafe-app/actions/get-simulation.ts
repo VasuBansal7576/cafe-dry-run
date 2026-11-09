@@ -11,6 +11,10 @@ import {
   scenarioKey,
   scenarioScope,
 } from "../server/lib/cafe/scenario-store.js";
+import {
+  pairedRunId,
+  soloRunId,
+} from "../server/lib/cafe/service-run-identity.js";
 import { serviceRunSchema } from "../server/lib/cafe/service-run.js";
 
 export default defineAction({
@@ -83,18 +87,24 @@ export default defineAction({
       row.arrivalSourceRevision === null
     )
       return { run: null };
+    const scenario = { id, revision: row.scenarioRevision };
+    const arrivalSource = {
+      id: row.arrivalSourceId,
+      revision: row.arrivalSourceRevision,
+    };
+    const currentRunId =
+      row.runId === soloRunId(scenario, row.summary) ||
+      row.runId === pairedRunId(scenario, arrivalSource, row.summary);
     return {
       run: {
         id: row.runId,
         scenarioId: id,
         scenarioRevision: row.scenarioRevision,
-        arrivalSource: {
-          id: row.arrivalSourceId,
-          revision: row.arrivalSourceRevision,
-        },
+        arrivalSource,
         summary: row.summary,
         playback: row.playback ?? undefined,
         stale:
+          !currentRunId ||
           row.scenarioRevision !== row.revision ||
           row.arrivalSourceRevision !== row.currentArrivalRevision,
       },
