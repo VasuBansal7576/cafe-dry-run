@@ -1,4 +1,5 @@
 .agent-native-app-main:has(> .cafe-workspace) {
+  container: cafe-canvas / inline-size;
   scroll-padding-block-start: 52px;
 }
 .cafe-workspace {
@@ -451,12 +452,15 @@
 .cafe-resource-list dd {
   font-family: var(--cafe-mono);
 }
-@media (max-width: 645px) {
+@container cafe-canvas (max-width: 645px) {
+  .cafe-workspace {
+    padding-inline: clamp(14px, 3.25cqw, 50px);
+  }
   .cafe-input-boards {
     grid-template-columns: minmax(0, 1fr);
   }
 }
-@media (max-width: 555px) {
+@container cafe-canvas (max-width: 555px) {
   .cafe-stations {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -667,7 +671,7 @@
 .cafe-chart-label-b {
   fill: #a43615;
 }
-@media (max-width: 645px) {
+@container cafe-canvas (max-width: 645px) {
   .cafe-receipt {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -682,7 +686,7 @@
     white-space: nowrap;
   }
 }
-@media (max-width: 555px) {
+@container cafe-canvas (max-width: 555px) {
   .cafe-paired-boards {
     grid-template-columns: minmax(0, 1fr);
   }

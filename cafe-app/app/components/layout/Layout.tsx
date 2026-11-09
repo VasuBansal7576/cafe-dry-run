@@ -142,25 +142,20 @@ function LayoutShell({ children }: LayoutProps) {
   // header must stay visible on phones or the thread loses both.
   const chatHeaderInAppBar =
     isChatRoute && (pageTitle != null || pageActions != null);
-  const openMobileSidebar = () => setMobileSidebarOpen(true);
   const ownsToolbar = routeOwnsToolbar(location.pathname);
   const contentFrame = (
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
       {isChatRoute ? (
         <MobileAppBar
           className="md:hidden"
-          onOpenNavigation={openMobileSidebar}
           title={pageTitle ?? APP_TITLE}
           actions={pageActions}
         />
       ) : ownsToolbar ? (
-        <MobileAppBar
-          className="md:hidden"
-          onOpenNavigation={openMobileSidebar}
-        />
+        <MobileAppBar className="md:hidden" />
       ) : settingsOwnsChrome ? null : (
         <Suspense fallback={<div className="h-12 shrink-0" />}>
-          <Header onOpenMobileSidebar={openMobileSidebar} />
+          <Header />
         </Suspense>
       )}
       <main className="agent-native-app-main min-w-0 flex-1 overflow-y-auto overscroll-contain">
@@ -170,20 +165,23 @@ function LayoutShell({ children }: LayoutProps) {
   );
 
   return (
-    <HeaderActionsProvider>
-      <div className="agent-layout-shell chat-layout-shell flex h-screen w-full overflow-hidden bg-background text-foreground">
-        {settingsOwnsChrome ? null : (
-          <div
-            data-collapsed={sidebarCollapsed ? "true" : "false"}
-            className="agent-layout-left-drawer hidden md:block"
-          >
-            <Sidebar
-              collapsed={sidebarCollapsed}
-              onCollapsedChange={setSidebarCollapsed}
-            />
-          </div>
-        )}
-        <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
+    <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
+      <HeaderActionsProvider>
+        <div
+          className="agent-layout-shell chat-layout-shell flex h-screen w-full overflow-hidden bg-background text-foreground"
+          data-cafe-layout={location.pathname === "/cafe" ? "" : undefined}
+        >
+          {settingsOwnsChrome ? null : (
+            <div
+              data-collapsed={sidebarCollapsed ? "true" : "false"}
+              className="agent-layout-left-drawer hidden md:block"
+            >
+              <Sidebar
+                collapsed={sidebarCollapsed}
+                onCollapsedChange={setSidebarCollapsed}
+              />
+            </div>
+          )}
           <SheetContent
             side="left"
             className="w-[var(--chat-sidebar-width)] p-0"
@@ -196,26 +194,26 @@ function LayoutShell({ children }: LayoutProps) {
             </SheetDescription>
             <Sidebar collapsed={false} collapsible={false} />
           </SheetContent>
-        </Sheet>
-        {isChatRoute ? (
-          <div
-            data-agent-chat-canvas="true"
-            data-chat-header-in-app-bar={
-              chatHeaderInAppBar ? "true" : undefined
-            }
-            className="agent-layout-main-surface flex min-w-0 flex-1 overflow-hidden"
-          >
-            {contentFrame}
-          </div>
-        ) : (
-          <AgentInspector
-            chatHomeHandoffActive={chatHomeHandoffActive}
-            chatHomeHandoffPending={chatHomeHandoffPending}
-          >
-            {contentFrame}
-          </AgentInspector>
-        )}
-      </div>
-    </HeaderActionsProvider>
+          {isChatRoute ? (
+            <div
+              data-agent-chat-canvas="true"
+              data-chat-header-in-app-bar={
+                chatHeaderInAppBar ? "true" : undefined
+              }
+              className="agent-layout-main-surface flex min-w-0 flex-1 overflow-hidden"
+            >
+              {contentFrame}
+            </div>
+          ) : (
+            <AgentInspector
+              chatHomeHandoffActive={chatHomeHandoffActive}
+              chatHomeHandoffPending={chatHomeHandoffPending}
+            >
+              {contentFrame}
+            </AgentInspector>
+          )}
+        </div>
+      </HeaderActionsProvider>
+    </Sheet>
   );
 }

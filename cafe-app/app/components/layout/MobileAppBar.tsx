@@ -3,25 +3,16 @@ import { IconMenu2 } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
 interface MobileAppBarProps {
-  onOpenNavigation: () => void;
   title?: ReactNode;
   actions?: ReactNode;
   className?: string;
 }
 
-/**
- * The one 48px bar above a route. The menu button only shows below md, where
- * the sidebar lives in a sheet.
- */
-export function MobileAppBar({
-  onOpenNavigation,
-  title,
-  actions,
-  className,
-}: MobileAppBarProps) {
+export function MobileAppBar({ title, actions, className }: MobileAppBarProps) {
   const t = useT();
 
   return (
@@ -32,16 +23,17 @@ export function MobileAppBar({
         className,
       )}
     >
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-sm"
-        className="md:hidden"
-        onClick={onOpenNavigation}
-        aria-label={t("navigation.openNavigation")}
-      >
-        <IconMenu2 className="size-4" />
-      </Button>
+      <SheetTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="chat-navigation-toggle md:hidden"
+          aria-label={t("navigation.openNavigation")}
+        >
+          <IconMenu2 className="size-4" />
+        </Button>
+      </SheetTrigger>
       <div className="flex min-w-0 flex-1 items-center truncate text-sm font-medium">
         {title}
       </div>

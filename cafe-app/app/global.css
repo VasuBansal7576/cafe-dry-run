@@ -46,6 +46,16 @@
   --agent-native-lower-surface: var(--agent-kit-nav-surface);
 }
 
+@media (48rem <= width < 66rem) {
+  [data-cafe-layout] > .agent-layout-left-drawer {
+    display: none;
+  }
+
+  [data-cafe-layout] .chat-navigation-toggle {
+    display: inline-flex;
+  }
+}
+
 /* Phones get one app bar: the layout bar carries the thread title and
    toolbar, so the AgentKit header would stack a second 48px bar. */
 @media (max-width: 47.99rem) {

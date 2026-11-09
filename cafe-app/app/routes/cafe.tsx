@@ -120,33 +120,57 @@ export default function CafeRoute() {
     const padding =
       Number.parseFloat(getComputedStyle(scrollArea).scrollPaddingBlockStart) ||
       0;
+    const documents = cafeDocuments.flatMap((name) => {
+      const section = node.querySelector(`#${name}`);
+      return section ? [{ name, section }] : [];
+    });
+    const readPosition = () => {
+      const line =
+        Math.max(
+          rail.getBoundingClientRect().bottom,
+          scrollArea.getBoundingClientRect().top + padding,
+        ) + 8;
+      let position:
+        | { name: CafeDocument; section: Element; top: number }
+        | undefined;
+      for (const document of documents) {
+        const top = document.section.getBoundingClientRect().top;
+        if (!position || top <= line) position = { ...document, top };
+      }
+      return position;
+    };
+    let width = scrollArea.clientWidth;
+    let position = readPosition();
     let frame = 0;
     let lastVisible: CafeDocument | undefined;
     const trackDocument = () => {
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        const line =
-          Math.max(
-            rail.getBoundingClientRect().bottom,
-            scrollArea.getBoundingClientRect().top + padding,
-          ) + 8;
-        let visible: CafeDocument = "opening-file";
-        for (const name of cafeDocuments) {
-          const section = node.querySelector(`#${name}`);
-          if (section && section.getBoundingClientRect().top <= line)
-            visible = name;
-        }
-        if (visible !== lastVisible) {
-          lastVisible = visible;
-          reportScroll(visible);
+        if (scrollArea.clientWidth !== width) return;
+        position = readPosition();
+        if (position && position.name !== lastVisible) {
+          lastVisible = position.name;
+          reportScroll(position.name);
         }
       });
     };
+    const resize = new ResizeObserver(() => {
+      const nextWidth = scrollArea.clientWidth;
+      if (width === nextWidth) return;
+      width = nextWidth;
+      if (position && scrollArea.scrollTop > 0) {
+        scrollArea.scrollTop +=
+          position.section.getBoundingClientRect().top - position.top;
+      }
+      trackDocument();
+    });
+    resize.observe(scrollArea);
     scrollArea.addEventListener("scroll", trackDocument, { passive: true });
     if (!hash) trackDocument();
     return () => {
       scrollArea.removeEventListener("scroll", trackDocument);
+      resize.disconnect();
       cancelAnimationFrame(frame);
     };
   }, [hash, hasScenario, reportScroll]);

@@ -333,7 +333,7 @@
   font-size: 11px;
 }
 
-@media (max-width: 645px) {
+@container cafe-canvas (max-width: 645px) {
   .cafe-map-preset {
     width: 100%;
   }
