@@ -826,30 +826,41 @@ a{color:var(--blue)}
   ],
   "architecture": {
     "framework": "Agent-Native, scaffolded with npx @agent-native/core@latest create",
-    "store": "Scenario store (SQL via Drizzle): scenarios, runs and stale flags persist in the database",
+    "store": "Scenario store (PostgreSQL via Drizzle): scenarios, runs and stale flags persist in the database. Use the documented local PGlite option for the local demo and verify restart persistence.",
     "engines": "Pure TypeScript simulator and cash model called by actions on the server; no ML model",
     "playback": "Actions return or store an event timeline for UI playback",
     "applicationState": "Records current view, selected scenarios and timeline position; agent can navigate the UI",
     "sync": "Agent edits appear without a manual refresh, within a couple of seconds",
     "ai": "All AI goes through agent chat; Explain sends a prompt to chat. UI may call deterministic actions. No /api routes wrap actions.",
-    "demoAccess": "Decide between single-user demo mode and a seeded demo account; verify template support"
+    "demoAccess": "Start with the Chat template's documented Continue as local dev entry; verify the actual installed template and use a seeded demo account only if required."
   },
   "openQuestions": [
     {
       "question": "Which LLM key powers the built-in agent chat, and is there a free route?",
-      "status": "open"
+      "status": "provider selection and live verification pending",
+      "answer": "Official setup supports Builder.io, custom provider keys, or local Ollama. Use an already available supported connection and verify a real tool call. No free allowance is assumed.",
+      "source": "https://www.agent-native.com/docs/",
+      "checkedAt": "2026-11-09"
     },
     {
       "question": "Can the database be SQLite for a local demo, or is Postgres required?",
-      "status": "open"
+      "status": "answered by official docs; runtime verification pending",
+      "answer": "Agent-Native uses PostgreSQL through Drizzle. PGlite is the documented local option. Verify startup from empty storage and persistence across restart; do not substitute SQLite.",
+      "source": "https://www.agent-native.com/docs/server-database/",
+      "checkedAt": "2026-11-09"
     },
     {
       "question": "Does a shared Clips link play with no login?",
-      "status": "open"
+      "status": "public access required; final link verification belongs to the human",
+      "source": "https://www.builder.io/hackathon/rules",
+      "checkedAt": "2026-11-09"
     },
     {
       "question": "Can the template run in single-user demo mode?",
-      "status": "open"
+      "status": "local dev entry documented; installed template verification pending",
+      "answer": "The official Chat quickstart provides Continue as local dev without an email or password for local development. Verify that path in the generated app.",
+      "source": "https://www.agent-native.com/docs/",
+      "checkedAt": "2026-11-09"
     }
   ]
 }
