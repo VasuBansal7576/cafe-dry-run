@@ -43,21 +43,8 @@ import { formatClock } from "./scenario-inputs";
 
 const playbackSpeeds = [30, 120, 600] as const;
 const playbackSyncInterval = 1000;
+const playbackReadTimeout = 10_000;
 const playbackStateKey = `cafe-playback:${TAB_ID}`;
-const playbackSeekBaselineKey = `${playbackStateKey}:seek-baseline`;
-
-function rememberPlaybackSeek(resultId: string, seekId: string | null) {
-  const prefix = `${resultId}:`;
-  const next = `${prefix}${seekId ?? ""}`;
-  try {
-    const previous = sessionStorage.getItem(playbackSeekBaselineKey);
-    if (previous !== next)
-      sessionStorage.setItem(playbackSeekBaselineKey, next);
-    return previous?.startsWith(prefix) === true && previous !== next;
-  } catch {
-    return false;
-  }
-}
 const number = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 1 });
 const comparisonNumber = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 2,
@@ -266,7 +253,12 @@ export function Playback({
     queryFn: async ({ signal }) => {
       const { values } = await readClientAppStateMany(
         ["navigation", playbackStateKey],
-        { signal },
+        {
+          signal: AbortSignal.any([
+            signal,
+            AbortSignal.timeout(playbackReadTimeout),
+          ]),
+        },
       );
       const navigation = values.navigation as NavigationState | undefined;
       const stored = playbackStateSchema.safeParse(values[playbackStateKey]);
@@ -284,7 +276,9 @@ export function Playback({
     retry: false,
   });
   const navigationReady =
-    savedPosition.isFetchedAfterMount && savedPosition.data?.navigationReady;
+    savedPosition.isFetchedAfterMount &&
+    savedPosition.isSuccess &&
+    savedPosition.data.navigationReady;
   const activeScope = useRef<string | null>(null);
   const retriedNavigation = useRef<string | null>(null);
   useEffect(() => {
@@ -315,15 +309,24 @@ export function Playback({
     savedPosition.data,
     savedPosition.isFetchedAfterMount,
   ]);
-  const [time, setTime] = useState(
-    playback.timeline.length ? Math.min(end, start + 25 * 60) : start,
-  );
+  const initialSecond = playback.timeline.length
+    ? Math.min(end, start + 25 * 60)
+    : start;
+  const [time, setTime] = useState(initialSecond);
+  const [baselineScope, setBaselineScope] = useState<string | null>(null);
+  const playbackReady = stale || (navigationReady && baselineScope === scope);
+  const playbackUnavailable =
+    !playbackReady &&
+    !navigationReady &&
+    !savedPosition.isFetching &&
+    (savedPosition.isError || savedPosition.isFetchedAfterMount);
+  const playbackStatusId = useId();
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<number>(120);
   const second = Math.floor(time);
   const clockGeneration = useRef(0);
   useEffect(() => {
-    if (!playing) return;
+    if (!playing || !playbackReady) return;
     const generation = clockGeneration.current;
     let previous = performance.now();
     const timer = window.setInterval(() => {
@@ -334,15 +337,13 @@ export function Playback({
       setTime((value) => Math.min(end, value + elapsed * speed));
     }, 100);
     return () => window.clearInterval(timer);
-  }, [end, playing, speed]);
+  }, [end, playbackReady, playing, speed]);
   useEffect(() => {
     if (time >= end) setPlaying(false);
   }, [end, time]);
-  const localPlaybackIntent = useRef(false);
   const synced = useRef({
-    ready: false,
+    scope: null as string | null,
     seekId: null as string | null,
-    rememberedResult: null as string | null,
     applied: null as string | null,
     remoteSecond: null as number | null,
   });
@@ -353,42 +354,37 @@ export function Playback({
     const stored = savedPosition.data?.playback;
     const state = synced.current;
     const seekId = stored?.seekId ?? null;
-    const initial = !state.ready;
-    const changed = state.seekId !== seekId;
-    state.ready = true;
+    const initial = state.scope !== scope;
+    const agentSeek = seekId !== null && state.seekId !== seekId;
+    state.scope = scope;
     state.seekId = seekId;
-    if (
-      !stored ||
-      !samePlayback(stored, identity) ||
-      stored.second < start ||
-      stored.second > end
-    )
-      return;
-    let changedSinceLastView = false;
-    if (state.rememberedResult !== resultId || changed) {
-      changedSinceLastView = rememberPlaybackSeek(resultId, seekId);
-      state.rememberedResult = resultId;
-    }
-    const agentSeek =
-      seekId !== null && (initial ? changedSinceLastView : changed);
-    if (initial || agentSeek) state.applied = positionKey(stored.second);
-    if (!agentSeek && (!initial || localPlaybackIntent.current)) return;
-    state.remoteSecond = stored.second;
+    const restored =
+      stored &&
+      samePlayback(stored, identity) &&
+      stored.second >= start &&
+      stored.second <= end
+        ? stored.second
+        : null;
+    if (!initial && (!agentSeek || restored === null)) return;
+    const nextSecond = restored ?? initialSecond;
+    state.applied = restored === null ? null : positionKey(restored);
+    state.remoteSecond = nextSecond;
     clockGeneration.current += 1;
-    setTime(stored.second);
+    setTime(nextSecond);
     setPlaying(false);
+    setBaselineScope(scope);
   });
   useEffect(
     () => applySavedPosition(),
-    [navigationReady, savedPosition.data?.playback, stale],
+    [scope, navigationReady, savedPosition.data?.playback, stale],
   );
 
   const publishPosition = useEffectEvent((): void => {
     const state = synced.current;
     if (
       activeScope.current !== scope ||
-      !state.ready ||
-      !navigationReady ||
+      state.scope !== scope ||
+      !playbackReady ||
       stale
     )
       return;
@@ -451,14 +447,14 @@ export function Playback({
     return () => window.clearInterval(timer);
   }, [playing, stale]);
   useEffect(() => {
-    if (playing || stale || !navigationReady) return;
+    if (playing || stale || !playbackReady) return;
     const timer = window.setTimeout(() => publishPosition(), 300);
     return () => window.clearTimeout(timer);
   }, [
     playing,
     scope,
     second,
-    navigationReady,
+    playbackReady,
     savedPosition.dataUpdatedAt,
     stale,
   ]);
@@ -474,18 +470,25 @@ export function Playback({
           <button
             className="cafe-primary"
             type="button"
+            aria-disabled={!playbackReady && !playbackUnavailable}
+            aria-describedby={playbackReady ? undefined : playbackStatusId}
             onClick={() => {
-              localPlaybackIntent.current = true;
+              if (!playbackReady) {
+                if (playbackUnavailable) void savedPosition.refetch();
+                return;
+              }
               synced.current.remoteSecond = null;
               if (time >= end) setTime(start);
               setPlaying(!playing);
             }}
           >
-            {playing
-              ? "Pause"
-              : time >= end
-                ? "Replay Saturday"
-                : "Play Saturday"}
+            {playbackUnavailable
+              ? "Retry playback"
+              : playing && playbackReady
+                ? "Pause"
+                : time >= end
+                  ? "Replay Saturday"
+                  : "Play Saturday"}
           </button>
           <label>
             Playback speed
@@ -509,14 +512,26 @@ export function Playback({
             max={end}
             step={1}
             value={second}
+            disabled={!playbackReady}
+            aria-describedby={playbackReady ? undefined : playbackStatusId}
             aria-valuetext={`${formatClock(second)}:${String(second % 60).padStart(2, "0")}`}
             onChange={(event) => {
-              localPlaybackIntent.current = true;
               synced.current.remoteSecond = null;
               setTime(Number(event.target.value));
             }}
           />
         </label>
+        {!playbackReady && (
+          <span
+            className="cafe-playback-status"
+            id={playbackStatusId}
+            role="status"
+          >
+            {playbackUnavailable
+              ? "Couldn’t load the saved playback position."
+              : "Loading saved playback position…"}
+          </span>
+        )}
       </div>
       <div className={boards.length > 1 ? "cafe-paired-boards" : undefined}>
         {boards.map((board) => (

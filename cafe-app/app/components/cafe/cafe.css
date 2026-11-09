@@ -452,8 +452,12 @@
 .cafe-clock strong {
   font: 28px var(--cafe-mono);
 }
-.cafe-seek {
+.cafe-seek,
+.cafe-playback-status {
   flex-basis: 100%;
+}
+.cafe-playback-status {
+  color: var(--cafe-muted);
 }
 .cafe-stations {
   display: grid;
@@ -777,7 +781,8 @@
     line-height: 1.25;
     letter-spacing: 0;
   }
-  .cafe-seek {
+  .cafe-seek,
+  .cafe-playback-status {
     grid-column: 1 / -1;
   }
   .cafe-playback .cafe-paired-boards {
