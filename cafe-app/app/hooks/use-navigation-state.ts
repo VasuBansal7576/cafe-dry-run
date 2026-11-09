@@ -3,8 +3,13 @@ import {
   appPathFromLocalRoute,
 } from "@agent-native/core/client/api-path";
 import { useAgentRouteState } from "@agent-native/core/client/navigation";
+import { useLocation } from "react-router";
 
-import { useCafeDocument, type CafeDocument } from "@/hooks/use-cafe-document";
+import {
+  cafeDocuments,
+  useCafeDocument,
+  type CafeDocument,
+} from "@/hooks/use-cafe-document";
 import {
   chatThreadPath,
   HOME_PATH,
@@ -27,7 +32,8 @@ export interface NavigationState {
 }
 
 export function useNavigationState() {
-  const { document } = useCafeDocument();
+  const { document: cafeDocument } = useCafeDocument();
+  const location = useLocation();
   useAgentRouteState<NavigationState>({
     browserTabId: TAB_ID,
     requestSource: TAB_ID,
@@ -39,14 +45,42 @@ export function useNavigationState() {
       return {
         ...navigation,
         hash,
-        ...(document
-          ? { document, documentHash: `#${document}` as const }
+        ...(cafeDocument
+          ? {
+              document: cafeDocument,
+              documentHash: `#${cafeDocument}` as const,
+            }
           : {}),
         ...(scenarioId ? { scenarioId } : {}),
         ...(comparisonScenarioId ? { comparisonScenarioId } : {}),
       };
     },
     getCommandPath: commandPathForNavigation,
+    onNavigate: (_command, path) => {
+      const { pathname, search, hash } = location;
+      if (
+        pathname !== "/cafe" ||
+        path !== `${pathname}${search}${hash}` ||
+        !cafeDocuments.some((name) => hash === `#${name}`)
+      )
+        return;
+
+      // The framework skips an identical URL. Scroll only the café pane so its rail stays visible.
+      const section = document.getElementById(hash.slice(1));
+      const pane = section?.closest(".cafe-workspace")?.closest("main");
+      if (!section || !pane) return;
+      const padding =
+        parseFloat(getComputedStyle(pane).scrollPaddingBlockStart) || 0;
+      const margin =
+        parseFloat(getComputedStyle(section).scrollMarginBlockStart) || 0;
+      pane.scrollTop +=
+        section.getBoundingClientRect().top -
+        pane.getBoundingClientRect().top -
+        padding -
+        margin;
+      if (document.activeElement === document.body)
+        section.focus({ preventScroll: true });
+    },
   });
 }
 
