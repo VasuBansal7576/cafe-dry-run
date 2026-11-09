@@ -37,6 +37,12 @@ The helper writes `.artifacts/verify-cafe-dry-run/<mode>-*/index.json` and selec
 
 Drive writes through actual user controls and use the framework read action and offline row projection to corroborate them. Capture the action, the visible result, and the side effect. Keep credentials, cookies, raw provider payloads, and full auth or chat tables out of evidence.
 
+Run `scripts/predicate.sh` after installing the app's frozen dependencies. It reruns Vitest, Agent-Native typecheck, and the framework source doctor. The browser doctor and journeys above cover runtime checks. A partial check supports only the part of a requirement it exercised.
+
+To record judgment after inspecting a journey, use `.artifacts/predicate-evidence.json`. Copy the `inputs` object from the predicate's `CANDIDATE` line for the tested commit. Record the full commit SHA as `testedCommit`, set `version` to 1, and identify the `reviewer`. Under `requirements`, key each entry by the exact predicate row ID. Give it a `status` of `VERIFIED`, `NOT VERIFIED`, or `INCONCLUSIVE`, plus a `command` or journey description, test `inputs`, an `observed` result, and an `artifacts` list. Each artifact has a `path` relative to `.artifacts` and a `sha256` digest. Use `shasum -a 256` to get the digest after capture. Record a verified judgment only when the artifacts support the whole row.
+
+The predicate rejects judgment if relevant Git inputs differ from the tested commit, the candidate's app or verification inputs have uncommitted changes, or an artifact is missing or changed. A successful pilot index supports its scoped observations. It does not certify broader rows by itself.
+
 ## Cleanup
 
 The helper closes its browser, terminates its own dev process group, confirms the port has cleared, and removes the scratch directory. It checks that evidence files still exist. If cleanup fails, inspect the printed scratch path and recorded process ownership before removing the abandoned instance. The evidence stays under the output directory.
