@@ -33,6 +33,14 @@ export default runMigrations(
     );
     CREATE INDEX cafe_service_runs_scenario_idx ON cafe_service_runs (scenario_id);`,
     },
+    {
+      version: 3,
+      name: "cafe-scenario-spot",
+      sql: `ALTER TABLE cafe_scenarios
+      ADD COLUMN spot JSONB NOT NULL DEFAULT '{"label":"12th Main & 5th Cross","lat":12.9700379,"lon":77.6387736}'::jsonb,
+      ADD COLUMN spot_revision INTEGER NOT NULL DEFAULT 0 CHECK (spot_revision >= 0);
+    ALTER TABLE cafe_scenarios ALTER COLUMN spot DROP DEFAULT;`,
+    },
   ],
   { table: "cafe_app_migrations" },
 );

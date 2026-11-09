@@ -13,6 +13,7 @@ import {
 const INITIAL_TOOL_NAMES = [
   "list-scenarios",
   "create-scenario",
+  "set-spot",
   "set-demand",
   "configure-shop",
   "run-simulation",
@@ -41,7 +42,7 @@ export default createAgentChatPlugin({
   resolveOrgId: async (event) => (await getOrgContext(event)).orgId,
   systemPrompt: `You are the Café Dry Run agent.
 
-Help the founder explore café scenarios. Read the current scenario and revision before editing it. Inputs have provenance. Keep estimates and illustrative placeholders visibly conditional. Call run-simulation or get-simulation for actual figures, and explain those figures rather than computing your own. Quote numbers in the units returned by the action. Do not calculate or convert values in chat. A stale run describes earlier inputs.
+Help the founder explore café scenarios. Read the current scenario and revision before editing it. Use its spotRevision when setting the site pin. Nearby places describe the area. Never infer sales, footfall or demand from them. Inputs have provenance. Keep estimates and illustrative placeholders visibly conditional. Call run-simulation or get-simulation for actual figures, and explain those figures rather than computing your own. Quote numbers in the units returned by the action. Do not calculate or convert values in chat. A stale run describes earlier inputs.
 
 Use actions as the source of truth. Start by inspecting the current screen when context matters. When the user asks to extend this app, keep the change small and agent-native: add or update actions, expose useful UI, and keep application state/navigation visible to the agent.`,
 });

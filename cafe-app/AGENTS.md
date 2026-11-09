@@ -38,11 +38,12 @@ Follow the project rules in `../AGENTS.md` and behavior specification in `../caf
 
 | Action | Use |
 | --- | --- |
-| `list-scenarios` | Read scenario IDs, revisions, tagged demand and shop inputs, and latest run IDs. |
+| `list-scenarios` | Read scenario IDs, selected spots, spot and service input revisions, tagged demand and shop inputs, and latest run IDs. |
 | `create-scenario` | Start a private scenario with clearly labeled illustrative inputs. |
+| `set-spot` | Move the selected scenario's pin by snapshot place name or coordinates using its `spotRevision`. Confirm the saved spot with `list-scenarios`. Use nearby places as area context only. |
 | `set-demand` | Edit hourly demand, opening hours or the Saturday curve using the current revision. |
 | `configure-shop` | Replace selected shop fields using the current revision. To change one shift, preserve the other workers and shifts in the replacement list. |
 | `run-simulation` | Persist a seeded service result for the current revision. Use its metrics and provenance when explaining the result. |
 | `get-simulation` | Read a saved run and its stale status. Request playback only when the arrival and event timeline is needed. |
 
-Use `navigate` to open `/cafe?scenario=<id>`. `view-screen` includes the tab's selected scenario, displayed run ID and timeline position. Active playback refreshes the position once per second. A stale result describes the earlier run revision. Simulation numbers come from actions. Explain opens the built-in agent chat.
+Use `navigate` to open `/cafe?scenario=<id>`. `view-screen` includes the tab's selected scenario, saved spot, displayed run ID and timeline position. Active playback refreshes the position once per second. A stale result describes the earlier run revision. Simulation numbers come from actions. Explain opens the built-in agent chat.

@@ -5,13 +5,15 @@ import {
 } from "@agent-native/core/application-state";
 import { z } from "zod";
 
+import { findScenario } from "../server/lib/cafe/scenario-store.js";
+
 export default defineAction({
   description:
     "Read the Chat app's current navigation state. Basic navigation is already included in <current-screen>; use this action only when you need a fresh read.",
   schema: z.object({}),
   http: false,
   readOnly: true,
-  run: async () => {
+  run: async (_args, ctx) => {
     const navigation = await readAppState("navigation");
 
     const screen: Record<string, unknown> = {};
@@ -22,6 +24,22 @@ export default defineAction({
       "view" in navigation &&
       navigation.view === "cafe"
     ) {
+      if (
+        ctx?.userEmail &&
+        "scenarioId" in navigation &&
+        typeof navigation.scenarioId === "string"
+      ) {
+        const scenario = await findScenario(
+          navigation.scenarioId,
+          ctx.userEmail,
+        );
+        if (scenario) {
+          screen.site = {
+            spot: scenario.spot,
+            spotRevision: scenario.spotRevision,
+          };
+        }
+      }
       const playback = await readAppStateForCurrentTab("cafe-playback");
       if (
         playback &&

@@ -155,6 +155,9 @@
   gap: 14px;
   align-items: start;
 }
+.cafe-shop-board {
+  margin-block-start: 14px;
+}
 .cafe-board {
   border: 1px solid var(--cafe-rule);
   background: var(--cafe-board);
@@ -384,7 +387,7 @@
 .cafe-resource-list dd {
   font-family: var(--cafe-mono);
 }
-@media (max-width: 870px) {
+@media (max-width: 645px) {
   .cafe-input-boards {
     grid-template-columns: minmax(0, 1fr);
   }

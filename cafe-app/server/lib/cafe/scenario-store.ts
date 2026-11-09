@@ -30,9 +30,16 @@ export const scenarioEditKey = scenarioKey.extend({
       "Current scenario revision returned by list-scenarios. Read again after a conflict.",
     ),
 });
+export const coordinateSchema = z.object({
+  lat: z.number().min(-90).max(90).describe("Latitude in decimal degrees"),
+  lon: z.number().min(-180).max(180).describe("Longitude in decimal degrees"),
+});
+export const spotSchema = coordinateSchema.extend({ label: z.string() });
 export const scenarioSchema = z.object({
   id: z.string().uuid(),
   revision: z.number().int().nonnegative(),
+  spot: spotSchema,
+  spotRevision: z.number().int().nonnegative(),
   baseHourlyDemand: hourlyRateSchema,
   demand: demandSchema,
   shop: shopSchema,
@@ -43,6 +50,8 @@ export type Scenario = z.infer<typeof scenarioSchema>;
 export const scenarioFields = {
   id: scenarios.id,
   revision: scenarios.revision,
+  spot: scenarios.spot,
+  spotRevision: scenarios.spotRevision,
   baseHourlyDemand: scenarios.baseHourlyDemand,
   demand: scenarios.demand,
   shop: scenarios.shop,
@@ -93,19 +102,27 @@ export function scenarioConflict(): never {
   );
 }
 
-export async function readScenario(
+export async function findScenario(
   id: string,
   owner: string,
-): Promise<Scenario> {
+): Promise<Scenario | undefined> {
   const [row] = await getDb()
     .select(scenarioFields)
     .from(scenarios)
     .where(scenarioScope(id, owner));
-  if (!row)
-    return scenarioErrors.fail("Scenario not found.", "scenario_not_found", {
+  return row && toScenario(row);
+}
+
+export async function readScenario(
+  id: string,
+  owner: string,
+): Promise<Scenario> {
+  return (
+    (await findScenario(id, owner)) ??
+    scenarioErrors.fail("Scenario not found.", "scenario_not_found", {
       statusCode: 404,
-    });
-  return toScenario(row);
+    })
+  );
 }
 
 export async function saveScenarioInputs(

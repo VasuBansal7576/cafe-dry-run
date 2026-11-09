@@ -7,6 +7,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 
+import type { Spot } from "../../shared/cafe/site-map.js";
 import type { ScenarioDemand, ScenarioShop } from "../lib/cafe/scenario.js";
 import type { ServiceRun } from "../lib/cafe/service-run.js";
 
@@ -17,6 +18,8 @@ export const scenarios = pgTable(
     ownerEmail: text("owner_email").notNull(),
     baseHourlyDemand: integer("base_hourly_demand").notNull(),
     revision: integer("revision").notNull().default(0),
+    spot: jsonb("spot").$type<Spot>().notNull(),
+    spotRevision: integer("spot_revision").notNull().default(0),
     demand: jsonb("demand").$type<ScenarioDemand>(),
     shop: jsonb("shop").$type<ScenarioShop>(),
     latestRunId: text("latest_run_id"),

@@ -15,10 +15,11 @@ import {
   defaultShop,
   hourlyRateSchema,
 } from "../server/lib/cafe/scenario.js";
+import { defaultSpot } from "../shared/cafe/site-map.js";
 
 export default defineAction({
   description:
-    "Create a private cafe scenario with illustrative demand, Saturday hours and a one-barista shop. Edit the assumptions with set-demand and configure-shop.",
+    "Create a private cafe scenario with an Indiranagar starter pin, illustrative demand, Saturday hours and a one-barista shop. Edit it with set-spot, set-demand and configure-shop.",
   schema: z.object({
     baseHourlyDemand: hourlyRateSchema
       .default(20)
@@ -36,6 +37,7 @@ export default defineAction({
         id: crypto.randomUUID(),
         ownerEmail,
         baseHourlyDemand,
+        spot: defaultSpot,
         demand: defaultDemand(baseHourlyDemand),
         shop: defaultShop(),
       })

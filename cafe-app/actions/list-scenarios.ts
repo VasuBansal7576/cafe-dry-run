@@ -14,7 +14,7 @@ import {
 
 export default defineAction({
   description:
-    "List your cafe scenarios with their current revisions, tagged demand and shop inputs, and latest service run IDs. Read before editing or simulating.",
+    "List your cafe scenarios with their selected spots, spot revisions, service input revisions, tagged demand and shop inputs, and latest service run IDs. Read before editing or simulating.",
   schema: z.object({}),
   outputSchema: z.object({ scenarios: z.array(scenarioSchema) }),
   errors: scenarioErrors,

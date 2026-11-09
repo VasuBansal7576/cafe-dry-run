@@ -8,6 +8,7 @@ import { useSearchParams } from "react-router";
 
 import { DemandForm, ShopForm } from "@/components/cafe/scenario-inputs";
 import { ServiceTest } from "@/components/cafe/service-test";
+import { SiteMap } from "@/components/cafe/site-map";
 
 import "@/components/cafe/cafe.css";
 
@@ -22,6 +23,7 @@ export default function CafeRoute() {
     onSuccess: ({ scenario }) =>
       setParams({ scenario: scenario.id }, { replace: true }),
   });
+  const setSpot = useActionMutation("set-spot");
   useEffect(() => {
     if (!selected && scenario)
       setParams(
@@ -114,7 +116,27 @@ export default function CafeRoute() {
               <h2 id="site-title">Site & demand</h2>
             </header>
             <div className="cafe-input-boards">
+              <SiteMap
+                key={scenario.id}
+                spot={scenario.spot}
+                spotRevision={scenario.spotRevision}
+                onSetSpot={(location) =>
+                  setSpot.mutate({
+                    id: scenario.id,
+                    expectedSpotRevision: scenario.spotRevision,
+                    location,
+                  })
+                }
+                pending={setSpot.isPending}
+                error={
+                  setSpot.variables?.id === scenario.id
+                    ? actionErrorMessage(setSpot.error)
+                    : null
+                }
+              />
               <DemandForm scenario={scenario} />
+            </div>
+            <div className="cafe-shop-board">
               <ShopForm scenario={scenario} />
             </div>
           </section>

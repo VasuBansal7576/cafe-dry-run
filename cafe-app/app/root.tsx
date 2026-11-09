@@ -94,10 +94,19 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
 function DbSyncSetup() {
   const qc = useQueryClient();
+  const { pathname } = useLocation();
   useNavigationState();
   useDbSync({
     queryClient: qc,
     ignoreSource: TAB_ID,
+    ...(pathname === "/cafe"
+      ? {
+          realtime: {
+            reason:
+              "Show scenario edits from this owner's other tabs and external agents.",
+          },
+        }
+      : {}),
   });
   return null;
 }
