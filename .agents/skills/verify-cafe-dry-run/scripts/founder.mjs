@@ -366,6 +366,22 @@ export async function runFounder({ context, page, origin, map, record, section, 
 
   section("S2 tagged demand and S3 inputs", ["S2", "S3", "a2", "a3", "demo.2"]);
   const demandForm = page.getByRole("form", { name: "Saturday demand", exact: true });
+  const countSwitch = exact(demandForm, "Use a Saturday pedestrian count");
+  const countInput = exact(demandForm, "People counted on Saturday");
+  const saveDemand = button(demandForm, "Save demand");
+  await countSwitch.check();
+  assert.equal(await countInput.inputValue(), "", "Enabling count must not invent an observed value");
+  assert.equal(await saveDemand.isDisabled(), true, "An unentered count cannot be saved");
+  assert.equal((await find(id)).demand.pedestrian ?? null, null);
+  await countInput.fill("0");
+  const zero = await clickAction(page, "set-demand", saveDemand);
+  assert.deepEqual(zero.scenario.demand.pedestrian.count, tagged(0, "observed"));
+  await demandForm.getByText(/Expected Saturday arrivals · 0 ·/).waitFor();
+  await countSwitch.uncheck();
+  const cleared = await clickAction(page, "set-demand", saveDemand);
+  assert.equal(cleared.scenario.demand.pedestrian, null);
+  await demandForm.getByText(/Current base demand:/).waitFor();
+  record("pedestrian count requires input and accepts an explicitly observed zero", { count: zero.scenario.demand.pedestrian.count });
   for (const [key, label] of Object.entries(labels)) {
     const name = `${label} customers per hour`;
     assert.equal(await exact(demandForm, `${name} source`).inputValue(), "illustrative");

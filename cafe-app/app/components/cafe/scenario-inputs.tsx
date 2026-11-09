@@ -48,7 +48,6 @@ export function TaggedField({
   max,
   step = 1,
   clock = false,
-  fixedSource,
 }: {
   label: string;
   value: TaggedNumber;
@@ -57,7 +56,6 @@ export function TaggedField({
   max?: number;
   step?: number | "any";
   clock?: boolean;
-  fixedSource?: "observed";
 }) {
   const id = useId();
   const displayValue = clock ? formatClock(value.value) : String(value.value);
@@ -75,7 +73,7 @@ export function TaggedField({
       ? Number(hours) * 3600 + Number(minutes) * 60
       : Number(rawValue);
     if (!Number.isFinite(next) || next === value.value) return;
-    onChange({ value: next, source: { tag: fixedSource ?? "estimate" } });
+    onChange({ value: next, source: { tag: "estimate" } });
   }
   function publicField(
     key: "url" | "retrievedAt" | "supportingValue",
@@ -102,29 +100,23 @@ export function TaggedField({
               }
             : { type: "number", min, max, step })}
         />
-        {fixedSource ? (
-          <span className="cafe-source-control">
-            {sourceLabels[fixedSource]}
-          </span>
-        ) : (
-          <select
-            aria-label={`${label} source`}
-            className="cafe-source-control"
-            value={value.source.tag}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                source: taggedSource(event.target.value as SourceTag),
-              })
-            }
-          >
-            {sourceTags.map((tag) => (
-              <option key={tag} value={tag}>
-                {sourceLabels[tag]}
-              </option>
-            ))}
-          </select>
-        )}
+        <select
+          aria-label={`${label} source`}
+          className="cafe-source-control"
+          value={value.source.tag}
+          onChange={(event) =>
+            onChange({
+              ...value,
+              source: taggedSource(event.target.value as SourceTag),
+            })
+          }
+        >
+          {sourceTags.map((tag) => (
+            <option key={tag} value={tag}>
+              {sourceLabels[tag]}
+            </option>
+          ))}
+        </select>
       </div>
       {value.source.tag === "public" && (
         <div className="cafe-source-detail">
@@ -193,6 +185,16 @@ export function FormStatus({
   );
 }
 
+type PedestrianCount = NonNullable<ScenarioDemand["pedestrian"]>;
+type DemandDraft = Omit<ScenarioDemand, "pedestrian"> & {
+  pedestrian?:
+    | (Omit<PedestrianCount, "count"> & {
+        count: PedestrianCount["count"] | null;
+      })
+    | null
+    | undefined;
+};
+
 export function DemandForm({
   scenario,
   shared = false,
@@ -202,8 +204,9 @@ export function DemandForm({
   shared?: boolean;
   separateMenu?: boolean;
 }) {
+  const countId = useId();
   const [draft, setDraft] = useState<{
-    value: ScenarioDemand;
+    value: DemandDraft;
     revision: number;
   } | null>(null);
   const update = useActionMutation("set-demand", {
@@ -213,10 +216,11 @@ export function DemandForm({
   const conflicted = !!draft && draft.revision !== scenario.revision;
   const base = scenario.demand.hourly.base;
   const pedestrian = demand.pedestrian;
+  const missingCount = !!pedestrian && pedestrian.count === null;
   const expected =
     scenario.demand.pedestrian &&
     pedestrianDailyArrivals(scenario.demand.pedestrian);
-  function edit(value: ScenarioDemand) {
+  function edit(value: DemandDraft) {
     setDraft({ value, revision: draft?.revision ?? scenario.revision });
   }
   function editTime(field: "opensAt" | "closesAt", next: TaggedNumber) {
@@ -230,10 +234,19 @@ export function DemandForm({
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!draft || conflicted || update.isPending) return;
+    const { pedestrian, ...fields } = draft.value;
+    if (pedestrian && !pedestrian.count) return;
     update.mutate({
       id: scenario.id,
       expectedRevision: draft.revision,
-      demand: draft.value,
+      demand: {
+        ...fields,
+        pedestrian: pedestrian?.count
+          ? { ...pedestrian, count: pedestrian.count }
+          : pedestrian === null
+            ? null
+            : undefined,
+      },
     });
   }
   return (
@@ -282,7 +295,7 @@ export function DemandForm({
                 ...demand,
                 pedestrian: event.currentTarget.checked
                   ? {
-                      count: { value: 0, source: { tag: "observed" } },
+                      count: null,
                       conversionPercent: illustrative(10),
                     }
                   : null,
@@ -294,21 +307,37 @@ export function DemandForm({
         <div className="cafe-fields">
           {pedestrian ? (
             <>
-              <TaggedField
-                label="People counted on Saturday"
-                max={120000}
-                value={pedestrian.count}
-                fixedSource="observed"
-                onChange={({ value }) =>
-                  edit({
-                    ...demand,
-                    pedestrian: {
-                      ...pedestrian,
-                      count: { value, source: { tag: "observed" } },
-                    },
-                  })
-                }
-              />
+              <div className="cafe-field">
+                <label htmlFor={countId}>People counted on Saturday</label>
+                <div className="cafe-field-control">
+                  <input
+                    id={countId}
+                    type="number"
+                    required
+                    min={0}
+                    max={120000}
+                    step={1}
+                    value={pedestrian.count?.value ?? ""}
+                    onChange={({ currentTarget: input }) =>
+                      edit({
+                        ...demand,
+                        pedestrian: {
+                          ...pedestrian,
+                          count: input.validity.valid
+                            ? {
+                                value: input.valueAsNumber,
+                                source: { tag: "observed" },
+                              }
+                            : null,
+                        },
+                      })
+                    }
+                  />
+                  {pedestrian.count && (
+                    <span className="cafe-source-control">Observed</span>
+                  )}
+                </div>
+              </div>
               <TaggedField
                 label="Expected conversion (%)"
                 max={100}
@@ -394,7 +423,7 @@ export function DemandForm({
         </details>
         <button
           className="cafe-primary"
-          disabled={!draft || conflicted || update.isPending}
+          disabled={!draft || conflicted || missingCount || update.isPending}
         >
           {update.isPending ? "Saving demand…" : "Save demand"}
         </button>
