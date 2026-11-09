@@ -816,6 +816,114 @@ it("returns quote-ready service and cash figures without changing the underlying
   });
 });
 
+it("keeps a comparison's rerun inputs and current quotes when the full receipt exceeds the tool budget", async () => {
+  const { scenario: a } = await createScenario.run(
+    { baseHourlyDemand: 55 },
+    owner,
+  );
+  const { scenario: b } = await configureShop.run(
+    { ...versions(a), variantLabel: "Extra grinder" },
+    owner,
+  );
+  const scope = { aId: a.id, bId: b.id };
+  const saved = await compareScenarios.run(
+    { a: versions(a), b: versions(b), ...settings },
+    owner,
+  );
+  const full = await getComparison.run(scope, owner);
+  const budget = 30_000;
+  const summary = await getComparison.run(scope, {
+    ...owner,
+    maxResultChars: budget,
+  });
+  expect(JSON.stringify(full, null, 2).length).toBeGreaterThan(budget);
+  expect(JSON.stringify(summary, null, 2).length).toBeLessThanOrEqual(budget);
+  expect(summary).toMatchObject({
+    rerunComparison: full.rerunComparison,
+    comparisonSummary: {
+      arrivalSource: { id: a.id, revision: a.revision },
+      decision: {
+        chatFigures: saved.chatFigures,
+        chatFigureBasis: saved.chatFigureBasis,
+        receipt: { id: saved.receipt.id, delta: saved.receipt.delta },
+      },
+    },
+  });
+  const quote = saved.chatFigures!["scenarioA.waitP50"]!.text;
+  expect(
+    await check(`${quote}.`, [tool("get-comparison", summary)]),
+  ).toBeUndefined();
+  expect(
+    await check(`${quote}. It saves 999 drinks.`, [
+      tool("get-comparison", summary),
+    ]),
+  ).toBeDefined();
+  await expect(
+    getComparison.run(scope, { ...owner, maxResultChars: 100 }),
+  ).rejects.toThrow(/exceeds this agent's tool result limit/);
+});
+
+it("pages exact stored playback at the resolved tool budget and pins continuations to the selected run", async () => {
+  const { scenario } = await createScenario.run(
+    { baseHourlyDemand: 55 },
+    owner,
+  );
+  const run = await runSimulation.run(
+    { ...serviceVersion(scenario), ...settings },
+    owner,
+  );
+  const params = { id: scenario.id, runId: run.id };
+  const full = await getSimulation.run(
+    { ...params, includePlayback: true },
+    owner,
+  );
+  const budget = 10_000;
+  const context = { ...owner, maxResultChars: budget };
+  const first = await getSimulation.run(
+    { ...params, includePlayback: true },
+    context,
+  );
+  expect(JSON.stringify(first, null, 2).length).toBeLessThanOrEqual(budget);
+  expect(first.run?.playback).toBeUndefined();
+  expect(first.chatFigures).toEqual(full.chatFigures);
+  const page = "playbackPage" in first ? first.playbackPage : undefined;
+  expect(page?.stream).toBe("arrivals");
+  expect(page?.nextOffset).toBeGreaterThan(0);
+  expect(page?.records).toEqual(
+    full.run?.playback?.arrivals.slice(0, page!.nextOffset!),
+  );
+
+  await runSimulation.run(
+    { ...serviceVersion(scenario), ...settings, seed: 75 },
+    owner,
+  );
+  const next = await getSimulation.run(
+    {
+      ...params,
+      playbackPage: { stream: "arrivals", offset: page!.nextOffset! },
+    },
+    context,
+  );
+  expect(next.run?.id).toBe(run.id);
+  const nextPage = "playbackPage" in next ? next.playbackPage : undefined;
+  expect(nextPage).toMatchObject({
+    offset: page!.nextOffset,
+    records: full.run?.playback?.arrivals.slice(
+      page!.nextOffset!,
+      nextPage?.nextOffset ?? undefined,
+    ),
+  });
+  await expect(
+    getSimulation.run(
+      {
+        id: scenario.id,
+        playbackPage: { stream: "arrivals", offset: 1 },
+      },
+      context,
+    ),
+  ).rejects.toThrow(/same run ID/);
+});
+
 it("returns conditional no-count conversions from the saved solo runway and requires a refresh after edits", async () => {
   const { scenario } = await createScenario.run({}, owner);
   const key = serviceVersion(scenario);

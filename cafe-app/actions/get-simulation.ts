@@ -1,4 +1,7 @@
-import { defineAction } from "@agent-native/core/action";
+import {
+  DEFAULT_TOOL_RESULT_CHARS,
+  defineAction,
+} from "@agent-native/core/action";
 import { and, eq } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
@@ -24,11 +27,32 @@ import {
   pairedRunId,
   soloRunId,
 } from "../server/lib/cafe/service-run-identity.js";
-import { serviceRunSchema } from "../server/lib/cafe/service-run.js";
+import {
+  servicePlaybackSchema,
+  serviceRunSchema,
+} from "../server/lib/cafe/service-run.js";
+import { fitsToolResult } from "../server/lib/cafe/tool-result-budget.js";
+
+const playbackOffset = z.number().int().nonnegative();
+const pageBounds = z.object({
+  offset: playbackOffset,
+  total: playbackOffset,
+  nextOffset: playbackOffset.nullable(),
+});
+const playbackPageSchema = z.discriminatedUnion("stream", [
+  pageBounds.extend({
+    stream: z.literal("arrivals"),
+    records: servicePlaybackSchema.shape.arrivals,
+  }),
+  pageBounds.extend({
+    stream: z.literal("timeline"),
+    records: servicePlaybackSchema.shape.timeline,
+  }),
+]);
 
 export default defineAction({
   description:
-    "Read a saved cafe service run and whether its inputs are stale. Quote chatFigures.text verbatim from a fresh run. Include playback only when you need the first Saturday's arrivals and timeline.",
+    "Read a saved cafe service run and whether its inputs are stale. Quote chatFigures.text verbatim from a fresh run. To read first-Saturday playback in chat, pass playbackPage with stream arrivals or timeline and offset zero. includePlayback starts an arrivals page in chat. Continue the same stream with the returned run.id and nextOffset. A null nextOffset means that stream is complete.",
   schema: scenarioKey.extend({
     runId: z
       .string()
@@ -39,7 +63,16 @@ export default defineAction({
       .union([z.boolean(), z.enum(["true", "false"])])
       .default(false)
       .describe(
-        "Set to true to include the recorded arrival and service timeline",
+        "Request full playback in the browser or the first arrivals page in chat",
+      ),
+    playbackPage: z
+      .object({
+        stream: z.enum(["arrivals", "timeline"]),
+        offset: playbackOffset.default(0),
+      })
+      .optional()
+      .describe(
+        "Select one first-Saturday stream and start at its record offset",
       ),
   }),
   outputSchema: z.object({
@@ -49,12 +82,27 @@ export default defineAction({
       .partial({ playback: true })
       .extend({ stale: z.boolean() })
       .nullable(),
+    playbackPage: playbackPageSchema.optional(),
   }),
   errors: scenarioErrors,
   http: { method: "GET" },
   readOnly: true,
-  run: async ({ id, runId, includePlayback }, ctx) => {
+  maxResultChars: 100_000,
+  run: async ({ id, runId, includePlayback, playbackPage }, ctx) => {
     const owner = requireOwner(ctx?.userEmail);
+    if (playbackPage?.offset && runId === undefined)
+      return scenarioErrors.fail(
+        "Pass the same run ID when continuing a playback stream.",
+        "invalid_scenario",
+      );
+    const includeFullPlayback =
+      includePlayback === true || includePlayback === "true";
+    const budget = ctx?.maxResultChars;
+    const page =
+      playbackPage ??
+      (budget !== undefined && includeFullPlayback
+        ? { stream: "arrivals" as const, offset: 0 }
+        : undefined);
     const source = alias(scenarios, "arrival_source");
     const [row] = await getDb()
       .select({
@@ -68,7 +116,7 @@ export default defineAction({
         currentArrivalRevision: source.revision,
         currentArrivalDemand: source.demand,
         summary: serviceRuns.summary,
-        ...(includePlayback === true || includePlayback === "true"
+        ...(includeFullPlayback || page
           ? { playback: serviceRuns.playback }
           : {}),
       })
@@ -150,10 +198,10 @@ export default defineAction({
       scenarioRevision: row.scenarioRevision,
       arrivalSource,
       summary,
-      playback: row.playback ?? undefined,
+      playback: page ? undefined : (row.playback ?? undefined),
       stale,
     };
-    return {
+    const result = {
       chatFigureBasis: {
         ...serviceFigureBasis(run),
         observations,
@@ -164,5 +212,44 @@ export default defineAction({
       chatFigures: stale ? null : serviceChatFigures(row.summary, row.label),
       run,
     };
+    const playback = row.playback;
+    if (page && playback) {
+      const { stream, offset } = page;
+      const total = playback[stream].length;
+      if (offset > total)
+        return scenarioErrors.fail(
+          "The playback offset is past the end of this stream.",
+          "invalid_scenario",
+        );
+      const limit = budget ?? DEFAULT_TOOL_RESULT_CHARS;
+      let count = Math.min(128, total - offset);
+      do {
+        const end = offset + count;
+        const bounds = { offset, total, nextOffset: end < total ? end : null };
+        const paged = {
+          ...result,
+          playbackPage:
+            stream === "arrivals"
+              ? {
+                  ...bounds,
+                  stream,
+                  records: playback.arrivals.slice(offset, end),
+                }
+              : {
+                  ...bounds,
+                  stream,
+                  records: playback.timeline.slice(offset, end),
+                },
+        };
+        if (fitsToolResult(paged, limit)) return paged;
+        count = Math.floor(count / 2);
+      } while (count > 0);
+    } else if (budget === undefined || fitsToolResult(result, budget)) {
+      return result;
+    }
+    return scenarioErrors.fail(
+      "The service result exceeds this agent's tool result limit. Read the run in the café.",
+      "invalid_scenario",
+    );
   },
 });

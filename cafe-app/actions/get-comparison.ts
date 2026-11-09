@@ -1,4 +1,7 @@
-import { defineAction } from "@agent-native/core/action";
+import {
+  DEFAULT_TOOL_RESULT_CHARS,
+  defineAction,
+} from "@agent-native/core/action";
 import { z } from "zod";
 
 import type { ObservedDecision } from "../server/lib/cafe/chat-figure-basis.js";
@@ -6,6 +9,7 @@ import {
   decisionChatOutputSchema,
   withDecisionChatFigures,
 } from "../server/lib/cafe/chat-figures.js";
+import { decisionReceiptSchema } from "../server/lib/cafe/decision-receipt.js";
 import {
   decisionScopeSchema,
   readArrivalSource,
@@ -17,18 +21,59 @@ import {
   scenarioSchema,
   scenarioVersionKey,
 } from "../server/lib/cafe/scenario-store.js";
-import { serviceParameters } from "../server/lib/cafe/service-run.js";
+import {
+  serviceParameters,
+  serviceRunSchema,
+} from "../server/lib/cafe/service-run.js";
+import { fitsToolResult } from "../server/lib/cafe/tool-result-budget.js";
 
 const rerunComparisonSchema = serviceParameters.required().extend({
   a: scenarioVersionKey,
   b: scenarioVersionKey,
+});
+const arrivalSourceSchema = scenarioSchema.pick({
+  id: true,
+  revision: true,
+  label: true,
+  demand: true,
+});
+const summarySide = decisionReceiptSchema.shape.a
+  .pick({ label: true, financeRevision: true })
+  .extend({
+    service: serviceRunSchema.pick({
+      id: true,
+      scenarioId: true,
+      scenarioRevision: true,
+      arrivalSource: true,
+    }),
+  });
+const summaryReceipt = decisionReceiptSchema
+  .pick({
+    id: true,
+    settings: true,
+    savedCustomers: true,
+    cashBaseline: true,
+    weekendDemand: true,
+    weekend: true,
+    delta: true,
+  })
+  .extend({ a: summarySide, b: summarySide.nullable() });
+const summaryArrivalSource = arrivalSourceSchema.omit({ demand: true });
+const comparisonSummarySchema = z.object({
+  decision: decisionChatOutputSchema
+    .extend({ receipt: summaryReceipt })
+    .nullable(),
+  arrivalSource: summaryArrivalSource.nullable(),
 });
 
 function currentVersion(decision: ObservedDecision, id: string) {
   const scenario = decision.quoteObservations.scenarios.find(
     (version) => version.id === id,
   );
-  if (scenario?.revision === undefined || scenario.financeRevision === undefined)
+  if (
+    scenario?.revision === undefined ||
+    scenario.financeRevision === undefined
+  )
     return undefined;
   return {
     id,
@@ -39,18 +84,18 @@ function currentVersion(decision: ObservedDecision, id: string) {
 
 export default defineAction({
   description:
-    "Read a comparison's current arrivalSource even before running it. To rerun the latest saved pair with current inputs and the same settings, pass rerunComparison directly to compare-scenarios. To edit shared demand, use the arrival source ID and revision with set-demand or set-pedestrian-count. The receipt reports freshness and decision.chatFigures.text to quote verbatim when fresh.",
+    "Read a comparison's current arrivalSource even before running it. To rerun the latest saved pair with current inputs and the same settings, pass rerunComparison directly to compare-scenarios. To edit shared demand, use the arrival source ID and revision with set-demand or set-pedestrian-count. When comparisonSummary is present, use its decision and arrivalSource. It keeps receipt identity, settings, freshness, deltas and exact chatFigures, and omits detailed input snapshots and monthly balances available in the café. Quote chatFigures.text verbatim when fresh.",
   schema: decisionScopeSchema,
   outputSchema: z.object({
     rerunComparison: rerunComparisonSchema.optional(),
     decision: decisionChatOutputSchema.nullable(),
-    arrivalSource: scenarioSchema
-      .pick({ id: true, revision: true, label: true, demand: true })
-      .nullable(),
+    arrivalSource: arrivalSourceSchema.nullable(),
+    comparisonSummary: comparisonSummarySchema.optional(),
   }),
   errors: scenarioErrors,
   readOnly: true,
   http: { method: "GET" },
+  maxResultChars: 100_000,
   run: async (args, ctx) => {
     const owner = requireOwner(ctx?.userEmail);
     const [arrivalSource, decision] = await Promise.all([
@@ -63,10 +108,28 @@ export default defineAction({
       const b = currentVersion(decision, args.bId);
       if (a && b) rerunComparison = { a, b, ...decision.receipt.settings };
     }
-    return {
+    const result = {
       ...(rerunComparison ? { rerunComparison } : {}),
       decision: decision ? withDecisionChatFigures(decision) : null,
       arrivalSource,
     };
+    const budget = ctx?.maxResultChars;
+    if (
+      budget === undefined ||
+      fitsToolResult(result, Math.min(budget, DEFAULT_TOOL_RESULT_CHARS))
+    )
+      return result;
+
+    const summary = {
+      ...(rerunComparison ? { rerunComparison } : {}),
+      decision: null,
+      arrivalSource: null,
+      comparisonSummary: comparisonSummarySchema.parse(result),
+    };
+    if (fitsToolResult(summary, budget)) return summary;
+    return scenarioErrors.fail(
+      "The comparison summary exceeds this agent's tool result limit. Read the decision in the café.",
+      "invalid_scenario",
+    );
   },
 });

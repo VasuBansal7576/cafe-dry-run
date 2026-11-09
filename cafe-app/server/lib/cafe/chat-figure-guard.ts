@@ -67,7 +67,12 @@ function resultPayload(
   parsed: Record<string, unknown> | undefined,
   content: string,
 ) {
-  if (parsed) return object(parsed.decision) ?? parsed;
+  if (parsed)
+    return (
+      object(parsed.decision) ??
+      object(object(parsed.comparisonSummary)?.decision) ??
+      parsed
+    );
   // Core can truncate after these leading fields, before the raw receipt or playback.
   const leading = content
     .replace(/^\{\n {2}"rerunComparison": (?:null|\{[\s\S]*?\n {2}\}),\n/, "{\n")
