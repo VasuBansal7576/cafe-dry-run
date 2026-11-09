@@ -1,4 +1,8 @@
-import type { AgentEngine, EngineEvent } from "@agent-native/core/agent/engine";
+import type {
+  AgentEngine,
+  EngineEvent,
+  EngineTool,
+} from "@agent-native/core/agent/engine";
 import { expect, it } from "vitest";
 
 import { holdCafeDrafts } from "./guarded-chat-stream.js";
@@ -6,6 +10,11 @@ import { holdCafeDrafts } from "./guarded-chat-stream.js";
 function heldStream(
   stream: AgentEngine["stream"],
   signal = new AbortController().signal,
+  tools: EngineTool[] = ["list-scenarios", "ask-question"].map((name) => ({
+    name,
+    description: name,
+    inputSchema: { type: "object", properties: {} },
+  })),
 ) {
   const engine: AgentEngine = {
     name: "test-engine",
@@ -26,11 +35,7 @@ function heldStream(
     model: engine.defaultModel,
     systemPrompt: "",
     messages: [],
-    tools: ["list-scenarios", "ask-question"].map((name) => ({
-      name,
-      description: name,
-      inputSchema: { type: "object" },
-    })),
+    tools,
     abortSignal: signal,
   });
 }
@@ -179,9 +184,186 @@ it.each(["max_tokens", "aborted", "late_error"] as const)(
       }, controller.signal))
         observed.push(event);
     };
-    if (mode === "late_error")
-      await expect(consume()).rejects.toThrow("Provider failed after stop");
-    else await consume();
+    await consume();
+    if (mode === "late_error") {
+      expect(observed[observed.length - 1]).toMatchObject({
+        type: "stop",
+        reason: "error",
+        error: "The model provider could not complete this reply.",
+      });
+    }
     expect(JSON.stringify(observed)).not.toContain("Unsupported draft.");
   },
 );
+
+const nestedTool: EngineTool = {
+  name: "configure-shop",
+  description: "Edit a scenario",
+  inputSchema: {
+    type: "object",
+    properties: {
+      change: {
+        type: "object",
+        properties: {
+          minutes: { type: "integer", minimum: 0 },
+          labels: { type: "object", additionalProperties: { type: "string" } },
+        },
+        required: ["minutes"],
+      },
+      title: { type: "string" },
+    },
+    required: ["change"],
+  },
+};
+
+it.each([
+  { change: { minutes: 0 } },
+  { change: { minutes: 30, labels: { shift: "Weekend" } }, title: "Weekend" },
+])(
+  "keeps valid nested inputs, optional fields, and declared open maps",
+  async (input) => {
+    const call = {
+      type: "tool-call",
+      id: "call_nested",
+      name: nestedTool.name,
+      input,
+    } as const;
+    const events = await collect(
+      heldStream(
+        async function* () {
+          yield { type: "tool-input-start", id: call.id, name: call.name };
+          yield call;
+          yield { type: "gateway-heartbeat" };
+          yield { type: "assistant-content", parts: [call] };
+          yield { type: "stop", reason: "tool_use" };
+        },
+        undefined,
+        [nestedTool],
+      ),
+    );
+    expect(events.map(({ type }) => type)).toEqual([
+      "assistant-content",
+      "tool-input-start",
+      "gateway-heartbeat",
+      "tool-input-delta",
+      "tool-call",
+      "assistant-content",
+      "stop",
+    ]);
+    expect(events).toContainEqual(call);
+  },
+);
+
+it.each([
+  { change: { minutes: 0 }, bad: "999 seconds" },
+  { change: { minutes: 30, bad: "999 seconds" } },
+  { change: { minutes: "999 seconds" } },
+])(
+  "rejects undeclared and ill-typed arguments before emitting them",
+  async (input) => {
+    const call = {
+      type: "tool-call",
+      id: "call_nested",
+      name: nestedTool.name,
+      input,
+    } as const;
+    const events = await collect(
+      heldStream(
+        async function* () {
+          yield { type: "tool-input-start", id: call.id, name: call.name };
+          yield {
+            type: "tool-input-delta",
+            id: call.id,
+            text: JSON.stringify(input),
+          };
+          yield call;
+          yield { type: "assistant-content", parts: [call] };
+          yield { type: "stop", reason: "tool_use" };
+        },
+        undefined,
+        [nestedTool],
+      ),
+    );
+    expect(events.map(({ type }) => type)).toEqual([
+      "assistant-content",
+      "tool-call-error",
+      "stop",
+    ]);
+    expect(events[1]).toMatchObject({ input: {} });
+    expect(JSON.stringify(events)).not.toContain("999 seconds");
+  },
+);
+
+it("uses an explicit open action envelope and validates its dynamic values", async () => {
+  const tool: EngineTool = {
+    ...nestedTool,
+    inputSchema: { type: "object", additionalProperties: { type: "boolean" } },
+  };
+  const call = {
+    type: "tool-call",
+    id: "call_open",
+    name: tool.name,
+    input: { disabled: false },
+  } as const;
+  const events = await collect(
+    heldStream(
+      async function* () {
+        yield call;
+        yield { type: "stop", reason: "tool_use" };
+      },
+      undefined,
+      [tool],
+    ),
+  );
+  expect(events).toContainEqual(call);
+});
+
+it("redacts a known tool's provider error instead of executing its duplicate call", async () => {
+  const call = {
+    type: "tool-call",
+    id: "call_bad",
+    name: "list-scenarios",
+    input: {},
+  } as const;
+  const events = await collect(
+    heldStream(async function* () {
+      yield {
+        ...call,
+        type: "tool-call-error",
+        error: "999 seconds",
+        input: { bad: "999 seconds" },
+      };
+      yield { type: "assistant-content", parts: [call] };
+      yield { type: "stop", reason: "tool_use" };
+    }),
+  );
+  expect(events.map(({ type }) => type)).toEqual([
+    "assistant-content",
+    "tool-call-error",
+    "stop",
+  ]);
+  expect(JSON.stringify(events)).not.toContain("999 seconds");
+});
+
+it("keeps structured recovery fields and replaces a thrown diagnostic and its cause", async () => {
+  const error = Object.assign(new Error("999 seconds"), {
+    cause: new Error("Provider connection error"),
+  });
+  const events = await collect(
+    heldStream(() => {
+      throw Object.assign(error, { providerRetryable: true, retryAfterMs: 25 });
+    }),
+  );
+  expect(events).toEqual([
+    {
+      type: "stop",
+      reason: "error",
+      error: "The model provider could not complete this reply.",
+      errorCode: "provider_network_error",
+      providerRetryable: true,
+      retryAfterMs: 25,
+      contextOverflow: false,
+    },
+  ]);
+  expect(JSON.stringify(events)).not.toContain("999 seconds");
+});
