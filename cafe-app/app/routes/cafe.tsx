@@ -6,8 +6,8 @@ import {
 import { useEffect } from "react";
 import { useSearchParams } from "react-router";
 
+import { ComparisonWorkspace } from "@/components/cafe/comparison";
 import { DemandForm, ShopForm } from "@/components/cafe/scenario-inputs";
-import { ServiceTest } from "@/components/cafe/service-test";
 
 import "@/components/cafe/cafe.css";
 
@@ -15,9 +15,13 @@ export default function CafeRoute() {
   const query = useActionQuery("list-scenarios", {});
   const [params, setParams] = useSearchParams();
   const selected = params.get("scenario");
+  const comparisonId = params.get("compare");
   const scenario = selected
     ? query.data?.scenarios.find(({ id }) => id === selected)
     : query.data?.scenarios[0];
+  const alternatives =
+    query.data?.scenarios.filter(({ id }) => id !== scenario?.id) ?? [];
+  const comparison = alternatives.find(({ id }) => id === comparisonId);
   const create = useActionMutation("create-scenario", {
     onSuccess: ({ scenario }) =>
       setParams({ scenario: scenario.id }, { replace: true }),
@@ -47,6 +51,9 @@ export default function CafeRoute() {
         </a>
         <a href="#service-test">
           <span>02</span> Service test
+        </a>
+        <a href="#cash-ledger">
+          <span>03</span> Cash ledger
         </a>
       </nav>
       <div className="cafe-cover" id="opening-file">
@@ -94,9 +101,9 @@ export default function CafeRoute() {
             value={scenario?.id ?? ""}
             onChange={(event) => setParams({ scenario: event.target.value })}
           >
-            {query.data.scenarios.map(({ id, demand }) => (
+            {query.data.scenarios.map(({ id, demand, label }) => (
               <option value={id} key={id}>
-                {id.slice(0, 8)} · {demand.hourly.base.value}/hr
+                {label} · {demand.hourly.base.value}/hr
               </option>
             ))}
           </select>
@@ -118,7 +125,21 @@ export default function CafeRoute() {
               <ShopForm scenario={scenario} />
             </div>
           </section>
-          <ServiceTest scenario={scenario} />
+          <ComparisonWorkspace
+            a={scenario}
+            b={comparison}
+            options={alternatives}
+            select={(id) =>
+              setParams(
+                (previous) => {
+                  if (id) previous.set("compare", id);
+                  else previous.delete("compare");
+                  return previous;
+                },
+                { replace: true, preventScrollReset: true },
+              )
+            }
+          />
         </section>
       )}
     </main>

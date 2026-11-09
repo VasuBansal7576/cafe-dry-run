@@ -6,12 +6,14 @@ Baseline and variant, equal arrival records, editable shift and equipment, delta
 
 ## How to get to it (user POV)
 
-Open the planned comparison in Service test after producing fresh runs. The comparison controls and agent comparison actions are unimplemented.
+In **Service test**, open **Create a variant**, add a barista or enter the grinder price and add a grinder. Select **Scenario B**, set the seed and demand case, and use **Compare Saturdays**. Edit B's shift under **Edit B**. A successful save reruns the current pair when a comparison already exists. **Explain** opens live Agent-Native chat.
 
 ## Driving it with Playwright
 
-Unimplemented. Ask the app agent whether to add a barista or buy another grinder. Check that the two variants preserve the baseline, use identical arrival records, and show the same time on both boards. Verify each displayed delta against action results. Edit the shift by hand, rerun through the agent, and check the updated wait, loss, staff cost and cash deltas. Use **Explain** and the reversing assumption control when available.
+Verify two variants preserve the original and display in the picker. Fetch both receipt run IDs with `get-simulation` and compare the ordered arrays of arrival IDs, timestamps and drink IDs. Scrub the single **Saturday timeline** and check both board counters. Save the second barista from 10:00 to 12:00 and assert fresh wait, loss, staff cost and cash deltas against the comparison action. Flip **Count weekend customers who would have left but now place an order** and check that the saved receipt changes cash and keeps the same service runs. Reopen after restart and check the old shift receipt is still stale.
+
+For live model acceptance, ask whether to add a barista or buy another grinder. Capture actual streamed tools, the recommendation from action results, and the selected pair appearing without manual refresh. A manual variant check can prove the deterministic path. Live acceptance requires a configured model provider.
 
 ## Gotchas
 
-Use fresh results for comparison. Capture the actual model's streamed calls and reply. A design-reference review and matching seed alone cannot prove the recommendation or identical arrivals.
+A supplies the demand curve and drink mix. Check the actual arrival records and current scenario revisions. A money edit alone leaves service fresh.

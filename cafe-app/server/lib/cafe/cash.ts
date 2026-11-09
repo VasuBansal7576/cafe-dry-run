@@ -3,6 +3,7 @@ import {
   derive,
   type CalculatedNumber,
   type TaggedNumber,
+  type Source,
   type TaggedValue,
 } from "./provenance";
 import {
@@ -45,6 +46,7 @@ export interface CashInputs {
   readonly weekdays: CashDay;
   readonly weekends: CashDay;
   readonly savedCustomers: boolean;
+  readonly savedCustomersSource?: Source;
   readonly passersByPerOpenDay?: CashMeasure;
 }
 
@@ -159,7 +161,7 @@ function displayCount(figure: DecimalFigure): Figure {
   return derive(decimalNumber(figure.value), figure);
 }
 
-function orders(day: CashDay, level: keyof Levels<unknown>, savedCustomers: boolean) {
+function orders(day: CashDay, level: keyof Levels<unknown>, savedCustomers: boolean, assumptionSource?: Source) {
   const demand = day.demand[level];
   const baseline = day.baselineLosses[level];
   const candidate = day.scenarioLosses?.[level];
@@ -168,9 +170,10 @@ function orders(day: CashDay, level: keyof Levels<unknown>, savedCustomers: bool
   const loss = savedCustomers || candidate.value > baseline.value ? candidate : baseline;
   const sold = subtract(demandAmount, decimal(loss.value));
   const recovered = baseline.value > candidate.value ? subtract(decimal(baseline.value), decimal(candidate.value)) : zero;
+  const assumption = assumptionSource && baseline.value > candidate.value ? [assumptionSource] : [];
   return {
-    sold: savedCustomers ? derive(sold, demand, candidate) : derive(sold, demand, baseline, candidate),
-    recovered: savedCustomers ? derive(recovered, baseline, candidate) : derive(zero),
+    sold: derive(sold, demand, baseline, candidate, ...assumption),
+    recovered: savedCustomers ? derive(recovered, baseline, candidate, ...assumption) : derive(zero, ...assumption),
   };
 }
 
@@ -206,9 +209,9 @@ export function computeRunway(input: CashInputs) {
     }))
     : [];
 
-  function project(level: keyof Levels<unknown>, countSaved: boolean): CashOutcome {
-    const weekday = orders(weekdays, level, countSaved);
-    const weekend = orders(weekends, level, countSaved);
+  function project(level: keyof Levels<unknown>, countSaved: boolean, assumptionSource?: Source): CashOutcome {
+    const weekday = orders(weekdays, level, countSaved, assumptionSource);
+    const weekend = orders(weekends, level, countSaved, assumptionSource);
     const monthlyOrders = sumDecimalFigures([perMonth(weekday.sold, weekdayDays), perMonth(weekend.sold, weekendDays)]);
     const recovered = sumDecimalFigures([perMonth(weekday.recovered, weekdayDays), perMonth(weekend.recovered, weekendDays)]);
     const revenueCents = post(derive(multiply(monthlyOrders.value, priceAmount), monthlyOrders, price));
@@ -245,7 +248,7 @@ export function computeRunway(input: CashInputs) {
   const low = sensitivity("low");
   const base = sensitivity("base");
   const high = sensitivity("high");
-  const selected = savedCustomers ? "on" : "off";
+
   return {
     breakEvenOrdersPerDay,
     requiredCaptureRate,
@@ -259,7 +262,11 @@ export function computeRunway(input: CashInputs) {
       weekendStaff: displayMoney(weekendStaffCents),
       recurringIncludingStaff: fixed,
     },
-    outcomes: { low: low[selected], base: base[selected], high: high[selected] },
+    outcomes: {
+      low: project("low", savedCustomers, input.savedCustomersSource),
+      base: project("base", savedCustomers, input.savedCustomersSource),
+      high: project("high", savedCustomers, input.savedCustomersSource),
+    },
     assumptions: { weekdayDays, weekendDays, horizonMonths },
     savedCustomersAssumption: {
       input: "savedCustomers" as const,

@@ -99,6 +99,7 @@ export interface SaturdayResult {
 }
 
 export interface SeriesResult {
+  readonly totals: Readonly<{ customersLost: number }>;
   readonly seed: number;
   readonly demandLevel: DemandLevel;
   readonly runCount: number;
@@ -643,6 +644,7 @@ export function simulateSeries(shop: Shop, plan: ArrivalPlan): SeriesResult {
     demandLevel: plan.demandLevel,
     runCount,
     playback: saturdayResult(first),
+    totals: Object.freeze({ customersLost }),
     stats: Object.freeze({
       meanOrdersServed: servedWaits.length / runCount,
       meanCustomersLost: customersLost / runCount,

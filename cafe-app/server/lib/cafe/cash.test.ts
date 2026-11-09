@@ -186,6 +186,14 @@ describe("cash ledger", () => {
     expect(breakEvenOrdersPerDay.value).toBe(1);
   });
 
+  it("starts at zero orders when there are no fixed costs and selling would lose money", () => {
+    const atZero = computeRunway(oneDayLedger(9, 10, 0, 0));
+    const atOne = computeRunway(oneDayLedger(9, 10, 0, 1));
+    expect(atZero.outcomes.base.monthlyCash.value).toBe(0);
+    expect(atOne.outcomes.base.monthlyCash.value).toBe(-1);
+    expect(atZero.breakEvenOrdersPerDay.value).toBe(0);
+  });
+
   it("finds the first break-even volume when rounded cash can dip again", () => {
     const resultAt = (dailyOrders: number) => computeRunway(oneDayLedger(0.008, 0.006, 0.01, dailyOrders));
     const second = resultAt(2);

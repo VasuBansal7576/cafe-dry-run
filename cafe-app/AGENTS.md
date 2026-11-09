@@ -46,3 +46,14 @@ Follow the project rules in `../AGENTS.md` and behavior specification in `../caf
 | `get-simulation` | Read a saved run and its stale status. Request playback only when the arrival and event timeline is needed. |
 
 Use `navigate` to open `/cafe?scenario=<id>`. `view-screen` includes the tab's selected scenario, displayed run ID and timeline position. Active playback refreshes the position once per second. A stale result describes the earlier run revision. Simulation numbers come from actions. Explain opens the built-in agent chat.
+
+| Comparison and cash action | Use |
+| --- | --- |
+| `configure-shop` with `variantLabel` | Copy the baseline and change the copy only. Send its current service and finance revisions. The grinder's startup quote belongs in its financial inputs. |
+| `configure-finance` | Edit tagged prices, ingredients, cash, wages, startup, recurring, and weekday assumptions. A money edit invalidates cash but leaves service playback fresh. |
+| `compare-scenarios` | Run A and B against the same records from A, save both service runs and the ledger, and return wait, loss, staff and cash deltas. Both scenarios must serve the drinks A orders. Pass a saved-customer assumption only to change it. |
+| `get-comparison` | Read an exact receipt or latest receipt for the pair. Check service and cash stale states. |
+| `compute-runway` | Save a solo runway from the scenario's latest fresh simulation. |
+| `explain-result` | Read the selected receipt's exact sample, linked action results and reversing assumption. The real chat model writes any recommendation using those figures. |
+
+For comparison navigation, use `/cafe?scenario=<a>&compare=<b>#service-test`. The tab state records both scenarios, and the shared clock records the paired run IDs and position. Weekday arrivals, loss share, and staffing are independent inputs. For weekends, apply the exact matched Saturday sample's loss fraction to expected daily demand, then apply the founder's weekend calendar. Count better service as extra revenue only when the saved-customer switch is on and the variant loses fewer customers. Keep the saved-customer sensitivity conditional, including when the tested values do not change the decision. Break-even means the first whole number of orders per open day with nonnegative posted monthly cash.

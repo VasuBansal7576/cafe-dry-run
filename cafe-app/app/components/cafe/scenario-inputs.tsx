@@ -38,7 +38,7 @@ function taggedSource(tag: SourceTag): Source {
     : { tag };
 }
 
-function TaggedField({
+export function TaggedField({
   label,
   value,
   onChange,
@@ -155,7 +155,7 @@ function TaggedField({
   );
 }
 
-function FormStatus({
+export function FormStatus({
   conflicted,
   error,
   onReset,
@@ -291,13 +291,25 @@ export function DemandForm({ scenario }: { scenario: Scenario }) {
   );
 }
 
-export function ShopForm({ scenario }: { scenario: Scenario }) {
+export function ShopForm({
+  scenario,
+  heading = "Staff & equipment",
+  onSaved,
+}: {
+  scenario: Scenario;
+  heading?: string;
+  onSaved?: (scenario: Scenario) => void;
+}) {
+  const headingId = useId();
   const [draft, setDraft] = useState<{
     value: ScenarioShop;
     revision: number;
   } | null>(null);
   const update = useActionMutation("configure-shop", {
-    onSuccess: () => setDraft(null),
+    onSuccess: ({ scenario: saved }) => {
+      setDraft(null);
+      onSaved?.(saved);
+    },
   });
   const shop = draft?.value ?? scenario.shop;
   const conflicted = !!draft && draft.revision !== scenario.revision;
@@ -359,10 +371,10 @@ export function ShopForm({ scenario }: { scenario: Scenario }) {
     });
   }
   return (
-    <form onSubmit={submit} aria-labelledby="shop-heading">
+    <form onSubmit={submit} aria-labelledby={headingId}>
       <fieldset className="cafe-board cafe-form" disabled={update.isPending}>
         <header>
-          <h3 id="shop-heading">Staff & equipment</h3>
+          <h3 id={headingId}>{heading}</h3>
           <p>Set who works the shift and how they share equipment.</p>
         </header>
         <div className="cafe-fields">

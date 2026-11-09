@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { getDb } from "../../db/index.js";
 import { scenarios } from "../../db/schema.js";
+import { defaultFinance, financeSchema } from "./finance.js";
 import {
   defaultDemand,
   defaultShop,
@@ -30,9 +31,20 @@ export const scenarioEditKey = scenarioKey.extend({
       "Current scenario revision returned by list-scenarios. Read again after a conflict.",
     ),
 });
+export const scenarioLabel = z.string().trim().min(1).max(50);
+export const scenarioFinanceEditKey = scenarioKey.extend({
+  expectedFinanceRevision: z.number().int().nonnegative(),
+});
+export const scenarioVersionKey = scenarioEditKey.extend(
+  scenarioFinanceEditKey.shape,
+);
 export const scenarioSchema = z.object({
   id: z.string().uuid(),
   revision: z.number().int().nonnegative(),
+  financeRevision: z.number().int().nonnegative(),
+  label: scenarioLabel,
+  parentId: z.string().uuid().nullable(),
+  finance: financeSchema,
   baseHourlyDemand: hourlyRateSchema,
   demand: demandSchema,
   shop: shopSchema,
@@ -43,14 +55,18 @@ export type Scenario = z.infer<typeof scenarioSchema>;
 export const scenarioFields = {
   id: scenarios.id,
   revision: scenarios.revision,
+  financeRevision: scenarios.financeRevision,
+  label: scenarios.label,
+  parentId: scenarios.parentId,
+  finance: scenarios.finance,
   baseHourlyDemand: scenarios.baseHourlyDemand,
   demand: scenarios.demand,
   shop: scenarios.shop,
   latestRunId: scenarios.latestRunId,
 };
 
-type ScenarioRow = Omit<Scenario, "demand" | "shop"> &
-  Pick<typeof scenarios.$inferSelect, "demand" | "shop">;
+type ScenarioRow = Omit<Scenario, "demand" | "shop" | "finance"> &
+  Pick<typeof scenarios.$inferSelect, "demand" | "shop" | "finance">;
 
 export function toScenario(row: ScenarioRow): Scenario {
   const demand = row.demand ?? defaultDemand(row.baseHourlyDemand);
@@ -59,6 +75,7 @@ export function toScenario(row: ScenarioRow): Scenario {
     baseHourlyDemand: demand.hourly.base.value,
     demand,
     shop: row.shop ?? defaultShop(),
+    finance: { ...defaultFinance(), ...row.finance },
   };
 }
 

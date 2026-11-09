@@ -5,6 +5,7 @@ import {
   illustrative,
   sourced,
   weakestTag,
+  type Source,
   type SourceTag,
   type TaggedNumber,
 } from "./provenance";
@@ -316,12 +317,16 @@ export function serviceInputs(shop: ScenarioShop): Shop {
   };
 }
 
-export function serviceProvenance(
+export function serviceSources(
   demand: ScenarioDemand,
   shop: ScenarioShop,
   level: (typeof demandLevels)[number],
-): SourceTag {
-  return weakestTag([
+  arrivalMenu = shop.menu,
+): Source[] {
+  const orderedDrinks = new Set(
+    arrivalMenu.filter(({ weight }) => weight.value > 0).map(({ id }) => id),
+  );
+  return [
     demand.hourly[level].source,
     demand.opensAt.source,
     demand.closesAt.source,
@@ -333,17 +338,23 @@ export function serviceProvenance(
         endsAt.source,
       ]),
     ),
-    ...shop.menu.flatMap(({ weight, tasks }) => [
-      weight.source,
-      ...(weight.value > 0
-        ? tasks.flatMap((task) => [
-            task.staffSeconds.source,
-            ...("unattendedSeconds" in task
-              ? [task.unattendedSeconds.source]
-              : []),
-          ])
-        : []),
-    ]),
+    ...arrivalMenu.map(({ weight }) => weight.source),
+    ...shop.menu
+      .filter(({ id }) => orderedDrinks.has(id))
+      .flatMap(({ tasks }) =>
+        tasks.flatMap((task) => [
+          task.staffSeconds.source,
+          ...("unattendedSeconds" in task
+            ? [task.unattendedSeconds.source]
+            : []),
+        ]),
+      ),
     shop.patienceSeconds.source,
-  ]);
+  ];
+}
+
+export function serviceProvenance(
+  ...inputs: Parameters<typeof serviceSources>
+): SourceTag {
+  return weakestTag(serviceSources(...inputs));
 }

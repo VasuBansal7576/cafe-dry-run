@@ -28,7 +28,13 @@ export default defineAction({
         typeof playback === "object" &&
         "scenarioId" in playback &&
         "scenarioId" in navigation &&
-        playback.scenarioId === navigation.scenarioId
+        playback.scenarioId === navigation.scenarioId &&
+        ("comparisonScenarioId" in playback
+          ? playback.comparisonScenarioId
+          : undefined) ===
+          ("comparisonScenarioId" in navigation
+            ? navigation.comparisonScenarioId
+            : undefined)
       ) {
         screen.playback = playback;
       }

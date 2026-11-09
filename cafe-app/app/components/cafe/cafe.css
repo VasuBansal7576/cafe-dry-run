@@ -406,3 +406,241 @@
     gap: 3px 12px;
   }
 }
+
+.cafe-comparison-controls,
+.cafe-comparison-side,
+.cafe-station-board,
+.cafe-decision-summary {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.cafe-comparison-controls > .cafe-controls {
+  justify-content: space-between;
+  align-items: center;
+}
+.cafe-comparison-controls label {
+  display: grid;
+  gap: 4px;
+}
+.cafe-comparison-controls select {
+  min-width: 145px;
+}
+.cafe-comparison-controls details,
+.cafe-alternative-edit {
+  border-bottom: 1px solid var(--cafe-rule);
+}
+.cafe-paired-boards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.cafe-paired-boards > * {
+  align-content: start;
+  border: 1px solid var(--cafe-rule);
+  padding: 10px;
+}
+.cafe-paired-boards h3 {
+  font-size: clamp(24px, 3vw, 34px);
+}
+.cafe-paired-boards .cafe-stations {
+  gap: 3px;
+}
+.cafe-paired-boards .cafe-station {
+  padding: 4px;
+  overflow-wrap: anywhere;
+}
+.cafe-paired-boards .cafe-station h4 {
+  font-size: 12px;
+}
+.cafe-customer-assumption {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  background: var(--cafe-panel);
+  border-left: 3px solid var(--cafe-signal);
+}
+.cafe-customer-assumption h4 {
+  font-size: 16px;
+}
+.cafe-customer-assumption label {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-weight: 650;
+}
+.cafe-workspace .cafe-customer-assumption input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  min-height: 0;
+  flex: 0 0 auto;
+  accent-color: var(--cafe-signal);
+}
+.cafe-customer-assumption dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+}
+.cafe-customer-assumption dd {
+  font: 15px var(--cafe-mono);
+}
+.cafe-ledger-controls {
+  margin-block: 14px;
+}
+.cafe-receipt {
+  --receipt-rule: #ad9c80;
+  position: relative;
+  color-scheme: light;
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  gap: clamp(16px, 3vw, 40px);
+  border-top: 3px solid var(--cafe-signal);
+  background: #fff3d9;
+  color: var(--cafe-print);
+  padding: clamp(14px, 3.5vw, 40px);
+  box-shadow: 0 6px 20px #15130d80;
+}
+.cafe-receipt::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 -8px;
+  height: 9px;
+  background:
+    linear-gradient(135deg, #fff3d9 50%, transparent 0) 0 0 / 16px 9px repeat-x,
+    linear-gradient(225deg, #fff3d9 50%, transparent 0) 0 0 / 16px 9px repeat-x;
+}
+.cafe-receipt .cafe-kicker {
+  color: #67493a;
+}
+.cafe-receipt :focus-visible {
+  outline-color: #a43615;
+}
+.cafe-receipt .cafe-stamp {
+  border-color: var(--receipt-rule);
+  margin-block: 3px;
+}
+.cafe-receipt .cafe-notice {
+  background: #eee2cc;
+}
+.cafe-receipt-main,
+.cafe-cash-chart {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  min-width: 0;
+}
+.cafe-receipt h3 {
+  margin-top: 8px;
+}
+.cafe-receipt table {
+  table-layout: fixed;
+  border-collapse: collapse;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.cafe-receipt th,
+.cafe-receipt td {
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--receipt-rule);
+  text-align: start;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+.cafe-receipt td {
+  font-family: var(--cafe-mono);
+}
+.cafe-receipt-main thead th:first-child {
+  width: 42%;
+}
+.cafe-receipt-main tbody tr:first-child td {
+  font-size: 22px;
+}
+.cafe-receipt footer {
+  display: grid;
+  gap: 6px;
+  overflow-wrap: anywhere;
+  color: #67493a;
+  font: 11px/1.45 var(--cafe-mono);
+}
+.cafe-receipt footer button {
+  justify-self: start;
+}
+.cafe-cash-chart {
+  align-self: start;
+  border: 1px solid var(--receipt-rule);
+  background: var(--cafe-paper);
+  padding: clamp(9px, 2vw, 18px);
+}
+.cafe-cash-chart svg {
+  width: 100%;
+  font: 11px var(--cafe-mono);
+  fill: var(--cafe-print);
+}
+.cafe-zero-line {
+  stroke: #776a58;
+  stroke-dasharray: 3 4;
+}
+.cafe-chart-a,
+.cafe-chart-b {
+  fill: none;
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+.cafe-chart-a {
+  stroke: var(--cafe-print);
+}
+.cafe-chart-b {
+  stroke: #a43615;
+}
+.cafe-chart-label-a,
+.cafe-chart-label-b {
+  font-weight: bold;
+}
+.cafe-chart-label-b {
+  fill: #a43615;
+}
+@media (max-width: 645px) {
+  .cafe-receipt {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cafe-receipt-main thead th:first-child {
+    width: 37%;
+  }
+  .cafe-receipt td {
+    font-size: 12px;
+  }
+  .cafe-receipt .cafe-stamp {
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+}
+@media (max-width: 555px) {
+  .cafe-paired-boards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cafe-paired-boards .cafe-stations {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .cafe-receipt,
+  .cafe-receipt * {
+    visibility: visible;
+  }
+  .cafe-receipt {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    color: #29241d;
+    box-shadow: none;
+  }
+  .cafe-receipt button {
+    display: none;
+  }
+}
