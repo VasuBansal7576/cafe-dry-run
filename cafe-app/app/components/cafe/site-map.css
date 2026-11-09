@@ -271,6 +271,13 @@
   line-height: 1.4;
 }
 
+.cafe-map-road-name small {
+  display: block;
+  margin-block-start: 2px;
+  font-size: 11px;
+  color: var(--cafe-print, #29241d);
+}
+
 .cafe-map-pin {
   display: grid;
   place-items: end center;

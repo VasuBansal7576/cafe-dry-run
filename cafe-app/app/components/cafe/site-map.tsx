@@ -18,8 +18,10 @@ import {
 import { Stamp } from "./provenance-stamp";
 import {
   placeRoadCallouts,
-  preferredRoadOffset,
   roadBadgeSize,
+  roadCalloutOffsets,
+  type RoadPlacement,
+  type RoadSource,
 } from "./road-callouts";
 
 import "./site-map.css";
@@ -102,25 +104,50 @@ const streetMarkers = [
   const start = way?.points[segment];
   const end = way?.points[segment + 1];
   if (!way?.name || !start || !end) return [];
-  const [lon, lat] = start;
-  const [endLon, endLat] = end;
+  const source = (
+    id: number,
+    [lon, lat]: [number, number],
+    [endLon, endLat]: [number, number],
+    t: number,
+  ): RoadSource => {
+    const [x, y] = project(lon + (endLon - lon) * t, lat + (endLat - lat) * t);
+    return { osmId: id, point: { x: x / width, y: y / height } };
+  };
+  const preferred = source(osmId, start, end, fraction);
+  const distance = ({ point }: RoadSource) =>
+    Math.hypot(
+      (point.x - preferred.point.x) * width,
+      (point.y - preferred.point.y) * height,
+    );
+  const alternates = features.flatMap((feature) => {
+    if (feature.name !== way.name || !["main", "street"].includes(feature.kind))
+      return [];
+    return feature.points.slice(1).flatMap((to, index) => {
+      const from = feature.points[index]!;
+      const [x1, y1] = project(...from);
+      const [x2, y2] = project(...to);
+      const steps = Math.max(1, Math.ceil(Math.hypot(x2 - x1, y2 - y1) / 18));
+      return Array.from({ length: steps }, (_, i) =>
+        source(feature.osmId, from, to, (i + 0.5) / steps),
+      );
+    });
+  });
+  alternates.sort((a, b) => distance(a) - distance(b));
   return [
     {
       letter,
       osmId,
-      angle,
       name: way.name,
-      coordinate: {
-        lon: lon + (endLon - lon) * fraction,
-        lat: lat + (endLat - lat) * fraction,
-      },
+      sources: [preferred, ...alternates],
+      offsets: roadCalloutOffsets(angle),
     },
   ];
 });
 
-const preferredOffsets = streetMarkers.map(({ angle }) =>
-  preferredRoadOffset(angle),
-);
+const preferredPlacements = streetMarkers.map(({ sources, offsets }) => ({
+  source: sources[0]!,
+  offset: offsets[0]!,
+}));
 
 const arrowSteps = {
   ArrowUp: { lat: 1, lon: 0 },
@@ -149,8 +176,8 @@ export function SiteMap({
   const streetKeyId = useId();
   const photoId = useId();
   const stage = useRef<HTMLDivElement>(null);
-  const [roadOffsets, setRoadOffsets] =
-    useState<((typeof preferredOffsets)[number] | null)[]>(preferredOffsets);
+  const [roadPlacements, setRoadPlacements] =
+    useState<(RoadPlacement | null)[]>(preferredPlacements);
   const [showStorefront, setShowStorefront] = useState(false);
   const [draft, setDraft] = useState<{
     baseline: number;
@@ -188,18 +215,12 @@ export function SiteMap({
         };
       },
     );
-    const anchors = streetMarkers.map(({ coordinate: { lon, lat }, angle }) => {
-      const [x, y] = project(lon, lat);
-      return {
-        point: { x: (x / width) * frame.width, y: (y / height) * frame.height },
-        angle,
-      };
-    });
-    const next = placeRoadCallouts(anchors, frame, obstacles);
-    setRoadOffsets((previous) =>
+    const next = placeRoadCallouts(streetMarkers, frame, obstacles);
+    setRoadPlacements((previous) =>
       previous.every(
-        (offset, index) =>
-          offset?.x === next[index]?.x && offset?.y === next[index]?.y,
+        (placement, index) =>
+          placement?.source === next[index]?.source &&
+          placement?.offset === next[index]?.offset,
       )
         ? previous
         : next,
@@ -380,18 +401,22 @@ export function SiteMap({
               ))}
             </svg>
           </button>
-          {streetMarkers.map(({ letter, osmId, coordinate }, index) => {
-            const offset = roadOffsets[index];
-            if (!offset) return null;
-            const { x, y } = offset;
+          {streetMarkers.map(({ letter, osmId }, index) => {
+            const placement = roadPlacements[index];
+            if (!placement) return null;
+            const {
+              source,
+              offset: { x, y },
+            } = placement;
             return (
               <span
                 key={osmId}
                 className="cafe-map-road-mark"
-                data-osm-way={osmId}
+                data-osm-way={source.osmId}
                 style={
                   {
-                    ...pointStyle(coordinate),
+                    left: `${source.point.x * 100}%`,
+                    top: `${source.point.y * 100}%`,
                     "--cafe-road-badge-x": `${x}px`,
                     "--cafe-road-badge-y": `${y}px`,
                     "--cafe-road-leader-length": `${Math.hypot(x, y)}px`,
@@ -465,10 +490,15 @@ export function SiteMap({
         <div className="cafe-map-street-key">
           <p id={streetKeyId}>Street key</p>
           <ul aria-labelledby={streetKeyId} role="list">
-            {streetMarkers.map(({ letter, osmId, name }) => (
+            {streetMarkers.map(({ letter, osmId, name }, index) => (
               <li key={osmId}>
                 <span className="cafe-map-road-badge">{letter}</span>
-                <span>{name}</span>
+                <span className="cafe-map-road-name">
+                  {name}
+                  {!roadPlacements[index] && (
+                    <small>No clear map pointer</small>
+                  )}
+                </span>
               </li>
             ))}
           </ul>
