@@ -1,5 +1,6 @@
 import { defineAction } from "@agent-native/core/action";
 
+import { withDecisionChatFigures } from "../server/lib/cafe/chat-figures.js";
 import {
   decisionScopeSchema,
   readDecision,
@@ -11,7 +12,7 @@ import {
 
 export default defineAction({
   description:
-    "Read the grounded facts for a chat explanation of a saved café comparison. Returns the reversing assumption and its tested cases, exact matched sample counts, trade-offs and provenance. The chat model writes the recommendation.",
+    "Read a fresh café decision's reversing assumption, tested cases, trade-offs and provenance. Quote chatFigures.text verbatim for figures. The chat model writes the recommendation.",
   schema: decisionScopeSchema,
   errors: scenarioErrors,
   http: false,
@@ -31,6 +32,7 @@ export default defineAction({
     const { receipt } = decision;
     const level = receipt.settings.demandLevel;
     return {
+      chatFigures: withDecisionChatFigures(decision).chatFigures,
       receiptId: receipt.id,
       historical: decision.historical,
       currentSavedCustomers: decision.currentSavedCustomers,

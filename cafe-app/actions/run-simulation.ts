@@ -1,8 +1,13 @@
 import { defineAction } from "@agent-native/core/action";
+import { z } from "zod";
 
 import { getDb } from "../server/db/index.js";
 import { scenarios, serviceRuns } from "../server/db/schema.js";
 import { createArrivalPlan } from "../server/lib/cafe/arrivals.js";
+import {
+  chatFiguresSchema,
+  serviceChatFigures,
+} from "../server/lib/cafe/chat-figures.js";
 import {
   expectedDailyArrivals,
   isServicePlanSizeAllowed,
@@ -28,9 +33,12 @@ import { simulateSeries } from "../server/lib/cafe/simulation.js";
 
 export default defineAction({
   description:
-    "Run and save a deterministic Saturday service simulation for a cafe scenario, using its current revision. Returns wait, served, loss, bottleneck and utilization metrics. Read get-simulation for playback.",
+    "Run and save a deterministic Saturday service simulation for a cafe scenario, using its current revision. Quote chatFigures.text verbatim in chat. Read get-simulation for playback.",
   schema: scenarioEditKey.extend(serviceParameters.shape),
-  outputSchema: serviceRunSchema.omit({ playback: true }),
+  outputSchema: z.object({
+    chatFigures: chatFiguresSchema,
+    ...serviceRunSchema.omit({ playback: true }).shape,
+  }),
   errors: scenarioErrors,
   run: async ({ id, expectedRevision, seed, demandLevel, runCount }, ctx) => {
     const owner = requireOwner(ctx?.userEmail);
@@ -101,6 +109,7 @@ export default defineAction({
         })
         .where(scope);
       return {
+        chatFigures: serviceChatFigures(run.summary),
         id: run.id,
         scenarioId: run.scenarioId,
         scenarioRevision: run.scenarioRevision,

@@ -7,6 +7,7 @@ import computeRunway from "../../../actions/compute-runway.js";
 import configureFinance from "../../../actions/configure-finance.js";
 import configureShop from "../../../actions/configure-shop.js";
 import createScenario from "../../../actions/create-scenario.js";
+import explainResult from "../../../actions/explain-result.js";
 import getComparison from "../../../actions/get-comparison.js";
 import getSimulation from "../../../actions/get-simulation.js";
 import listScenarios from "../../../actions/list-scenarios.js";
@@ -40,6 +41,83 @@ const versions = (scenario: Scenario) => ({
 beforeAll(() => migrate({}));
 afterAll(() => closeDbExec());
 
+it("returns quote-ready service and cash figures without changing the underlying receipt", async () => {
+  const { scenario: a } = await createScenario.run(
+    { baseHourlyDemand: 55 },
+    owner,
+  );
+  const { scenario: b } = await configureShop.run(
+    {
+      ...versions(a),
+      variantLabel: "Cover barista",
+      shop: {
+        workers: [
+          ...a.shop.workers,
+          { id: "cover", name: "Cover", shifts: a.shop.workers[0]!.shifts },
+        ],
+      },
+    },
+    owner,
+  );
+  const options = { seed: 42, runCount: 24, demandLevel: "base" as const };
+  const run = await runSimulation.run(
+    { ...serviceVersion(a), ...options },
+    owner,
+  );
+  expect(run.summary.stats.waitP50Seconds).toBe(215.169523362787);
+  expect(run).toMatchObject({
+    chatFigures: { waitP50: { text: "215.17 seconds", tag: "illustrative" } },
+  });
+  const saved = await getSimulation.run(
+    { id: a.id, runId: run.id, includePlayback: false },
+    owner,
+  );
+  expect(saved).toMatchObject({ chatFigures: run.chatFigures });
+
+  const comparison = await compareScenarios.run(
+    { a: versions(a), b: versions(b), ...options },
+    owner,
+  );
+  const scope = { aId: a.id, bId: b.id };
+  expect(comparison.chatFigures?.["scenarioA.waitP50"]).toEqual(
+    run.chatFigures.waitP50,
+  );
+  expect(comparison.chatFigures?.["scenarioA.waitP90"]?.text).toBe(
+    "286.90 seconds",
+  );
+  expect(comparison.chatFigures?.["scenarioA.meanCustomersLost"]?.text).toBe(
+    "278.33 customers lost per Saturday",
+  );
+  expect(comparison.chatFigures?.["scenarioB.waitP50"]?.text).toBe(
+    "96.79 seconds",
+  );
+  expect(comparison.chatFigures?.["scenarioB.meanOrdersServed"]?.text).toBe(
+    "298.29 orders served per Saturday",
+  );
+  expect(comparison.chatFigures?.["bMinusA.monthlyCash"]?.text).toMatch(
+    /^[+\-]?₹[\d,.]+ per month$/,
+  );
+  expect((await getComparison.run(scope, owner)).decision).toEqual(comparison);
+  expect(await explainResult.run(scope, owner)).toMatchObject({
+    chatFigures: comparison.chatFigures,
+  });
+  await expect(explainResult.run(scope, other)).resolves.not.toHaveProperty(
+    "chatFigures",
+  );
+
+  await configureFinance.run(
+    { ...versions(a), finance: { rent: estimated(61_000) } },
+    owner,
+  );
+  expect((await getComparison.run(scope, owner)).decision).toMatchObject({
+    cashStale: true,
+    chatFigures: null,
+  });
+  expect(await explainResult.run(scope, owner)).not.toHaveProperty(
+    "chatFigures",
+  );
+});
+
 it("returns conditional no-count conversions from the saved solo runway and requires a refresh after edits", async () => {
   const { scenario } = await createScenario.run({}, owner);
   const key = serviceVersion(scenario);
@@ -56,6 +134,12 @@ it("returns conditional no-count conversions from the saved solo runway and requ
     owner,
   );
   const observed = await setPedestrianCount.run(key, owner);
+  expect(observed.chatFigures?.["scenarioA.illustrativeCaptureRate.0"]).toEqual(
+    {
+      text: "30% at 100 illustrative passers-by per open day",
+      tag: "illustrative",
+    },
+  );
   const { breakEvenOrdersPerDay, illustrativeCaptureRates } = receipt.a.cash;
   expect(breakEvenOrdersPerDay.value).toBeGreaterThan(0);
   expect(observed.requiredConversion).toEqual({

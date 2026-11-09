@@ -50,6 +50,8 @@ Follow the project rules in `../AGENTS.md` and behavior specification in `../caf
 
 Use `navigate` to open `/cafe?scenario=<id>` with `#opening-file`, `#site-demand`, `#service-test`, or `#cash-ledger`. `view-screen` returns the visible document and its `documentHash`, even after scrolling without changing the URL's `hash`. It also includes the selected scenarios, saved spot, displayed run IDs and timeline position. Active playback refreshes the position once per second. A stale result describes the earlier run revision. Simulation numbers come from actions. Explain opens the built-in agent chat.
 
+Quote each fresh result's `chatFigures.text` exactly, including signs, decimals, currency and units. Keep the figure attached to its scenario and source tag. Read a fresh action in the current turn. Raw numbers are available for the app; the agent never rounds, converts or calculates with them.
+
 | Comparison and cash action | Use |
 | --- | --- |
 | `configure-shop` with `variantLabel` | Copy the baseline and change the copy only. Send its current service and finance revisions. The grinder's startup quote belongs in its financial inputs. |

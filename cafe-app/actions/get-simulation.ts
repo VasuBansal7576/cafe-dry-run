@@ -6,6 +6,10 @@ import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { scenarios, serviceRuns } from "../server/db/schema.js";
 import {
+  chatFiguresSchema,
+  serviceChatFigures,
+} from "../server/lib/cafe/chat-figures.js";
+import {
   requireOwner,
   scenarioErrors,
   scenarioKey,
@@ -19,7 +23,7 @@ import { serviceRunSchema } from "../server/lib/cafe/service-run.js";
 
 export default defineAction({
   description:
-    "Read a saved cafe service run and whether its inputs are stale. Defaults to the scenario's latest run. Include playback only when you need the first Saturday's arrivals and timeline.",
+    "Read a saved cafe service run and whether its inputs are stale. Quote chatFigures.text verbatim from a fresh run. Include playback only when you need the first Saturday's arrivals and timeline.",
   schema: scenarioKey.extend({
     runId: z
       .string()
@@ -34,6 +38,7 @@ export default defineAction({
       ),
   }),
   outputSchema: z.object({
+    chatFigures: chatFiguresSchema.nullable(),
     run: serviceRunSchema
       .partial({ playback: true })
       .extend({ stale: z.boolean() })
@@ -86,7 +91,7 @@ export default defineAction({
       !row.arrivalSourceId ||
       row.arrivalSourceRevision === null
     )
-      return { run: null };
+      return { chatFigures: null, run: null };
     const scenario = { id, revision: row.scenarioRevision };
     const arrivalSource = {
       id: row.arrivalSourceId,
@@ -95,7 +100,12 @@ export default defineAction({
     const currentRunId =
       row.runId === soloRunId(scenario, row.summary) ||
       row.runId === pairedRunId(scenario, arrivalSource, row.summary);
+    const stale =
+      !currentRunId ||
+      row.scenarioRevision !== row.revision ||
+      row.arrivalSourceRevision !== row.currentArrivalRevision;
     return {
+      chatFigures: stale ? null : serviceChatFigures(row.summary),
       run: {
         id: row.runId,
         scenarioId: id,
@@ -103,10 +113,7 @@ export default defineAction({
         arrivalSource,
         summary: row.summary,
         playback: row.playback ?? undefined,
-        stale:
-          !currentRunId ||
-          row.scenarioRevision !== row.revision ||
-          row.arrivalSourceRevision !== row.currentArrivalRevision,
+        stale,
       },
     };
   },

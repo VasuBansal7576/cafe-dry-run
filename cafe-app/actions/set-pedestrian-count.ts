@@ -2,6 +2,12 @@ import { defineAction } from "@agent-native/core/action";
 import { z } from "zod";
 
 import {
+  captureChatFigures,
+  chatFiguresSchema,
+  pedestrianChatFigures,
+  prefixChatFigures,
+} from "../server/lib/cafe/chat-figures.js";
+import {
   conditionalCaptureSchema,
   type DecisionReceipt,
 } from "../server/lib/cafe/decision-receipt.js";
@@ -35,7 +41,7 @@ function conditionalRates({ service, cash }: DecisionReceipt["a"]) {
 
 export default defineAction({
   description:
-    "Set an observed Saturday count and conversion to derive arrivals. Send null to clear the count. Omit pedestrian to read the current result without editing: with no count, return required break-even conversion at explicitly illustrative footfall levels from a fresh cash receipt, or report what to run first.",
+    "Set an observed Saturday count and conversion to derive arrivals. Send null to clear the count. Omit pedestrian to read without editing. With no count, return required break-even conversion at illustrative footfall levels from a fresh cash receipt. Quote chatFigures.text verbatim in chat.",
   schema: scenarioEditKey.extend({
     pedestrian: pedestrianSchema.nullable().optional(),
     comparison: z
@@ -49,6 +55,7 @@ export default defineAction({
       ),
   }),
   outputSchema: z.object({
+    chatFigures: chatFiguresSchema.nullable(),
     scenario: scenarioSchema,
     expectedSaturdayArrivals: z
       .object({ value: z.number(), tag: sourceTagSchema })
@@ -97,9 +104,18 @@ export default defineAction({
       return scenarioConflict();
     const count = scenario.demand.pedestrian;
     if (count) {
+      const arrivals = pedestrianDailyArrivals(count);
       return {
+        chatFigures: pedestrianChatFigures(
+          { value: count.count.value, tag: count.count.source.tag },
+          {
+            value: count.conversionPercent.value,
+            tag: count.conversionPercent.source.tag,
+          },
+          arrivals,
+        ),
         scenario,
-        expectedSaturdayArrivals: pedestrianDailyArrivals(count),
+        expectedSaturdayArrivals: arrivals,
         requiredConversion: null,
       };
     }
@@ -114,6 +130,17 @@ export default defineAction({
       decision.receipt.cashBaseline.revision === scenario.revision
     ) {
       return {
+        chatFigures: {
+          ...prefixChatFigures(
+            "scenarioA",
+            captureChatFigures(decision.receipt.a.cash),
+          ),
+          ...(decision.receipt.b &&
+            prefixChatFigures(
+              "scenarioB",
+              captureChatFigures(decision.receipt.b.cash),
+            )),
+        },
         ...result,
         requiredConversion: {
           kind: "conditional" as const,
@@ -124,6 +151,7 @@ export default defineAction({
       };
     }
     return {
+      chatFigures: null,
       ...result,
       requiredConversion: {
         kind: decision ? ("stale-runway" as const) : ("needs-runway" as const),
