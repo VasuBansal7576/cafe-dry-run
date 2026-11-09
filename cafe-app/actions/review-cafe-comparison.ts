@@ -21,6 +21,7 @@ export default defineAction({
   errors: scenarioErrors,
   http: false,
   readOnly: true,
+  dedupe: false,
   run: async (input, ctx) => {
     const owner = requireOwner(ctx?.userEmail);
     const scope = currentReviewScope();

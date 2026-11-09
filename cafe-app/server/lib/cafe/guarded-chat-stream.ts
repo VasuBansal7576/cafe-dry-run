@@ -13,6 +13,11 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 import { cafeActionTextCheck } from "./chat-action-text.js";
 import { safeProviderFailure } from "./chat-provider-failure.js";
+import {
+  currentReviewScope,
+  REVIEW_ACTION,
+  reviewTerminalSentinel,
+} from "./structured-review.js";
 
 const guardedEngines = new WeakSet<AgentEngine>();
 export const cafeChatTools = [
@@ -155,9 +160,14 @@ async function* holdDraft(
   { abortSignal: signal, messages, tools }: EngineStreamOptions,
 ): AsyncGenerator<EngineEvent> {
   const acceptsText = cafeActionTextCheck();
+  const review = currentReviewScope();
   const offeredTools = new Map(
     tools
-      .filter(({ name }) => isCafeChatActionAllowed(name))
+      .filter(({ name }) =>
+        review
+          ? name === REVIEW_ACTION
+          : name !== REVIEW_ACTION && isCafeChatActionAllowed(name),
+      )
       .map(({ name, inputSchema }) => [name, inputSchema]),
   );
   const textDeltas: string[] = [];
@@ -295,6 +305,13 @@ async function* holdDraft(
   if (completedReply) {
     if (!content.some(({ type }) => type === "text") && textDeltas.length > 0)
       content = [...content, { type: "text", text: textDeltas.join("") }];
+    if (
+      review &&
+      !content.some((part) => part.type === "text" && part.text.trim())
+    ) {
+      const sentinel = reviewTerminalSentinel(review.receiptId);
+      if (sentinel) content.push({ type: "text", text: sentinel });
+    }
   } else {
     const outcomes = new Set(
       [...toolRecords.values()].map(({ result }) => result),

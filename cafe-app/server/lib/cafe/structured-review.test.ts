@@ -41,7 +41,7 @@ it("returns aliased quotes only for the current ordered pair belonging to the ow
   const { scenario: b } = await configureShop.run(
     {
       ...version(a),
-      variantLabel: "New grinder",
+      variantLabel: "Extra grinder",
       shop: { equipment: { ...a.shop.equipment, grinder: illustrative(2) } },
     },
     owner,
@@ -62,6 +62,10 @@ it("returns aliased quotes only for the current ordered pair belonging to the ow
   };
   const evidence = await readReviewEvidence(owner.userEmail, scope);
   expect(evidence?.receiptId).toBe(first.receipt.id);
+  expect(evidence?.labels).toEqual({
+    a: "Scenario A",
+    b: "Scenario B (Extra grinder)",
+  });
   expect(evidence?.figures["scenarioA.waitP50"]?.text).toContain("Scenario A");
   expect(JSON.stringify(evidence)).not.toContain("999-minute");
   expect(await readReviewEvidence("other@example.invalid", scope)).toBeNull();

@@ -23,13 +23,22 @@ export const reviewScopeSchema = z.strictObject({
 type ReviewScope = z.infer<typeof reviewScopeSchema>;
 
 const choices = {
-  "a-for-shorter-wait": "I favor Scenario A if shorter waits matter most.",
-  "b-for-shorter-wait": "I favor Scenario B if shorter waits matter most.",
-  "a-for-cash": "I favor Scenario A if projected monthly cash matters most.",
-  "b-for-cash": "I favor Scenario B if projected monthly cash matters most.",
-  "defer-for-evidence":
-    "I would defer the decision until we can verify the inputs that matter most to you.",
+  "a-for-shorter-wait": { scenario: "a", priority: "shorter waits matter" },
+  "b-for-shorter-wait": { scenario: "b", priority: "shorter waits matter" },
+  "a-for-cash": { scenario: "a", priority: "projected monthly cash matters" },
+  "b-for-cash": { scenario: "b", priority: "projected monthly cash matters" },
+  "defer-for-evidence": null,
 } as const;
+const conventionalLabels = new Set([
+  "baseline",
+  "baseline shop",
+  "saturday baseline",
+  "one barista",
+  "two baristas",
+  "extra barista",
+  "extra grinder",
+  "grinder upgrade",
+]);
 const choiceSchema = z.enum(
   Object.keys(choices) as [keyof typeof choices, ...(keyof typeof choices)[]],
 );
@@ -68,6 +77,7 @@ export const reviewResultSchema = z.discriminatedUnion("status", [
     status: z.literal("evidence"),
     receiptId: z.uuid(),
     choices: z.array(choiceSchema),
+    labels: z.object({ a: z.string(), b: z.string() }),
     figures: chatFiguresSchema,
     reversal: reversalSchema,
   }),
@@ -115,6 +125,12 @@ export function currentReviewScope() {
   return parsed.success ? parsed.data : null;
 }
 
+function reviewLabel(alias: string, label: string) {
+  return conventionalLabels.has(label.toLowerCase())
+    ? `${alias} (${label})`
+    : alias;
+}
+
 export async function readReviewEvidence(
   owner: string,
   scope: ReviewScope,
@@ -131,13 +147,16 @@ export async function readReviewEvidence(
   const { a, b, delta } = receipt;
   const ordering = delta?.higherMonthlyCash;
   if (!b || !delta || !ordering) return null;
-  // These fixed labels keep scenario names out of the evidence template.
+  const labels = {
+    a: reviewLabel("Scenario A", a.label),
+    b: reviewLabel("Scenario B", b.label),
+  };
   const { chatFigures } = withDecisionChatFigures({
     ...observed,
     receipt: {
       ...receipt,
-      a: { ...a, label: "Scenario A" },
-      b: { ...b, label: "Scenario B" },
+      a: { ...a, label: labels.a },
+      b: { ...b, label: labels.b },
     },
   });
   const checked = chatFiguresSchema.safeParse(chatFigures);
@@ -163,6 +182,7 @@ export async function readReviewEvidence(
     status: "evidence",
     receiptId: receipt.id,
     choices: supported,
+    labels,
     figures,
     reversal,
   };
@@ -182,12 +202,34 @@ export function reviewOutcomes(
   });
 }
 
+function selectedChoice(
+  receiptId: string,
+  results: Parameters<typeof reviewOutcomes>[0],
+) {
+  const selection = reviewOutcomes(results)
+    .filter(
+      (result) => result.status === "selected" && result.receiptId === receiptId,
+    )
+    .pop();
+  return selection?.status === "selected" ? selection.choice : undefined;
+}
+
+export function reviewTerminalSentinel(receiptId: string) {
+  // Core 0.226.0 checks for empty content before invoking the final guard.
+  if (selectedChoice(receiptId, getRequestRunContext()?.toolResults ?? []))
+    return "Comparison review ready.";
+}
+
 function renderReview(evidence: ReviewEvidence, choice: ReviewChoice) {
+  const reason = choices[choice];
+  const recommendation = reason
+    ? `I favor ${evidence.labels[reason.scenario]} if ${reason.priority} most.`
+    : "I would defer the decision until we can verify the inputs that matter most to you.";
   const figures = figureKeys.map((key) => {
     const { text, tag } = evidence.figures[key]!;
     return `- ${text}${tag ? ` (${tag})` : ""}`;
   });
-  return [choices[choice], ...figures, reversalText[evidence.reversal]].join(
+  return [recommendation, figures.join("\n"), reversalText[evidence.reversal]].join(
     "\n\n",
   );
 }
@@ -206,21 +248,15 @@ export const guardStructuredReview: AgentLoopFinalResponseGuard = async (
       clearAllText: true,
       maxRetries: 0,
     };
-  const selection = reviewOutcomes(details.toolResults)
-    .filter((outcome) => outcome.status === "selected")
-    .pop();
-  if (
-    selection?.status !== "selected" ||
-    selection.receiptId !== current.receiptId ||
-    !current.choices.includes(selection.choice)
-  )
+  const selection = selectedChoice(current.receiptId, details.toolResults);
+  if (!selection || !current.choices.includes(selection))
     return {
       retryMessage: retryText,
       fallbackMessage: unavailableText,
       clearAllText: true,
       maxRetries: 1,
     };
-  const fallbackMessage = renderReview(current, selection.choice);
+  const fallbackMessage = renderReview(current, selection);
   return {
     retryMessage: retryText,
     fallbackMessage,
