@@ -75,7 +75,10 @@ function resultPayload(
     );
   // Core can truncate after these leading fields, before the raw receipt or playback.
   const leading = content
-    .replace(/^\{\n {2}"rerunComparison": (?:null|\{[\s\S]*?\n {2}\}),\n/, "{\n")
+    .replace(
+      /^\{\n {2}"rerunComparison": (?:null|\{[\s\S]*?\n {2}\}),\n/,
+      "{\n",
+    )
     .match(
       /^\{\n(?: {2}"decision": \{\n)?( {2,4})"chatFigureBasis": (\{[\s\S]*?\n\1\}),\n\1"chatFigures": (null|\{[\s\S]*?\n\1\})(?=,|\n)/,
     );
@@ -137,6 +140,69 @@ function quoteTexts(value: unknown): string[] {
     : [];
 }
 
+// Only a whole saved value can supply names or exact quotes. Buffer fragments by
+// the action-returned version and match the offset requested in the same tool call.
+function scenarioInputReader() {
+  const pending = new Map<string, { nextOffset: number; text: string }>();
+  return (
+    parsed: Record<string, unknown> | undefined,
+    call: Record<string, unknown> | undefined,
+  ) => {
+    const page = object(parsed?.inputPage);
+    const requested = object(call?.input);
+    if (!page || typeof page.section !== "string") return;
+    const path = Array.isArray(requested?.path) ? requested.path : [];
+    if (page.value !== undefined)
+      return { section: page.section, path, value: page.value };
+    if (
+      typeof page.text !== "string" ||
+      typeof page.version !== "string" ||
+      !requested
+    )
+      return;
+
+    const offset = requested.offset ?? 0;
+    const previous = pending.get(page.version);
+    if (offset !== 0 && previous?.nextOffset !== offset) return;
+    const text = offset === 0 ? page.text : previous!.text + page.text;
+    if (typeof page.nextOffset === "number") {
+      pending.set(page.version, { text, nextOffset: page.nextOffset });
+      return;
+    }
+    pending.delete(page.version);
+    const value = page.nextOffset === null ? parseJson(text) : undefined;
+    if (value !== undefined) return { section: page.section, path, value };
+  };
+}
+
+function scenarioInputQuoteFields({
+  section,
+  path,
+  value,
+}: NonNullable<ReturnType<ReturnType<typeof scenarioInputReader>>>) {
+  if (section === "identity") {
+    if (!path.length)
+      return {
+        label: object(value)?.label,
+        latestRunId: object(value)?.latestRunId,
+      };
+    if (path.length === 1 && path[0] === "label") return { label: value };
+    if (path.length === 1 && path[0] === "latestRunId")
+      return { latestRunId: value };
+  }
+  if (section === "spot") {
+    if (!path.length) return { spot: value };
+    if (path.length === 1 && path[0] === "label")
+      return { spot: { label: value } };
+  }
+  if (section === "chatFigures") {
+    if (!path.length) return { chatFigures: value };
+    if (path.length === 1 && typeof path[0] === "string")
+      return { chatFigures: { [path[0]]: value } };
+  }
+  return {};
+}
+
 function turnQuoteSources({
   toolResults,
   toolCalls,
@@ -152,6 +218,7 @@ function turnQuoteSources({
   const calls = new Map(
     toolCalls.map(({ toolCallId, input }) => [toolCallId, object(input)]),
   );
+  const readInputPage = scenarioInputReader();
   const recordSites = (index: number, values: unknown[]) => {
     const names = values.filter(
       (value): value is string =>
@@ -202,8 +269,21 @@ function turnQuoteSources({
       recordSites(index, [object(object(parsed?.site)?.spot)?.label]);
     }
     const input = calls.get(toolCallId);
+    const inputPage =
+      name === "list-scenarios" ? readInputPage(parsed, input) : undefined;
+    const catalog =
+      name === "list-scenarios"
+        ? object(parsed?.scenarioPage)?.entries
+        : undefined;
+    const selectedScenario = object(parsed?.scenario);
     const returnedScenarios = [
-      parsed?.scenario,
+      selectedScenario && inputPage
+        ? {
+            ...selectedScenario,
+            ...scenarioInputQuoteFields(inputPage),
+          }
+        : parsed?.scenario,
+      ...(Array.isArray(catalog) ? catalog : []),
       parsed?.arrivalSource,
       ...(Array.isArray(parsed?.scenarios) ? parsed.scenarios : []),
       ...(!parsed && name === "list-scenarios"
@@ -500,12 +580,27 @@ export function cafeActionTextEvidence(history: ActionTextHistory) {
       for (const [key, child] of Object.entries(record))
         addNamedFields(child, key);
   }
+  const calls = new Map(
+    history.toolCalls.map(({ toolCallId, input }) => [
+      toolCallId,
+      object(input),
+    ]),
+  );
+  const readInputPage = scenarioInputReader();
   for (const result of history.toolResults) {
     if (result.isError || !scenarioActions.has(result.name)) continue;
     const parsed = parseJson(result.content);
     if (parsed) addNamedFields(parsed);
-    else if (result.name === "list-scenarios")
+    if (result.name !== "list-scenarios") continue;
+    if (!parsed) {
       addNamedFields(visibleScenarioHeaders(result.content));
+      continue;
+    }
+    const page = readInputPage(object(parsed), calls.get(result.toolCallId));
+    if (page) {
+      const key = page.path[page.path.length - 1];
+      addNamedFields(page.value, typeof key === "string" ? key : undefined);
+    }
   }
   return evidence;
 }

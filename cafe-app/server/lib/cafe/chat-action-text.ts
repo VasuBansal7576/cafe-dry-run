@@ -57,6 +57,21 @@ export function cafeActionTextAllowed(
       );
     if (typeof value !== "string" || !containsCafeQuantity(value)) return true;
     if (idKeys.has(key) && uuid.test(value)) return true;
+    if (tool === "list-scenarios") {
+      if (key === "after" && parent === "catalog" && uuid.test(value))
+        return true;
+      if (
+        key === "version" &&
+        (parent === "catalog" || parent === "input") &&
+        /^[a-f\d]{24}$/.test(value)
+      )
+        return true;
+      if (parent === "path") {
+        if (/^equipmentQuote\.(?:[0-9]|1[0-9])$/.test(value)) return true;
+        const worker = value.match(/^shifts\.(.+)\.[0-7]$/u)?.[1];
+        if (worker && evidence.has(worker)) return true;
+      }
+    }
     if (
       parent === "workers" &&
       key === "id" &&

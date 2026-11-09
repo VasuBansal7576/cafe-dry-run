@@ -116,6 +116,44 @@ it("preserves structured IDs, matching navigation, and a typed second-barista sh
   ).toBe(false);
 });
 
+it("accepts the exact read cursor and paths backed by saved worker IDs", () => {
+  const id = "c8f8f5fd-0e99-43ef-bcf5-7ee870e43fe4";
+  const version = "0a99".repeat(6);
+  expect(
+    cafeActionTextAllowed(
+      "list-scenarios",
+      { catalog: { after: id, version } },
+      "",
+      new Set(),
+    ),
+  ).toBe(true);
+  const input = {
+    id,
+    section: "chatFigures",
+    path: ["shifts.worker-12.0"],
+    version,
+    offset: 32,
+  };
+  expect(
+    cafeActionTextAllowed(
+      "list-scenarios",
+      { input },
+      "",
+      new Set(["worker-12"]),
+    ),
+  ).toBe(true);
+  expect(
+    cafeActionTextAllowed("list-scenarios", { input }, "", new Set()),
+  ).toBe(false);
+  expect(
+    cafeActionTextAllowed(
+      "list-scenarios",
+      { input: { ...input, version: "grinder is 999 seconds" } },
+      "",
+      new Set(["worker-12"]),
+    ),
+  ).toBe(false);
+});
 it("keeps recognizable error categories without echoing provider codes", () => {
   expect(
     safeProviderFailure(undefined, [], {
