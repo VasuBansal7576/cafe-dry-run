@@ -166,15 +166,70 @@ async function submitRun(page, formName, action, submitName) {
 }
 
 async function clickAction(page, action, control) {
-  await poll(`${action} control to become ready`, async () =>
-    (await control.isEnabled()) && (await control.getAttribute("aria-disabled")) !== "true",
-  );
-  const [response] = await Promise.all([
-    page.waitForResponse((reply) => reply.url().endsWith(`/actions/${action}`) && reply.request().method() === "POST"),
-    control.click(),
-  ]);
+  const ready = async () => (await control.isEnabled()) && (await control.getAttribute("aria-disabled")) !== "true";
+  const matches = (request) => request.url().endsWith(`/actions/${action}`) && request.method() === "POST";
+  await poll(`${action} control to become ready`, ready);
+  const response = action === "compare-scenarios"
+    ? await activateComparison(page, control, ready, matches)
+    : (await Promise.all([page.waitForResponse((reply) => matches(reply.request())), control.click()]))[0];
   assert(response.ok(), `${action} returned status ${response.status()}`);
   return response.json();
+}
+
+async function activateComparison(page, control, ready, matches) {
+  let firstRequest;
+  const requested = Promise.withResolvers();
+  const onRequest = (request) => {
+    if (firstRequest || !matches(request)) return;
+    firstRequest = request;
+    requested.resolve(request);
+  };
+  page.on("request", onRequest);
+  let deadline;
+  let timer;
+  try {
+    // A comparison read can start between pointerdown and submit. Observe the
+    // read gate at the actual submit, before React's synchronous guard runs.
+    const observation = await control.evaluateHandle((button) => {
+      const form = button.form;
+      let blocked = false;
+      function capture(event) {
+        if (!event.isTrusted || event.submitter !== button) return;
+        const description = document.getElementById(button.getAttribute("aria-describedby"));
+        blocked = button.getAttribute("aria-disabled") === "true" &&
+          /^(Checking the saved (comparison|scenarios)|Loading the comparison)…$/.test(description?.textContent?.trim());
+      }
+      form.addEventListener("submit", capture, true);
+      return { finish() { form.removeEventListener("submit", capture, true); return blocked; } };
+    });
+    let readBlocked;
+    try {
+      assert(!firstRequest, "compare-scenarios sent a POST before the control was activated");
+      deadline = Date.now() + 20_000;
+      await control.click();
+    } finally {
+      readBlocked = await observation.evaluate((capture) => capture.finish());
+      await observation.dispose();
+    }
+    if (readBlocked && !firstRequest) {
+      await poll("compare-scenarios read gate to reopen after a blocked submit", async () => firstRequest || await ready());
+      assert(!firstRequest, "compare-scenarios sent a POST after the read-blocked submit");
+      deadline = Date.now() + 20_000;
+      await control.click();
+    }
+    // Pin the first matching request, even when its response fails or arrives slowly.
+    const response = await Promise.race([
+      requested.promise.then((request) => request.response()),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Timed out waiting for the compare-scenarios POST response")), Math.max(0, deadline - Date.now()));
+      }),
+    ]);
+    assert(response, "compare-scenarios POST failed before receiving a response");
+    return response;
+  } finally {
+    clearTimeout(timer);
+    page.off("request", onRequest);
+  }
 }
 
 function requiredConversion(result, receipt) {
