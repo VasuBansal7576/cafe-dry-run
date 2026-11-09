@@ -1,0 +1,44 @@
+import { getOrgContext } from "@agent-native/core/org";
+import {
+  createAgentChatPlugin,
+  loadActionsFromStaticRegistry,
+} from "@agent-native/core/server";
+
+import actionsRegistry from "../../.generated/actions-registry.js";
+import {
+  searchConversationReferences,
+  validateConversationReferences,
+} from "../lib/composer-references.js";
+
+const INITIAL_TOOL_NAMES = [
+  "list-scenarios",
+  "create-scenario",
+  "set-demand",
+  "view-screen",
+  "navigate",
+  "hello",
+  "provider-api-request",
+  "ask-question",
+];
+
+export default createAgentChatPlugin({
+  appId: "cafe-app",
+  mentionProviders: {
+    chats: {
+      label: "composerSources.group",
+      search: searchConversationReferences,
+    },
+  },
+  prepareRequest: async ({ references }) => {
+    await validateConversationReferences(references);
+  },
+  actions: loadActionsFromStaticRegistry(actionsRegistry),
+  mcp: { connectorCatalog: [], appApprovalPage: true },
+  initialToolNames: INITIAL_TOOL_NAMES,
+  resolveOrgId: async (event) => (await getOrgContext(event)).orgId,
+  systemPrompt: `You are the Café Dry Run agent.
+
+Help the founder explore café scenarios. Demand is illustrative until its source is recorded. Read the current scenario and revision before editing it.
+
+Use actions as the source of truth. Start by inspecting the current screen when context matters. When the user asks to extend this app, keep the change small and agent-native: add or update actions, expose useful UI, and keep application state/navigation visible to the agent.`,
+});

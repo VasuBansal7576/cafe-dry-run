@@ -1,0 +1,352 @@
+{
+  "name": "Indiranagar sample",
+  "source": "https://api.openstreetmap.org/api/0.6/map?bbox=77.638,12.969,77.640,12.971",
+  "retrievedAt": "2026-11-09T09:08:20.531795+00:00",
+  "bounds": {
+    "south": 12.969,
+    "west": 77.638,
+    "north": 12.971,
+    "east": 77.64
+  },
+  "licence": "Open Database License (ODbL) 1.0",
+  "attribution": "© OpenStreetMap contributors",
+  "coverage": "Named and unnamed amenity nodes within this bounding box only; ways and other objects are not included. OpenStreetMap may be incomplete or outdated.",
+  "places": [
+    {
+      "osmType": "node",
+      "osmId": 4315548870,
+      "lat": 12.9698176,
+      "lon": 77.6380759,
+      "name": "De Courtyard Banquet",
+      "amenity": "events_venue"
+    },
+    {
+      "osmType": "node",
+      "osmId": 4315548872,
+      "lat": 12.9699033,
+      "lon": 77.638539,
+      "name": "South Indian Bank",
+      "amenity": "bank"
+    },
+    {
+      "osmType": "node",
+      "osmId": 4315563374,
+      "lat": 12.9699237,
+      "lon": 77.6396323,
+      "name": "Phobidden Fruit",
+      "amenity": "restaurant"
+    },
+    {
+      "osmType": "node",
+      "osmId": 4322781163,
+      "lat": 12.9701712,
+      "lon": 77.6383901,
+      "name": "Tycoons",
+      "amenity": "bar"
+    },
+    {
+      "osmType": "node",
+      "osmId": 4322781164,
+      "lat": 12.9701735,
+      "lon": 77.638341,
+      "name": "Mini Bar",
+      "amenity": "bar"
+    },
+    {
+      "osmType": "node",
+      "osmId": 4322794144,
+      "lat": 12.9702111,
+      "lon": 77.6392091,
+      "name": "Zuan Spa",
+      "amenity": "spa"
+    },
+    {
+      "osmType": "node",
+      "osmId": 4322794145,
+      "lat": 12.9702025,
+      "lon": 77.6389092,
+      "name": "Citrus",
+      "amenity": "restaurant"
+    },
+    {
+      "osmType": "node",
+      "osmId": 4322794146,
+      "lat": 12.9702185,
+      "lon": 77.6390612,
+      "name": "Divas and dudes",
+      "amenity": "spa;saloon;cafe"
+    },
+    {
+      "osmType": "node",
+      "osmId": 4322794148,
+      "lat": 12.9702408,
+      "lon": 77.6392223,
+      "name": "The Reservoire",
+      "amenity": "bar"
+    },
+    {
+      "osmType": "node",
+      "osmId": 4322794150,
+      "lat": 12.9702045,
+      "lon": 77.638934,
+      "name": "BBLUNT",
+      "amenity": "spa"
+    },
+    {
+      "osmType": "node",
+      "osmId": 4322796484,
+      "lat": 12.9703059,
+      "lon": 77.6394339,
+      "name": "Delhi Highway",
+      "amenity": "restaurant"
+    },
+    {
+      "osmType": "node",
+      "osmId": 5661149221,
+      "lat": 12.9706267,
+      "lon": 77.6388667,
+      "name": null,
+      "amenity": "waste_disposal"
+    },
+    {
+      "osmType": "node",
+      "osmId": 8758561574,
+      "lat": 12.9702244,
+      "lon": 77.6388413,
+      "name": "ICICI Bank",
+      "amenity": "bank"
+    },
+    {
+      "osmType": "node",
+      "osmId": 8758561575,
+      "lat": 12.9701976,
+      "lon": 77.6386624,
+      "name": "Third Wave Coffee Roasters",
+      "amenity": "cafe"
+    },
+    {
+      "osmType": "node",
+      "osmId": 9288431549,
+      "lat": 12.9704038,
+      "lon": 77.6399131,
+      "name": "Salt Mango Tree",
+      "amenity": "restaurant"
+    },
+    {
+      "osmType": "node",
+      "osmId": 9288431554,
+      "lat": 12.9699008,
+      "lon": 77.6387045,
+      "name": "Bangalore Thindies",
+      "amenity": "fast_food"
+    },
+    {
+      "osmType": "node",
+      "osmId": 9288431561,
+      "lat": 12.9705392,
+      "lon": 77.6396808,
+      "name": "Seven Senses Montessori",
+      "amenity": "kindergarten"
+    },
+    {
+      "osmType": "node",
+      "osmId": 9534316322,
+      "lat": 12.9699492,
+      "lon": 77.6394919,
+      "name": "Wakame",
+      "amenity": "restaurant"
+    },
+    {
+      "osmType": "node",
+      "osmId": 9534316324,
+      "lat": 12.9699243,
+      "lon": 77.6393627,
+      "name": "Bhola & Blonde",
+      "amenity": "restaurant"
+    },
+    {
+      "osmType": "node",
+      "osmId": 9534316325,
+      "lat": 12.9698751,
+      "lon": 77.6392046,
+      "name": "Secret Story Bar & Kitchen",
+      "amenity": "restaurant"
+    },
+    {
+      "osmType": "node",
+      "osmId": 9545465494,
+      "lat": 12.9699073,
+      "lon": 77.6394944,
+      "name": "Bohemians",
+      "amenity": "restaurant"
+    },
+    {
+      "osmType": "node",
+      "osmId": 9689539845,
+      "lat": 12.9702412,
+      "lon": 77.639087,
+      "name": "Paris Panini",
+      "amenity": "restaurant"
+    },
+    {
+      "osmType": "node",
+      "osmId": 9723056419,
+      "lat": 12.9705124,
+      "lon": 77.6391504,
+      "name": "Outpost Kitchen",
+      "amenity": "fast_food"
+    },
+    {
+      "osmType": "node",
+      "osmId": 9723056435,
+      "lat": 12.9698942,
+      "lon": 77.6386368,
+      "name": "Avoke: The Avocado Cafe",
+      "amenity": "cafe"
+    },
+    {
+      "osmType": "node",
+      "osmId": 9739850131,
+      "lat": 12.9699668,
+      "lon": 77.6398927,
+      "name": "MisoSexy",
+      "amenity": "restaurant"
+    },
+    {
+      "osmType": "node",
+      "osmId": 10051816953,
+      "lat": 12.9699145,
+      "lon": 77.639208,
+      "name": "Araku Coffee",
+      "amenity": "cafe"
+    },
+    {
+      "osmType": "node",
+      "osmId": 10139996736,
+      "lat": 12.9699891,
+      "lon": 77.6399613,
+      "name": "Daddy",
+      "amenity": "pub"
+    },
+    {
+      "osmType": "node",
+      "osmId": 10139996737,
+      "lat": 12.9703055,
+      "lon": 77.6399193,
+      "name": "Starbucks",
+      "amenity": "cafe"
+    },
+    {
+      "osmType": "node",
+      "osmId": 10280801510,
+      "lat": 12.9698374,
+      "lon": 77.6385241,
+      "name": "Daily Sushi",
+      "amenity": "restaurant"
+    },
+    {
+      "osmType": "node",
+      "osmId": 10280801511,
+      "lat": 12.9698067,
+      "lon": 77.6383793,
+      "name": "The Italian Bar",
+      "amenity": "bar"
+    },
+    {
+      "osmType": "node",
+      "osmId": 11564558383,
+      "lat": 12.9702372,
+      "lon": 77.6380876,
+      "name": "The Bangalore Room",
+      "amenity": "events_venue"
+    },
+    {
+      "osmType": "node",
+      "osmId": 11637669678,
+      "lat": 12.970314,
+      "lon": 77.6391971,
+      "name": "PizzaExpress",
+      "amenity": "restaurant"
+    },
+    {
+      "osmType": "node",
+      "osmId": 11637669679,
+      "lat": 12.9701915,
+      "lon": 77.6386267,
+      "name": "Samosa Party",
+      "amenity": "fast_food"
+    },
+    {
+      "osmType": "node",
+      "osmId": 11786003993,
+      "lat": 12.9702907,
+      "lon": 77.6393544,
+      "name": "Jamie Oliver Kitchen",
+      "amenity": "restaurant"
+    },
+    {
+      "osmType": "node",
+      "osmId": 12059584769,
+      "lat": 12.9698254,
+      "lon": 77.6380772,
+      "name": "Kopitiam Lah",
+      "amenity": "cafe"
+    },
+    {
+      "osmType": "node",
+      "osmId": 12061267354,
+      "lat": 12.9702381,
+      "lon": 77.6385178,
+      "name": "Jimi's",
+      "amenity": "pub"
+    },
+    {
+      "osmType": "node",
+      "osmId": 12075133356,
+      "lat": 12.9697917,
+      "lon": 77.6383974,
+      "name": "La Gioia",
+      "amenity": "restaurant"
+    },
+    {
+      "osmType": "node",
+      "osmId": 12877280447,
+      "lat": 12.9701785,
+      "lon": 77.6385147,
+      "name": "Bar Wild",
+      "amenity": "bar"
+    },
+    {
+      "osmType": "node",
+      "osmId": 12927909822,
+      "lat": 12.9703064,
+      "lon": 77.6390491,
+      "name": "Smash Guys",
+      "amenity": "restaurant"
+    },
+    {
+      "osmType": "node",
+      "osmId": 13013584296,
+      "lat": 12.9702451,
+      "lon": 77.6393656,
+      "name": "The Coffee Theatre",
+      "amenity": "cafe"
+    },
+    {
+      "osmType": "node",
+      "osmId": 13384664046,
+      "lat": 12.9699602,
+      "lon": 77.6392255,
+      "name": "Teresita",
+      "amenity": "restaurant"
+    },
+    {
+      "osmType": "node",
+      "osmId": 13911835540,
+      "lat": 12.9702491,
+      "lon": 77.6394944,
+      "name": "Omira",
+      "amenity": "cafe"
+    }
+  ]
+}
