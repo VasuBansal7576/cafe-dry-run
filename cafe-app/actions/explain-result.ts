@@ -1,5 +1,6 @@
 import { defineAction } from "@agent-native/core/action";
 
+import { decisionFigureBasis } from "../server/lib/cafe/chat-figure-basis.js";
 import { withDecisionChatFigures } from "../server/lib/cafe/chat-figures.js";
 import {
   decisionScopeSchema,
@@ -23,6 +24,8 @@ export default defineAction({
       return { status: "Run a comparison or calculate runway first." };
     if (decision.cashStale)
       return {
+        chatFigureBasis: decisionFigureBasis(decision.receipt),
+        chatFigures: null,
         status: decision.assumptionStale
           ? "This historical receipt used a superseded saved-customer assumption. Read the latest comparison for the current decision."
           : "Stale receipt. Read current scenario revisions and run a fresh comparison before giving a recommendation.",
@@ -31,8 +34,10 @@ export default defineAction({
       };
     const { receipt } = decision;
     const level = receipt.settings.demandLevel;
+    const { chatFigureBasis, chatFigures } = withDecisionChatFigures(decision);
     return {
-      chatFigures: withDecisionChatFigures(decision).chatFigures,
+      chatFigureBasis,
+      chatFigures,
       receiptId: receipt.id,
       historical: decision.historical,
       currentSavedCustomers: decision.currentSavedCustomers,

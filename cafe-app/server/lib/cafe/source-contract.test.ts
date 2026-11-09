@@ -1,5 +1,12 @@
 import type { ActionRunContext } from "@agent-native/core/action";
+import type { AgentEngine } from "@agent-native/core/agent/engine";
 import { closeDbExec } from "@agent-native/core/db";
+import {
+  actionsToEngineTools,
+  loadActionsFromStaticRegistry,
+  runAgentLoop,
+  type AgentChatEvent,
+} from "@agent-native/core/server";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import compareScenarios from "../../../actions/compare-scenarios.js";
@@ -12,8 +19,10 @@ import getComparison from "../../../actions/get-comparison.js";
 import getSimulation from "../../../actions/get-simulation.js";
 import listScenarios from "../../../actions/list-scenarios.js";
 import runSimulation from "../../../actions/run-simulation.js";
+import setDemand from "../../../actions/set-demand.js";
 import setPedestrianCount from "../../../actions/set-pedestrian-count.js";
 import migrate from "../../plugins/db.js";
+import { guardCafeFigures } from "./chat-figure-guard.js";
 import type { Scenario } from "./scenario-store.js";
 
 const owner = {
@@ -41,9 +50,178 @@ const versions = (scenario: Scenario) => ({
 beforeAll(() => migrate({}));
 afterAll(() => closeDbExec());
 
-it("returns quote-ready service and cash figures without changing the underlying receipt", async () => {
+it.each(["invented number", "coincidentally correct number"])(
+  "clears pre-tool text with an %s and retains the real tool result",
+  async (kind) => {
+    const { scenario } = await createScenario.run(
+      { baseHourlyDemand: 55 },
+      owner,
+    );
+    const run = await runSimulation.run(
+      { ...serviceVersion(scenario), ...settings },
+      owner,
+    );
+    const quote = run.chatFigures.waitP50!.text;
+    const actions = loadActionsFromStaticRegistry({
+      "get-simulation": getSimulation,
+    });
+    const events: AgentChatEvent[] = [];
+    let call = 0;
+    const engine: AgentEngine = {
+      name: "scripted-regression",
+      label: "Scripted regression",
+      defaultModel: "scripted-regression",
+      supportedModels: ["scripted-regression"],
+      capabilities: {
+        thinking: false,
+        promptCaching: false,
+        vision: false,
+        computerUse: false,
+        parallelToolCalls: false,
+      },
+      async *stream() {
+        const text =
+          ++call === 1 && kind === "invented number"
+            ? "The median wait is 999 seconds. I'll check now."
+            : `${quote}.`;
+        yield { type: "text-delta", text };
+        const part = { type: "text", text } as const;
+        if (call === 1) {
+          const tool = {
+            type: "tool-call",
+            id: "call_regression",
+            name: "get-simulation",
+            input: { id: scenario.id, runId: run.id, includePlayback: false },
+          } as const;
+          yield tool;
+          yield { type: "assistant-content", parts: [part, tool] };
+          yield { type: "stop", reason: "tool_use" };
+        } else {
+          yield { type: "assistant-content", parts: [part] };
+          yield { type: "stop", reason: "end_turn" };
+        }
+      },
+    };
+    await runAgentLoop({
+      actions,
+      engine,
+      model: engine.defaultModel,
+      tools: actionsToEngineTools(actions),
+      ownerEmail: owner.userEmail,
+      appId: "cafe-app",
+      systemPrompt: "Scripted numeric guard regression.",
+      messages: [
+        { role: "user", content: [{ type: "text", text: "Previous turn." }] },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "Historical unsupported 777 seconds." },
+          ],
+        },
+        {
+          role: "user",
+          content: [{ type: "text", text: "What is the median wait?" }],
+        },
+      ],
+      signal: new AbortController().signal,
+      send(event) {
+        events.push(event);
+      },
+      finalResponseGuard: guardCafeFigures,
+    });
+    expect(call).toBe(3);
+    const clears = events.filter((event) => event.type === "clear");
+    expect(clears).toEqual([expect.objectContaining({ allText: true })]);
+    expect(
+      events
+        .slice(events.indexOf(clears[0]!) + 1)
+        .filter((event) => event.type === "text"),
+    ).toEqual([expect.objectContaining({ text: `${quote}.` })]);
+    expect(events.filter((event) => event.type === "tool_done")).toEqual([
+      expect.objectContaining({
+        tool: "get-simulation",
+        result: expect.stringContaining(JSON.stringify(quote)),
+      }),
+    ]);
+  },
+);
+
+it("revokes old quotes after a shared input edit while keeping quotes across unrelated variant creation", async () => {
   const { scenario: a } = await createScenario.run(
     { baseHourlyDemand: 55 },
+    owner,
+  );
+  const { scenario: b } = await configureShop.run(
+    { ...versions(a), variantLabel: "Candidate" },
+    owner,
+  );
+  const comparison = await compareScenarios.run(
+    { a: versions(a), b: versions(b), ...settings },
+    owner,
+  );
+  const unrelated = await configureShop.run(
+    { ...versions(a), variantLabel: "Another candidate" },
+    owner,
+  );
+  const quote = comparison.chatFigures!["scenarioA.waitP50"]!.text;
+  const tool = (name: string, value: unknown) => ({
+    name,
+    isError: false,
+    content: JSON.stringify(value),
+  });
+  const prefix = [
+    tool("compare-scenarios", comparison),
+    tool("configure-shop", unrelated),
+  ];
+  const check = (text: string, toolResults: ReturnType<typeof tool>[]) =>
+    guardCafeFigures({
+      messages: [],
+      assistantContent: [],
+      toolCalls: [],
+      retryCount: 0,
+      executionMode: "act",
+      text,
+      toolResults,
+    });
+  expect(await check(quote, prefix)).toBeUndefined();
+  expect(await check(`The grinder p90 is ${quote}.`, prefix)).toBeDefined();
+  expect(await check(`- **${quote}**`, prefix)).toBeUndefined();
+  const edited = await setDemand.run(
+    { ...serviceVersion(a), baseHourlyDemand: 70 },
+    owner,
+  );
+  const stale = await getComparison.run({ aId: a.id, bId: b.id }, owner);
+  expect(stale.decision?.cashStale).toBe(true);
+  expect(
+    await check(quote, [...prefix, tool("set-demand", edited)]),
+  ).toBeDefined();
+  expect(
+    await check(quote, [...prefix, tool("get-comparison", stale)]),
+  ).toBeDefined();
+  const rerun = await compareScenarios.run(
+    { a: versions(edited.scenario), b: versions(b), ...settings },
+    owner,
+  );
+  const afterRerun = [
+    ...prefix,
+    tool("set-demand", edited),
+    tool("get-comparison", stale),
+    tool("compare-scenarios", rerun),
+  ];
+  const currentQuote = rerun.chatFigures!["scenarioA.waitP50"]!.text;
+  expect(currentQuote).not.toBe(quote);
+  expect(await check(currentQuote, afterRerun)).toBeUndefined();
+  expect(await check(quote, afterRerun)).toBeDefined();
+  expect(
+    await check("The median wait is 55 seconds.", [
+      tool("list-scenarios", { scenarios: [a] }),
+    ]),
+  ).toBeDefined();
+});
+
+it("returns quote-ready service and cash figures without changing the underlying receipt", async () => {
+  const { scenario: a } = await createScenario.run(
+    { baseHourlyDemand: 55, label: "Baseline" },
     owner,
   );
   const { scenario: b } = await configureShop.run(
@@ -66,7 +244,12 @@ it("returns quote-ready service and cash figures without changing the underlying
   );
   expect(run.summary.stats.waitP50Seconds).toBe(215.169523362787);
   expect(run).toMatchObject({
-    chatFigures: { waitP50: { text: "215.17 seconds", tag: "illustrative" } },
+    chatFigures: {
+      waitP50: {
+        text: '"Baseline" median wait is 215.17 seconds',
+        tag: "illustrative",
+      },
+    },
   });
   const saved = await getSimulation.run(
     { id: a.id, runId: run.id, includePlayback: false },
@@ -83,19 +266,19 @@ it("returns quote-ready service and cash figures without changing the underlying
     run.chatFigures.waitP50,
   );
   expect(comparison.chatFigures?.["scenarioA.waitP90"]?.text).toBe(
-    "286.90 seconds",
+    '"Baseline" p90 wait is 286.90 seconds',
   );
   expect(comparison.chatFigures?.["scenarioA.meanCustomersLost"]?.text).toBe(
-    "278.33 customers lost per Saturday",
+    '"Baseline" averages 278.33 customers lost per Saturday',
   );
   expect(comparison.chatFigures?.["scenarioB.waitP50"]?.text).toBe(
-    "96.79 seconds",
+    '"Cover barista" median wait is 96.79 seconds',
   );
   expect(comparison.chatFigures?.["scenarioB.meanOrdersServed"]?.text).toBe(
-    "298.29 orders served per Saturday",
+    '"Cover barista" averages 298.29 orders served per Saturday',
   );
   expect(comparison.chatFigures?.["bMinusA.monthlyCash"]?.text).toMatch(
-    /^[+\-]?₹[\d,.]+ per month$/,
+    /^From "Baseline" to "Cover barista", projected cash flow changes by [+-]?₹[\d,.]+ per month$/,
   );
   expect((await getComparison.run(scope, owner)).decision).toEqual(comparison);
   expect(await explainResult.run(scope, owner)).toMatchObject({
@@ -113,9 +296,9 @@ it("returns quote-ready service and cash figures without changing the underlying
     cashStale: true,
     chatFigures: null,
   });
-  expect(await explainResult.run(scope, owner)).not.toHaveProperty(
-    "chatFigures",
-  );
+  expect(await explainResult.run(scope, owner)).toMatchObject({
+    chatFigures: null,
+  });
 });
 
 it("returns conditional no-count conversions from the saved solo runway and requires a refresh after edits", async () => {
@@ -136,7 +319,7 @@ it("returns conditional no-count conversions from the saved solo runway and requ
   const observed = await setPedestrianCount.run(key, owner);
   expect(observed.chatFigures?.["scenarioA.illustrativeCaptureRate.0"]).toEqual(
     {
-      text: "30% at 100 illustrative passers-by per open day",
+      text: '"One barista" requires 30% at 100 illustrative passers-by per open day',
       tag: "illustrative",
     },
   );

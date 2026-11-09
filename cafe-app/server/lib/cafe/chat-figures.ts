@@ -1,11 +1,16 @@
 import { z } from "zod";
 
 import {
+  chatFigureBasisSchema,
+  decisionFigureBasis,
+} from "./chat-figure-basis.js";
+import {
   storedDecisionSchema,
   type DecisionReceipt,
   type StoredDecision,
 } from "./decision-receipt.js";
-import { sourceTagSchema, type SourceTag } from "./provenance.js";
+import { sourceTagSchema, weakestTag, type SourceTag } from "./provenance.js";
+import type { Scenario } from "./scenario-store.js";
 import type { ServiceRun } from "./service-run.js";
 
 export const chatFiguresSchema = z
@@ -18,6 +23,7 @@ export const chatFiguresSchema = z
   );
 type ChatFigures = z.infer<typeof chatFiguresSchema>;
 export const decisionChatOutputSchema = z.object({
+  chatFigureBasis: chatFigureBasisSchema,
   chatFigures: chatFiguresSchema.nullable(),
   ...storedDecisionSchema.shape,
 });
@@ -27,6 +33,9 @@ const decimal = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 2,
 });
 const count = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
+const inputNumber = new Intl.NumberFormat("en-IN", {
+  maximumFractionDigits: 2,
+});
 const percent = new Intl.NumberFormat("en-IN", {
   style: "percent",
   maximumFractionDigits: 2,
@@ -45,24 +54,78 @@ function display({ value, tag }: Figure, unit: string, format = decimal) {
   return { text, ...(tag ? { tag } : {}) };
 }
 
-export function serviceChatFigures({
-  stats,
-  provenance,
-  runCount,
-  seed,
-}: ServiceRun["summary"]): ChatFigures {
+export function scenarioChatFigures({
+  label,
+  demand,
+  finance,
+  shop,
+}: Pick<Scenario, "label" | "demand" | "finance" | "shop">): ChatFigures {
+  const name = JSON.stringify(label);
+  const clock = (seconds: number) =>
+    `${String(Math.floor(seconds / 3600)).padStart(2, "0")}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, "0")}`;
+  return {
+    ...Object.fromEntries(
+      Object.entries(demand.hourly).map(([level, value]) => [
+        `demand.${level}`,
+        {
+          text: `${name} ${level} demand is ${inputNumber.format(value.value)} arrivals per hour`,
+          tag: value.source.tag,
+        },
+      ]),
+    ),
+    ...Object.fromEntries(
+      shop.workers.flatMap(({ id, name: worker, shifts }) =>
+        shifts.map(({ startsAt, endsAt }, i) => [
+          `shifts.${id}.${i}`,
+          {
+            text: `${name} shift for ${JSON.stringify(worker)} is ${clock(startsAt.value)} to ${clock(endsAt.value)}`,
+            tag: weakestTag([startsAt.source, endsAt.source]),
+          },
+        ]),
+      ),
+    ),
+    ...Object.fromEntries(
+      finance.equipmentAdditions.map(({ value, source }, i) => [
+        `equipmentQuote.${i}`,
+        {
+          text: `${name} additional equipment quote is ${money.format(value)}`,
+          tag: source.tag,
+        },
+      ]),
+    ),
+  };
+}
+
+function context(
+  figure: { text: string; tag?: SourceTag },
+  description: string,
+) {
+  return { ...figure, text: `${description} ${figure.text}` };
+}
+
+export function serviceChatFigures(
+  { stats, provenance, runCount, seed }: ServiceRun["summary"],
+  label: string,
+): ChatFigures {
+  const name = JSON.stringify(label);
   const service = (value: number | null, unit: string) =>
     display({ value, tag: provenance }, unit);
   return {
-    waitP50: service(stats.waitP50Seconds, " seconds"),
-    waitP90: service(stats.waitP90Seconds, " seconds"),
-    meanOrdersServed: service(
-      stats.meanOrdersServed,
-      " orders served per Saturday",
+    waitP50: context(
+      service(stats.waitP50Seconds, " seconds"),
+      `${name} median wait is`,
     ),
-    meanCustomersLost: service(
-      stats.meanCustomersLost,
-      " customers lost per Saturday",
+    waitP90: context(
+      service(stats.waitP90Seconds, " seconds"),
+      `${name} p90 wait is`,
+    ),
+    meanOrdersServed: context(
+      service(stats.meanOrdersServed, " orders served per Saturday"),
+      `${name} averages`,
+    ),
+    meanCustomersLost: context(
+      service(stats.meanCustomersLost, " customers lost per Saturday"),
+      `${name} averages`,
     ),
     runCount: display(
       { value: runCount },
@@ -97,18 +160,21 @@ export function prefixChatFigures(
   );
 }
 
-export function captureChatFigures({
-  breakEvenOrdersPerDay,
-  illustrativeCaptureRates,
-}: Pick<
-  DecisionReceipt["a"]["cash"],
-  "breakEvenOrdersPerDay" | "illustrativeCaptureRates"
->): ChatFigures {
+export function captureChatFigures(
+  {
+    breakEvenOrdersPerDay,
+    illustrativeCaptureRates,
+  }: Pick<
+    DecisionReceipt["a"]["cash"],
+    "breakEvenOrdersPerDay" | "illustrativeCaptureRates"
+  >,
+  label: string,
+): ChatFigures {
+  const name = JSON.stringify(label);
   const figures: ChatFigures = {
-    breakEvenOrdersPerOpenDay: display(
-      breakEvenOrdersPerDay,
-      " orders per open day",
-      count,
+    breakEvenOrdersPerOpenDay: context(
+      display(breakEvenOrdersPerDay, " orders per open day", count),
+      `${name} breaks even at`,
     ),
   };
   for (const [
@@ -121,7 +187,7 @@ export function captureChatFigures({
       count,
     );
     figures[`illustrativeCaptureRate.${index}`] = {
-      text: `${percent.format(rate.value)} at ${passersBy.text}`,
+      text: `${name} requires ${percent.format(rate.value)} at ${passersBy.text}`,
       tag: rate.tag,
     };
   }
@@ -129,33 +195,45 @@ export function captureChatFigures({
 }
 
 export function pedestrianChatFigures(
+  label: string,
   count: Figure,
   conversion: Figure,
   arrivals: Figure,
 ): ChatFigures {
+  const name = JSON.stringify(label);
   return {
-    observedCount: display(count, " counted passers-by per Saturday", decimal),
-    assumedConversion: display(
-      {
-        ...conversion,
-        value: conversion.value === null ? null : conversion.value / 100,
-      },
-      " conversion",
-      percent,
+    observedCount: context(
+      display(count, " counted passers-by per Saturday", decimal),
+      `${name} recorded`,
     ),
-    expectedArrivals: display(arrivals, " expected arrivals per Saturday"),
+    assumedConversion: context(
+      display(
+        {
+          ...conversion,
+          value: conversion.value === null ? null : conversion.value / 100,
+        },
+        " conversion",
+        percent,
+      ),
+      `${name} assumes`,
+    ),
+    expectedArrivals: context(
+      display(arrivals, " expected arrivals per Saturday"),
+      `${name} projects`,
+    ),
   };
 }
 
 function decisionSideFigures(
-  { service, cash }: DecisionReceipt["a"],
+  { service, cash, label }: DecisionReceipt["a"],
   level: DecisionReceipt["settings"]["demandLevel"],
 ): ChatFigures {
   const outcome = cash.outcomes[level];
   const sensitivity = cash.savedCustomersAssumption.monthlyCash[level];
+  const name = JSON.stringify(label);
   return {
-    ...serviceChatFigures(service.summary),
-    ...captureChatFigures(cash),
+    ...serviceChatFigures(service.summary, label),
+    ...captureChatFigures(cash, label),
     weekdayOrders: display(outcome.weekdayOrdersPerDay, " orders per weekday"),
     weekendOrders: display(
       outcome.weekendOrdersPerDay,
@@ -169,7 +247,10 @@ function decisionSideFigures(
     revenue: display(outcome.monthlyRevenue, " revenue per month", money),
     staffCost: display(cash.costs.staff, " staff cost per month", money),
     startupCost: display(cash.costs.startup, " startup cost", money),
-    monthlyCash: display(outcome.monthlyCash, " per month", money),
+    monthlyCash: context(
+      display(outcome.monthlyCash, " per month", money),
+      `${name} projected cash flow is`,
+    ),
     cashAfterStartup: display(
       outcome.closingCash[0]!,
       " cash after startup",
@@ -182,8 +263,14 @@ function decisionSideFigures(
             { value: outcome.runway.value.months, tag: outcome.runway.tag },
             " months of runway",
           ),
-    monthlyCashSavedCustomersOff: display(sensitivity.off, " per month", money),
-    monthlyCashSavedCustomersOn: display(sensitivity.on, " per month", money),
+    monthlyCashSavedCustomersOff: context(
+      display(sensitivity.off, " per month", money),
+      `${name} projected cash flow without recovered customers is`,
+    ),
+    monthlyCashSavedCustomersOn: context(
+      display(sensitivity.on, " per month", money),
+      `${name} projected cash flow counting recovered customers is`,
+    ),
     ...(cash.requiredCaptureRate && {
       requiredCaptureRate: display(
         cash.requiredCaptureRate,
@@ -196,11 +283,15 @@ function decisionSideFigures(
 
 export function withDecisionChatFigures(decision: StoredDecision) {
   const { receipt, serviceStale, cashStale } = decision;
-  if (serviceStale || cashStale) return { chatFigures: null, ...decision };
+  const chatFigureBasis = decisionFigureBasis(receipt);
+  if (serviceStale || cashStale)
+    return { chatFigureBasis, chatFigures: null, ...decision };
   const level = receipt.settings.demandLevel;
   const sample = receipt.weekend[level];
   const { delta } = receipt;
+  const change = `From ${JSON.stringify(receipt.a.label)} to ${JSON.stringify(receipt.b?.label)},`;
   return {
+    chatFigureBasis,
     chatFigures: {
       "sample.arrivals": display(
         { value: sample.arrivals },
@@ -224,8 +315,14 @@ export function withDecisionChatFigures(decision: StoredDecision) {
         prefixChatFigures("scenarioB", decisionSideFigures(receipt.b, level))),
       ...(delta &&
         prefixChatFigures("bMinusA", {
-          waitP50: display(delta.waitP50Seconds, " seconds"),
-          waitP90: display(delta.waitP90Seconds, " seconds"),
+          waitP50: context(
+            display(delta.waitP50Seconds, " seconds"),
+            `${change} the median wait changes by`,
+          ),
+          waitP90: context(
+            display(delta.waitP90Seconds, " seconds"),
+            `${change} the p90 wait changes by`,
+          ),
           customersLost: display(
             delta.customersLostPerSaturday,
             " customers lost per Saturday",
@@ -235,7 +332,10 @@ export function withDecisionChatFigures(decision: StoredDecision) {
             " staff cost per month",
             money,
           ),
-          monthlyCash: display(delta.monthlyCash, " per month", money),
+          monthlyCash: context(
+            display(delta.monthlyCash, " per month", money),
+            `${change} projected cash flow changes by`,
+          ),
           cashAfterStartup: display(
             delta.closingCashAfterStartup,
             " cash after startup",

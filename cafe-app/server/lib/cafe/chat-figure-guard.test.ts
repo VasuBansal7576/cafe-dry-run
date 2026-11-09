@@ -9,6 +9,7 @@ const result = {
   toolCallId: "call_action2026",
   content: JSON.stringify(
     {
+      chatFigureBasis: { scenarios: [] },
       chatFigures: {
         waitP50: { text: "215.17 seconds", tag: "illustrative" },
         monthlyCash: { text: "-₹1,23,456.70 per month", tag: "estimate" },
@@ -70,6 +71,12 @@ it.each([
   "The median wait is 215.2 seconds.",
   "The median wait is 215.17 minutes.",
   "The median wait is − 215.17 seconds.",
+  "The median wait is − **215.17 seconds**.",
+  "The median wait is minus **215.17 seconds**.",
+  "The median wait is 215.17 seconds per order.",
+  "The grinder saves a couple of minutes.",
+  "The grinder saves a minute.",
+  "The median wait is p50 seconds.",
   "The cash delta is ₹1,23,456.70 per month.",
   "The cash delta is -$1,23,456.70 per month.",
   "The cash delta is -₹123456.70 per month.",
@@ -80,6 +87,11 @@ it.each([
     clearAllText: true,
     fallbackMessage: expect.stringContaining("couldn't verify"),
   });
+});
+
+it("accepts ordinary qualitative references to the better one", async () => {
+  expect(await check("The grinder is the better one.")).toBeUndefined();
+  expect(await check("I would add a second barista.")).toBeUndefined();
 });
 
 it("uses successful current action results, never numbers from the founder or stale payloads", async () => {
@@ -109,11 +121,25 @@ it("uses successful current action results, never numbers from the founder or st
   const demand = {
     name: "set-demand",
     isError: false,
-    content: '{"scenario":{"baseHourlyDemand":55}}',
+    content: JSON.stringify({
+      scenario: {
+        id: "a832bb7e-b836-42d2-884e-9c37cf55a61d",
+        revision: 0,
+        label: "Cafe 99",
+        baseHourlyDemand: 55,
+        chatFigures: {
+          demand: { text: '"Cafe 99" base demand is 55 arrivals per hour' },
+        },
+      },
+    }),
   };
   expect(
-    await check("The saved demand is 55 orders per hour.", [demand]),
+    await check('"Cafe 99" base demand is 55 arrivals per hour.', [demand]),
   ).toBeUndefined();
+  expect(
+    await check('I recommend scenario "Cafe 99".', [demand]),
+  ).toBeUndefined();
+  expect(await check("The median wait is 55 seconds.", [demand])).toBeDefined();
   expect(
     await check("The median wait is 55 seconds.", [result, demand]),
   ).toBeDefined();
@@ -128,6 +154,9 @@ it("uses successful current action results, never numbers from the founder or st
 it("reads complete leading figures from a truncated action result", async () => {
   const content = `{
   "decision": {
+    "chatFigureBasis": {
+      "scenarios": []
+    },
     "chatFigures": {
       "waitP50": {
         "text": "215.17 seconds",

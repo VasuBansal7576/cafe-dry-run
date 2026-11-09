@@ -6,6 +6,10 @@ import { z } from "zod";
 import { getDb } from "../server/db/index.js";
 import { scenarios, serviceRuns } from "../server/db/schema.js";
 import {
+  chatFigureBasisSchema,
+  serviceFigureBasis,
+} from "../server/lib/cafe/chat-figure-basis.js";
+import {
   chatFiguresSchema,
   serviceChatFigures,
 } from "../server/lib/cafe/chat-figures.js";
@@ -38,6 +42,7 @@ export default defineAction({
       ),
   }),
   outputSchema: z.object({
+    chatFigureBasis: chatFigureBasisSchema.nullable(),
     chatFigures: chatFiguresSchema.nullable(),
     run: serviceRunSchema
       .partial({ playback: true })
@@ -52,6 +57,7 @@ export default defineAction({
     const source = alias(scenarios, "arrival_source");
     const [row] = await getDb()
       .select({
+        label: scenarios.label,
         revision: scenarios.revision,
         runId: serviceRuns.id,
         scenarioRevision: serviceRuns.scenarioRevision,
@@ -91,7 +97,7 @@ export default defineAction({
       !row.arrivalSourceId ||
       row.arrivalSourceRevision === null
     )
-      return { chatFigures: null, run: null };
+      return { chatFigureBasis: null, chatFigures: null, run: null };
     const scenario = { id, revision: row.scenarioRevision };
     const arrivalSource = {
       id: row.arrivalSourceId,
@@ -104,17 +110,19 @@ export default defineAction({
       !currentRunId ||
       row.scenarioRevision !== row.revision ||
       row.arrivalSourceRevision !== row.currentArrivalRevision;
+    const run = {
+      id: row.runId,
+      scenarioId: id,
+      scenarioRevision: row.scenarioRevision,
+      arrivalSource,
+      summary: row.summary,
+      playback: row.playback ?? undefined,
+      stale,
+    };
     return {
-      chatFigures: stale ? null : serviceChatFigures(row.summary),
-      run: {
-        id: row.runId,
-        scenarioId: id,
-        scenarioRevision: row.scenarioRevision,
-        arrivalSource,
-        summary: row.summary,
-        playback: row.playback ?? undefined,
-        stale,
-      },
+      chatFigureBasis: serviceFigureBasis(run),
+      chatFigures: stale ? null : serviceChatFigures(row.summary, row.label),
+      run,
     };
   },
 });

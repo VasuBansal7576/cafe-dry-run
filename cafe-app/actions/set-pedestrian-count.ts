@@ -2,6 +2,10 @@ import { defineAction } from "@agent-native/core/action";
 import { z } from "zod";
 
 import {
+  chatFigureBasisSchema,
+  decisionFigureBasis,
+} from "../server/lib/cafe/chat-figure-basis.js";
+import {
   captureChatFigures,
   chatFiguresSchema,
   pedestrianChatFigures,
@@ -55,6 +59,7 @@ export default defineAction({
       ),
   }),
   outputSchema: z.object({
+    chatFigureBasis: chatFigureBasisSchema.nullable(),
     chatFigures: chatFiguresSchema.nullable(),
     scenario: scenarioSchema,
     expectedSaturdayArrivals: z
@@ -106,7 +111,9 @@ export default defineAction({
     if (count) {
       const arrivals = pedestrianDailyArrivals(count);
       return {
+        chatFigureBasis: { scenarios: [{ id, revision: scenario.revision }] },
         chatFigures: pedestrianChatFigures(
+          scenario.label,
           { value: count.count.value, tag: count.count.source.tag },
           {
             value: count.conversionPercent.value,
@@ -130,15 +137,22 @@ export default defineAction({
       decision.receipt.cashBaseline.revision === scenario.revision
     ) {
       return {
+        chatFigureBasis: decisionFigureBasis(decision.receipt),
         chatFigures: {
           ...prefixChatFigures(
             "scenarioA",
-            captureChatFigures(decision.receipt.a.cash),
+            captureChatFigures(
+              decision.receipt.a.cash,
+              decision.receipt.a.label,
+            ),
           ),
           ...(decision.receipt.b &&
             prefixChatFigures(
               "scenarioB",
-              captureChatFigures(decision.receipt.b.cash),
+              captureChatFigures(
+                decision.receipt.b.cash,
+                decision.receipt.b.label,
+              ),
             )),
         },
         ...result,
@@ -151,6 +165,9 @@ export default defineAction({
       };
     }
     return {
+      chatFigureBasis: decision?.cashStale
+        ? decisionFigureBasis(decision.receipt)
+        : null,
       chatFigures: null,
       ...result,
       requiredConversion: {

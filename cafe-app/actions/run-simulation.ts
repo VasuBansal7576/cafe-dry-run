@@ -5,6 +5,10 @@ import { getDb } from "../server/db/index.js";
 import { scenarios, serviceRuns } from "../server/db/schema.js";
 import { createArrivalPlan } from "../server/lib/cafe/arrivals.js";
 import {
+  chatFigureBasisSchema,
+  serviceFigureBasis,
+} from "../server/lib/cafe/chat-figure-basis.js";
+import {
   chatFiguresSchema,
   serviceChatFigures,
 } from "../server/lib/cafe/chat-figures.js";
@@ -36,6 +40,7 @@ export default defineAction({
     "Run and save a deterministic Saturday service simulation for a cafe scenario, using its current revision. Quote chatFigures.text verbatim in chat. Read get-simulation for playback.",
   schema: scenarioEditKey.extend(serviceParameters.shape),
   outputSchema: z.object({
+    chatFigureBasis: chatFigureBasisSchema,
     chatFigures: chatFiguresSchema,
     ...serviceRunSchema.omit({ playback: true }).shape,
   }),
@@ -109,7 +114,8 @@ export default defineAction({
         })
         .where(scope);
       return {
-        chatFigures: serviceChatFigures(run.summary),
+        chatFigureBasis: serviceFigureBasis(run),
+        chatFigures: serviceChatFigures(run.summary, scenario.label),
         id: run.id,
         scenarioId: run.scenarioId,
         scenarioRevision: run.scenarioRevision,

@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { getDb } from "../../db/index.js";
 import { scenarios } from "../../db/schema.js";
+import { chatFiguresSchema, scenarioChatFigures } from "./chat-figures.js";
 import { defaultFinance, financeSchema } from "./finance.js";
 import {
   defaultDemand,
@@ -48,6 +49,7 @@ export const scenarioSchema = z.object({
   revision: z.number().int().nonnegative(),
   financeRevision: z.number().int().nonnegative(),
   label: scenarioLabel,
+  chatFigures: chatFiguresSchema.optional(),
   parentId: z.string().uuid().nullable(),
   finance: financeSchema,
   spot: spotSchema,
@@ -79,12 +81,20 @@ type ScenarioRow = Omit<Scenario, "demand" | "shop" | "finance"> &
 
 export function toScenario(row: ScenarioRow): Scenario {
   const demand = row.demand ?? defaultDemand(row.baseHourlyDemand);
+  const shop = row.shop ?? defaultShop();
+  const finance = { ...defaultFinance(), ...row.finance };
   return {
     ...row,
+    chatFigures: scenarioChatFigures({
+      label: row.label,
+      demand,
+      shop,
+      finance,
+    }),
     baseHourlyDemand: demand.hourly.base.value,
     demand,
-    shop: row.shop ?? defaultShop(),
-    finance: { ...defaultFinance(), ...row.finance },
+    shop,
+    finance,
   };
 }
 
