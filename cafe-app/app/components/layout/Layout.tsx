@@ -34,6 +34,7 @@ import { AgentInspector } from "./AgentInspector";
 import { MobileAppBar } from "./MobileAppBar";
 import { Sidebar } from "./Sidebar";
 import { useCafeAgentDock } from "./useCafeAgentDock";
+import { useCafeAgentOverlay } from "./useCafeAgentOverlay";
 
 const Header = lazy(() =>
   import("./Header").then((module) => ({ default: module.Header })),
@@ -91,6 +92,7 @@ function LayoutShell({ children }: LayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const isCafe = location.pathname === "/cafe";
   const cafeDock = useCafeAgentDock(isCafe);
+  useCafeAgentOverlay(cafeDock.shell, isCafe);
   const isChatRoute = isChatPathname(location.pathname);
   // Settings brings its own navigation, header, and agent toggle, so it
   // renders full width.
@@ -147,7 +149,10 @@ function LayoutShell({ children }: LayoutProps) {
     isChatRoute && (pageTitle != null || pageActions != null);
   const ownsToolbar = routeOwnsToolbar(location.pathname);
   const contentFrame = (
-    <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
+    <div
+      className="flex h-full min-w-0 flex-1 flex-col overflow-hidden"
+      data-cafe-overlay-background={isCafe ? "" : undefined}
+    >
       {isChatRoute ? (
         <MobileAppBar
           className="md:hidden"
@@ -180,6 +185,7 @@ function LayoutShell({ children }: LayoutProps) {
             <div
               ref={cafeDock.navigation}
               data-collapsed={sidebarCollapsed ? "true" : "false"}
+              data-cafe-overlay-background={isCafe ? "" : undefined}
               className="agent-layout-left-drawer hidden md:block"
             >
               <Sidebar
