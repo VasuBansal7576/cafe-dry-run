@@ -274,6 +274,7 @@ export function Playback({
   const retriedNavigation = useRef<string | null>(null);
   useEffect(() => {
     activeScope.current = stale ? null : scope;
+    retriedNavigation.current = null;
     return () => {
       activeScope.current = null;
     };
@@ -359,7 +360,13 @@ export function Playback({
 
   const publishPosition = useEffectEvent((): void => {
     const state = synced.current;
-    if (!state.ready || !navigationReady || stale) return;
+    if (
+      activeScope.current !== scope ||
+      !state.ready ||
+      !navigationReady ||
+      stale
+    )
+      return;
     if (state.remoteSecond !== null) {
       if (state.remoteSecond !== second) return;
       state.remoteSecond = null;
