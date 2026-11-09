@@ -963,7 +963,7 @@ export function ServiceTest({
                     <dd>
                       <ServiceFigure
                         value={`${number.format(resource.fraction * 100)}%`}
-                        tag={run.summary.provenance}
+                        tag={resource.fractionProvenance ?? run.summary.provenance}
                         stale={stale}
                       />
                     </dd>

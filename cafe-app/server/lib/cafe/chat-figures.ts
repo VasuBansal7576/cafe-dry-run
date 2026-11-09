@@ -146,11 +146,11 @@ export function serviceChatFigures(
       ),
     }),
     ...Object.fromEntries(
-      stats.utilization.map(({ id, fraction }) => [
+      stats.utilization.map(({ id, fraction, fractionProvenance }) => [
         `utilization.${id}`,
         context(
           display(
-            { value: fraction, tag: provenance },
+            { value: fraction, tag: fractionProvenance ?? provenance },
             ` utilization for ${JSON.stringify(staffNames[id] ?? id)}`,
             percent,
           ),

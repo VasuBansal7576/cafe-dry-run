@@ -78,6 +78,9 @@ export const serviceSummarySchema = serviceParameters.extend({
   staffNames: z.record(z.string(), name),
   itemNames: z.record(z.string(), name),
   stats: stats.extend({
+    utilization: stats.shape.utilization.element
+      .extend({ fractionProvenance: sourceTagSchema.optional() })
+      .array(),
     meanOrdersServed: seconds,
     meanCustomersLost: seconds,
   }),

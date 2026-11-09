@@ -31,22 +31,60 @@ function scenario(id: string): Scenario {
   };
 }
 
+function markObserved(value: unknown): void {
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) return value.forEach(markObserved);
+  const row = value as Record<string, unknown>;
+  if (typeof row.value === "number" && row.source) {
+    row.source = { tag: "observed" };
+    return;
+  }
+  Object.values(row).forEach(markObserved);
+}
+
 const parameters = { seed: 1, runCount: 1, demandLevel: "base" as const };
 
 describe("paired café decisions", () => {
+  it("keeps unused equipment out of wait, loss and cash provenance while tagging its utilization", () => {
+    const a = scenario("a");
+    markObserved(a);
+    a.shop.menu[0]!.weight.value = 100;
+    a.shop.menu[1]!.weight.value = 0;
+    const decide = () =>
+      calculateDecision(a, null, parameters, {
+        enabled: false,
+        tag: "observed",
+      });
+    const original = decide();
+    expect(original.serviceA.summary.stats.meanOrdersServed).toBeGreaterThan(0);
+    a.shop.equipment.steamWand = illustrative(2);
+    const noSteam = decide();
+    const { utilization, ...serviceStats } = noSteam.serviceA.summary.stats;
+    const { utilization: _, ...originalServiceStats } =
+      original.serviceA.summary.stats;
+    expect(serviceStats).toEqual(originalServiceStats);
+    expect(noSteam.cashA).toEqual(original.cashA);
+    expect(noSteam.serviceA.summary.provenance).toBe("observed");
+    const wands = utilization.filter(({ kind }) => kind === "steamWand");
+    expect(wands).toHaveLength(2);
+    for (const wand of wands) {
+      expect(wand).toMatchObject({ fraction: 0, fractionProvenance: "illustrative" });
+    }
+    expect(utilization.find(({ kind }) => kind === "groupHead")).toMatchObject({
+      fractionProvenance: "observed",
+    });
+    a.shop.menu[1]!.weight.value = 50;
+    const steam = decide();
+    expect(
+      steam.serviceA.playback.arrivals.some(({ itemId }) => itemId === "flat-white"),
+    ).toBe(true);
+    expect(steam.serviceA.summary.provenance).toBe("illustrative");
+    expect(steam.cashA.outcomes.base.monthlyCash.tag).toBe("illustrative");
+  });
+
   it("includes zero mix weights, but not excluded drink prices, in weekday provenance", () => {
     const a = scenario("a");
     const b = scenario("b");
-    function markObserved(value: unknown): void {
-      if (!value || typeof value !== "object") return;
-      if (Array.isArray(value)) return value.forEach(markObserved);
-      const row = value as Record<string, unknown>;
-      if (typeof row.value === "number" && row.source) {
-        row.source = { tag: "observed" };
-        return;
-      }
-      Object.values(row).forEach(markObserved);
-    }
     markObserved(a);
     markObserved(b);
     b.shop.menu[1]!.weight = illustrative(0);

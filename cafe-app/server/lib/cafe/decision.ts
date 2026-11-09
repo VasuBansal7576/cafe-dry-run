@@ -12,12 +12,14 @@ import type { SavedCustomerAssumption } from "./finance";
 import {
   calculateMeasure,
   derive,
+  weakestTag,
   type CalculatedNumber,
   type Source,
 } from "./provenance";
 import {
   arrivalInputs,
   demandSources,
+  orderedTasks,
   pedestrianDailyArrivals,
   sampledArrivalProvenance,
   serviceInputs,
@@ -59,6 +61,15 @@ export function summarizeService(
   plan: ArrivalPlan,
   result: SeriesResult,
 ): ServiceRun["summary"] {
+  const menu = arrivalScenario.shop.menu;
+  const { equipment } = orderedTasks(scenario.shop, menu);
+  const provenance = serviceProvenance(
+    arrivalScenario.demand,
+    scenario.shop,
+    plan.demandLevel,
+    menu,
+  );
+  const stats = result.stats as ServiceRun["summary"]["stats"];
   return {
     seed: plan.seed,
     runCount: plan.runs.length,
@@ -70,17 +81,24 @@ export function summarizeService(
     itemNames: Object.fromEntries(
       scenario.shop.menu.map(({ id, name }) => [id, name]),
     ),
-    stats: result.stats as ServiceRun["summary"]["stats"],
+    stats: {
+      ...stats,
+      utilization: stats.utilization.map((resource) => ({
+        ...resource,
+        fractionProvenance:
+          resource.kind === "worker" || equipment.has(resource.kind)
+            ? provenance
+            : weakestTag([
+                scenario.shop.equipment[resource.kind].source,
+                ...menu.map(({ weight }) => weight.source),
+              ]),
+      })),
+    },
     arrivalProvenance: sampledArrivalProvenance(
       arrivalScenario.demand,
       plan.demandLevel,
     ),
-    provenance: serviceProvenance(
-      arrivalScenario.demand,
-      scenario.shop,
-      plan.demandLevel,
-      arrivalScenario.shop.menu,
-    ),
+    provenance,
   };
 }
 

@@ -46,11 +46,15 @@ function pairedRunKey(
 }
 
 function playbackRunId(key: readonly (string | number)[]) {
-  return runId([...key, "playback-v2"]);
+  return runId([...key, "playback-v3"]);
 }
 
 function matchesPlaybackRunId(id: string, key: readonly (string | number)[]) {
-  return id === playbackRunId(key) || id === runId(key);
+  return (
+    id === playbackRunId(key) ||
+    id === runId([...key, "playback-v2"]) ||
+    id === runId(key)
+  );
 }
 
 export function soloRunId(scenario: Revision, settings: Settings) {
