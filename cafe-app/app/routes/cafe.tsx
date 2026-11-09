@@ -1,35 +1,126 @@
-import { actionErrorMessage, useActionMutation, useActionQuery } from "@agent-native/core/client/hooks";
-import { useState, type FormEvent } from "react";
+import {
+  actionErrorMessage,
+  useActionMutation,
+  useActionQuery,
+} from "@agent-native/core/client/hooks";
+import { useEffect } from "react";
+import { useSearchParams } from "react-router";
 
-function DemandForm({ scenario }: { scenario: { id: string; baseHourlyDemand: number; revision: number } }) {
-  const [demand, setDemand] = useState(String(scenario.baseHourlyDemand));
-  const update = useActionMutation("set-demand");
-  function save(event: FormEvent) {
-    event.preventDefault();
-    const value = Number(demand);
-    if (!Number.isInteger(value) || value < 0 || value > 1000) return;
-    update.mutate({ id: scenario.id, baseHourlyDemand: value, expectedRevision: scenario.revision });
-  }
-  return <form onSubmit={save} className="mt-6 flex max-w-sm flex-col gap-3">
-    <label htmlFor="base-demand">Base customers per hour <span className="text-sm">Illustrative</span></label>
-    <input id="base-demand" className="rounded border border-[#59534c] bg-[#393530] px-3 py-2 text-[#f7f0e3]" type="number" min="0" max="1000" step="1" value={demand} onChange={(event) => setDemand(event.target.value)} required />
-    <button className="rounded bg-orange-600 px-4 py-3 text-white disabled:opacity-50" disabled={update.isPending}>Save demand</button>
-    {update.error && <p role="alert">{actionErrorMessage(update.error) ?? "Could not save demand."}</p>}
-  </form>;
-}
+import { DemandForm, ShopForm } from "@/components/cafe/scenario-inputs";
+import { ServiceTest } from "@/components/cafe/service-test";
+
+import "@/components/cafe/cafe.css";
 
 export default function CafeRoute() {
   const query = useActionQuery("list-scenarios", {});
-  const create = useActionMutation("create-scenario");
-  const scenario = query.data?.scenarios[0];
-  return <main className="min-h-full bg-[#20201e] p-8 text-[#f7f0e3]">
-    <p className="text-sm uppercase tracking-widest">Café Dry Run</p>
-    <h1 className="mt-4 font-serif text-5xl">Open on paper.</h1>
-    <p className="mt-4 max-w-xl">Test your café before you sign the lease. Start with an illustrative hourly demand, then refine it with your own estimate.</p>
-    {query.isPending && <p className="mt-6">Loading your scenario...</p>}
-    {query.error && <p role="alert" className="mt-6">{actionErrorMessage(query.error) ?? "Could not load scenarios."}</p>}
-    {!query.isPending && !query.error && !scenario && <button className="mt-6 rounded bg-orange-600 px-4 py-3 text-white disabled:opacity-50" disabled={create.isPending} onClick={() => create.mutate({ baseHourlyDemand: 20 })}>Start a scenario</button>}
-    {create.error && <p role="alert">{actionErrorMessage(create.error) ?? "Could not create a scenario."}</p>}
-    {scenario && <section aria-label="Your scenario"><p className="mt-8">Current base demand: {scenario.baseHourlyDemand} customers per hour · Illustrative</p><DemandForm key={`${scenario.id}:${scenario.revision}`} scenario={scenario} /></section>}
-  </main>;
+  const [params, setParams] = useSearchParams();
+  const selected = params.get("scenario");
+  const scenario = selected
+    ? query.data?.scenarios.find(({ id }) => id === selected)
+    : query.data?.scenarios[0];
+  const create = useActionMutation("create-scenario", {
+    onSuccess: ({ scenario }) =>
+      setParams({ scenario: scenario.id }, { replace: true }),
+  });
+  useEffect(() => {
+    if (!selected && scenario)
+      setParams(
+        (previous) => {
+          previous.set("scenario", scenario.id);
+          return previous;
+        },
+        { replace: true, preventScrollReset: true },
+      );
+  }, [scenario, selected, setParams]);
+
+  return (
+    <main className="cafe-workspace">
+      <header className="cafe-masthead">
+        <span className="cafe-mark" aria-hidden="true" /> <span>DRY RUN</span>
+      </header>
+      <nav className="cafe-rail" aria-label="Café Dry Run documents">
+        <a href="#opening-file">
+          <span>00</span> Opening file
+        </a>
+        <a href="#site-demand">
+          <span>01</span> Site & demand
+        </a>
+        <a href="#service-test">
+          <span>02</span> Service test
+        </a>
+      </nav>
+      <div className="cafe-cover" id="opening-file">
+        <p className="cafe-kicker">Café Dry Run · Opening file</p>
+        <h1>
+          Open <em>on paper.</em>
+        </h1>
+        <p>Test your café before you sign the lease.</p>
+      </div>
+      {query.isPending && <p role="status">Loading your scenario…</p>}
+      {query.error && (
+        <p role="alert" className="cafe-notice">
+          {actionErrorMessage(query.error) ?? "Could not load scenarios."}{" "}
+          <button className="cafe-link" onClick={() => void query.refetch()}>
+            Try again
+          </button>
+        </p>
+      )}
+      {!query.isPending && !query.error && !scenario && !selected && (
+        <button
+          className="cafe-primary"
+          disabled={create.isPending}
+          onClick={() => create.mutate({})}
+        >
+          {create.isPending ? "Starting scenario…" : "Start a scenario"}
+        </button>
+      )}
+      {!query.isPending && !query.error && selected && !scenario && (
+        <p role="status">
+          Scenario unavailable.{" "}
+          <button className="cafe-link" onClick={() => setParams({})}>
+            Open your scenarios
+          </button>
+        </p>
+      )}
+      {create.error && (
+        <p role="alert" className="cafe-notice">
+          {actionErrorMessage(create.error) ?? "Could not create a scenario."}
+        </p>
+      )}
+      {!!query.data && query.data.scenarios.length > 1 && (
+        <label className="cafe-picker">
+          Scenario
+          <select
+            value={scenario?.id ?? ""}
+            onChange={(event) => setParams({ scenario: event.target.value })}
+          >
+            {query.data.scenarios.map(({ id, demand }) => (
+              <option value={id} key={id}>
+                {id.slice(0, 8)} · {demand.hourly.base.value}/hr
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {scenario && (
+        <section aria-label="Your scenario" key={scenario.id}>
+          <section
+            id="site-demand"
+            className="cafe-section"
+            aria-labelledby="site-title"
+          >
+            <header>
+              <p className="cafe-kicker">01 · Assumptions</p>
+              <h2 id="site-title">Site & demand</h2>
+            </header>
+            <div className="cafe-input-boards">
+              <DemandForm scenario={scenario} />
+              <ShopForm scenario={scenario} />
+            </div>
+          </section>
+          <ServiceTest scenario={scenario} />
+        </section>
+      )}
+    </main>
+  );
 }

@@ -18,13 +18,19 @@ export interface NavigationState {
   path?: string;
   publicPath?: string;
   threadId?: string;
+  scenarioId?: string;
 }
 
 export function useNavigationState() {
   useAgentRouteState<NavigationState>({
     browserTabId: TAB_ID,
     requestSource: TAB_ID,
-    getNavigationState: ({ pathname }) => navigationStateForPath(pathname),
+    getNavigationState: ({ pathname, searchParams }) => ({
+      ...navigationStateForPath(pathname),
+      ...(pathname === "/cafe" && searchParams.get("scenario")
+        ? { scenarioId: searchParams.get("scenario")! }
+        : {}),
+    }),
     getCommandPath: commandPathForNavigation,
   });
 }

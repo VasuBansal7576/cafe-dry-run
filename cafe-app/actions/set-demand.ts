@@ -1,20 +1,93 @@
-import { defineAction, fail } from "@agent-native/core/action";
-import { and, eq, sql } from "drizzle-orm";
+import { defineAction } from "@agent-native/core/action";
 import { z } from "zod";
-import { getDb } from "../server/db/index.js";
-import { scenarios } from "../server/db/schema.js";
+
+import { illustrative } from "../server/lib/cafe/provenance.js";
+import {
+  readScenario,
+  requireOwner,
+  saveScenarioInputs,
+  scenarioConflict,
+  scenarioEditKey,
+  scenarioErrors,
+  scenarioSchema,
+  validateInput,
+} from "../server/lib/cafe/scenario-store.js";
+import {
+  demandFields,
+  demandSchema,
+  hourlyRateSchema,
+  serviceHourCount,
+} from "../server/lib/cafe/scenario.js";
 
 export default defineAction({
-  description: "Set the illustrative base hourly customer demand for a cafe scenario using its current revision. Read list-scenarios first.",
-  schema: z.object({
-    id: z.string().uuid().describe("Scenario ID returned by list-scenarios"),
-    baseHourlyDemand: z.number().int().min(0).max(1000).describe("Illustrative base customer arrivals per hour, from 0 to 1000"),
-    expectedRevision: z.number().int().nonnegative().describe("Current revision returned by list-scenarios; read again after a conflict"),
+  description:
+    "Edit a cafe scenario's tagged low/base/high hourly demand, Saturday opening hours or hourly curve. Read list-scenarios for its expected revision.",
+  schema: scenarioEditKey.extend({
+    demand: demandFields
+      .partial()
+      .optional()
+      .describe(
+        "Tagged demand fields to replace. Omitted fields are preserved. If hours change and the curve is omitted, existing multipliers are retained by hour and new hours start at 1 illustrative.",
+      ),
+    baseHourlyDemand: hourlyRateSchema
+      .optional()
+      .describe(
+        "Set only the base hourly demand as an illustrative value; prefer demand.hourly when replacing the range or providing provenance.",
+      ),
   }),
-  run: async ({ id, baseHourlyDemand, expectedRevision }, ctx) => {
-    const owner = ctx?.userEmail ?? fail("Sign in to edit scenarios.", { statusCode: 401 });
-    const [scenario] = await getDb().update(scenarios).set({ baseHourlyDemand, revision: sql`${scenarios.revision} + 1` }).where(and(eq(scenarios.id, id), eq(scenarios.ownerEmail, owner), eq(scenarios.revision, expectedRevision))).returning({ id: scenarios.id, baseHourlyDemand: scenarios.baseHourlyDemand, revision: scenarios.revision });
-    if (!scenario) return fail("Scenario not found or changed. Read the latest scenario and try again.", { statusCode: 409, errorCode: "scenario_conflict" });
-    return { scenario };
+  outputSchema: z.object({ scenario: scenarioSchema }),
+  errors: scenarioErrors,
+  run: async (
+    { id, expectedRevision, demand: patch, baseHourlyDemand },
+    ctx,
+  ) => {
+    const owner = requireOwner(ctx?.userEmail);
+    if (
+      (baseHourlyDemand === undefined &&
+        (!patch || !Object.keys(patch).length)) ||
+      (baseHourlyDemand !== undefined && patch?.hourly)
+    ) {
+      return scenarioErrors.fail(
+        "Supply demand fields or a base demand. Use one form to edit the hourly range.",
+        "invalid_scenario",
+      );
+    }
+    const current = await readScenario(id, owner);
+    if (current.revision !== expectedRevision) return scenarioConflict();
+    const demand = {
+      hourly: patch?.hourly ?? current.demand.hourly,
+      opensAt: patch?.opensAt ?? current.demand.opensAt,
+      closesAt: patch?.closesAt ?? current.demand.closesAt,
+      hourlyMultipliers:
+        patch?.hourlyMultipliers ?? current.demand.hourlyMultipliers,
+    };
+    if (baseHourlyDemand !== undefined) {
+      const { low, high } = demand.hourly;
+      demand.hourly = {
+        low:
+          low.value > baseHourlyDemand && low.source.tag === "illustrative"
+            ? illustrative(baseHourlyDemand)
+            : low,
+        base: illustrative(baseHourlyDemand),
+        high:
+          high.value < baseHourlyDemand && high.source.tag === "illustrative"
+            ? illustrative(baseHourlyDemand)
+            : high,
+      };
+    }
+    if (!patch?.hourlyMultipliers && (patch?.opensAt || patch?.closesAt)) {
+      demand.hourlyMultipliers = Array.from(
+        { length: serviceHourCount(demand) },
+        (_, index) =>
+          current.demand.hourlyMultipliers[index] ?? illustrative(1),
+      );
+    }
+    const checked = validateInput(demandSchema, demand);
+    return {
+      scenario: await saveScenarioInputs(id, owner, expectedRevision, {
+        demand: checked,
+        baseHourlyDemand: checked.hourly.base.value,
+      }),
+    };
   },
 });

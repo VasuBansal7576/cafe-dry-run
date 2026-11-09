@@ -34,4 +34,15 @@ Before building common workspace or agent UI, read `agent-native-toolkit`; for s
 
 ## Café Dry Run
 
-Follow the project rules in `../AGENTS.md` and behavior specification in `../cafe-dry-run-statechart.html`. The founder and agent use the same scenario actions. This initial slice stores only illustrative base hourly demand, not a complete demand model. Read `list-scenarios` to obtain the scenario id and revision; `create-scenario` creates one and `set-demand` edits it with the expected revision. Every scenario is private to its signed-in owner. The café view is `/cafe`; chat remains available through the existing interface.
+Follow the project rules in `../AGENTS.md` and behavior specification in `../cafe-dry-run-statechart.html`. The café view is `/cafe`. Each scenario is private to its signed-in owner. The founder and agent use the same actions.
+
+| Action | Use |
+| --- | --- |
+| `list-scenarios` | Read scenario IDs, revisions, tagged demand and shop inputs, and latest run IDs. |
+| `create-scenario` | Start a private scenario with clearly labeled illustrative inputs. |
+| `set-demand` | Edit hourly demand, opening hours or the Saturday curve using the current revision. |
+| `configure-shop` | Replace selected shop fields using the current revision. To change one shift, preserve the other workers and shifts in the replacement list. |
+| `run-simulation` | Persist a seeded service result for the current revision. Use its metrics and provenance when explaining the result. |
+| `get-simulation` | Read a saved run and its stale status. Request playback only when the arrival and event timeline is needed. |
+
+Use `navigate` to open `/cafe?scenario=<id>`. `view-screen` includes the tab's selected scenario, displayed run ID and timeline position. Active playback refreshes the position once per second. A stale result describes the earlier run revision. Simulation numbers come from actions. Explain opens the built-in agent chat.

@@ -1,5 +1,8 @@
 import { defineAction } from "@agent-native/core/action";
-import { readAppState } from "@agent-native/core/application-state";
+import {
+  readAppState,
+  readAppStateForCurrentTab,
+} from "@agent-native/core/application-state";
 import { z } from "zod";
 
 export default defineAction({
@@ -13,6 +16,23 @@ export default defineAction({
 
     const screen: Record<string, unknown> = {};
     if (navigation) screen.navigation = navigation;
+    if (
+      navigation &&
+      typeof navigation === "object" &&
+      "view" in navigation &&
+      navigation.view === "cafe"
+    ) {
+      const playback = await readAppStateForCurrentTab("cafe-playback");
+      if (
+        playback &&
+        typeof playback === "object" &&
+        "scenarioId" in playback &&
+        "scenarioId" in navigation &&
+        playback.scenarioId === navigation.scenarioId
+      ) {
+        screen.playback = playback;
+      }
+    }
 
     if (Object.keys(screen).length === 0) {
       return "No application state found. Is the app running?";

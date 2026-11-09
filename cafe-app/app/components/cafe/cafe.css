@@ -1,0 +1,408 @@
+.cafe-workspace {
+  --cafe-workspace: #20201e;
+  --cafe-board: #272624;
+  --cafe-panel: #302e2b;
+  --cafe-field: #393530;
+  --cafe-ink: #f7f0e3;
+  --cafe-muted: #cbc2b4;
+  --cafe-rule: #59534c;
+  --cafe-paper: #eee2cc;
+  --cafe-print: #29241d;
+  --cafe-signal: #ff713b;
+  --cafe-signal-ink: #231b15;
+  --cafe-ticket: #ffc6a1;
+  --cafe-serif: "Iowan Old Style", Baskerville, Georgia, serif;
+  --cafe-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  min-height: 100%;
+  padding: 0 clamp(14px, 3.25vw, 50px) 64px;
+  color: var(--cafe-ink);
+  background: var(--cafe-workspace);
+  color-scheme: dark;
+  font:
+    14px/1.45 system-ui,
+    sans-serif;
+}
+.cafe-workspace :focus-visible {
+  outline: 2px solid var(--cafe-signal);
+  outline-offset: 4px;
+}
+.cafe-workspace :is(input, select, button) {
+  font: inherit;
+  min-height: 44px;
+}
+.cafe-workspace :is(input, select) {
+  width: 100%;
+  min-width: 0;
+  background: var(--cafe-field);
+  border: 1px solid var(--cafe-rule);
+  border-radius: 0;
+  padding: 0 10px;
+  color: var(--cafe-ink);
+}
+.cafe-workspace input[type="range"] {
+  accent-color: var(--cafe-signal);
+  padding: 0;
+}
+.cafe-workspace button {
+  cursor: pointer;
+}
+.cafe-workspace button:disabled {
+  opacity: 0.62;
+  cursor: default;
+}
+.cafe-workspace :is(h1, h2, h3, h4, p, dl, dd, ol) {
+  margin: 0;
+}
+.cafe-workspace :is(h1, h2, h3) {
+  font-family: var(--cafe-serif);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 0.98;
+}
+.cafe-workspace h2 {
+  font-size: clamp(38px, 5.5vw, 78px);
+}
+.cafe-workspace h3 {
+  font-size: clamp(27px, 3.5vw, 40px);
+}
+.cafe-workspace .cafe-kicker {
+  font: 11px/1.45 var(--cafe-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.105em;
+  color: var(--cafe-muted);
+}
+.cafe-masthead,
+.cafe-rail,
+.cafe-cover,
+.cafe-section,
+.cafe-picker {
+  max-width: 1480px;
+  margin-inline: auto;
+}
+.cafe-masthead {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-block: 20px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+.cafe-mark {
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: linear-gradient(
+    var(--cafe-signal) 43%,
+    var(--cafe-workspace) 43%,
+    var(--cafe-workspace) 55%,
+    var(--cafe-signal) 55%
+  );
+}
+.cafe-rail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  border-block: 1px solid var(--cafe-rule);
+}
+.cafe-rail a {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  min-height: 44px;
+  color: var(--cafe-ink);
+  text-decoration: none;
+}
+.cafe-rail a:hover,
+.cafe-rail a span {
+  color: var(--cafe-signal);
+}
+.cafe-rail a span {
+  font: 12px var(--cafe-mono);
+}
+.cafe-cover {
+  padding-block: clamp(34px, 6vw, 88px) 32px;
+}
+.cafe-cover h1 {
+  margin-block: 10px;
+  font-size: clamp(62px, 8vw, 120px);
+}
+.cafe-cover em {
+  color: var(--cafe-signal);
+}
+.cafe-cover > p:last-child {
+  font-size: clamp(18px, 2vw, 25px);
+  color: var(--cafe-muted);
+}
+.cafe-section {
+  margin-block-start: 44px;
+  scroll-margin-top: 16px;
+}
+.cafe-section > header {
+  margin-block-end: 16px;
+}
+.cafe-section > header p {
+  margin-block-end: 7px;
+}
+.cafe-picker {
+  display: grid;
+  gap: 6px;
+  width: min(100%, 320px);
+  margin-inline-start: 0;
+}
+.cafe-input-boards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.cafe-board {
+  border: 1px solid var(--cafe-rule);
+  background: var(--cafe-board);
+  padding: clamp(14px, 2vw, 26px);
+  min-width: 0;
+}
+.cafe-form,
+.cafe-service,
+.cafe-playback {
+  display: grid;
+  gap: 16px;
+}
+.cafe-form > button {
+  justify-self: start;
+}
+.cafe-form header p,
+.cafe-run-heading p,
+.cafe-form details p {
+  margin-top: 8px;
+  color: var(--cafe-muted);
+}
+.cafe-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 205px), 1fr));
+  gap: 10px 12px;
+}
+.cafe-field {
+  min-width: 0;
+}
+.cafe-field > label,
+.cafe-service-settings label,
+.cafe-clock label,
+.cafe-picker,
+.cafe-source-detail label {
+  display: grid;
+  gap: 5px;
+  font-size: 13px;
+}
+.cafe-field-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 114px;
+  gap: 6px;
+  margin-block-start: 5px;
+}
+.cafe-workspace .cafe-source-control {
+  font: 11px var(--cafe-mono);
+  color: var(--cafe-muted);
+}
+.cafe-source-detail {
+  display: grid;
+  gap: 6px;
+  padding-block: 8px;
+}
+.cafe-subboard {
+  min-width: 0;
+  border: 1px solid var(--cafe-rule);
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+.cafe-subboard legend {
+  padding-inline: 4px;
+  font-weight: 700;
+}
+.cafe-shift {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: 8px;
+}
+.cafe-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+}
+.cafe-workspace :is(.cafe-primary, .cafe-secondary) {
+  font-weight: 700;
+  padding: 8px 14px;
+  border: 1px solid var(--cafe-rule);
+}
+.cafe-primary {
+  background: var(--cafe-signal);
+  color: var(--cafe-signal-ink);
+  border-color: var(--cafe-signal);
+}
+.cafe-secondary {
+  background: var(--cafe-panel);
+  color: var(--cafe-ink);
+}
+.cafe-link {
+  color: var(--cafe-signal);
+  text-decoration: underline;
+}
+.cafe-workspace details {
+  border-top: 1px solid var(--cafe-rule);
+}
+.cafe-workspace details > :not(summary) {
+  margin-block-end: 10px;
+}
+.cafe-workspace summary {
+  padding: 11px 0;
+  min-height: 44px;
+  cursor: pointer;
+  font-weight: 650;
+}
+.cafe-workspace .cafe-notice {
+  border-inline-start: 3px solid var(--cafe-signal);
+  padding: 8px 12px;
+  background: var(--cafe-panel);
+}
+.cafe-service-settings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 145px), 1fr));
+  gap: 10px;
+  align-items: end;
+}
+.cafe-run-heading,
+.cafe-clock {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: end;
+  gap: 10px;
+}
+.cafe-run-heading {
+  border-top: 1px solid var(--cafe-rule);
+  padding-top: 16px;
+}
+.cafe-stamp {
+  display: inline-block;
+  border: 1px solid var(--cafe-rule);
+  padding: 2px 5px;
+  font: 11px var(--cafe-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.cafe-metrics,
+.cafe-frame-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 132px), 1fr));
+  gap: 1px;
+  background: var(--cafe-rule);
+  border: 1px solid var(--cafe-rule);
+}
+.cafe-metrics div,
+.cafe-frame-counts div {
+  padding: 8px 10px;
+  background: var(--cafe-panel);
+}
+.cafe-metrics dt,
+.cafe-frame-counts dt {
+  color: var(--cafe-muted);
+}
+.cafe-metrics dd,
+.cafe-frame-counts dd {
+  font: 20px var(--cafe-mono);
+  font-variant-numeric: tabular-nums;
+}
+.cafe-pressure {
+  padding: 9px 12px;
+  background: var(--cafe-panel);
+  border-left: 3px solid var(--cafe-signal);
+}
+.cafe-playback {
+  padding-block-start: 12px;
+  border-top: 1px solid var(--cafe-rule);
+}
+.cafe-clock p {
+  display: grid;
+  gap: 5px;
+}
+.cafe-clock strong {
+  font: 28px var(--cafe-mono);
+}
+.cafe-seek {
+  flex-basis: 100%;
+}
+.cafe-stations {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  padding: 0;
+  list-style: none;
+}
+.cafe-station {
+  min-height: 112px;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid var(--cafe-rule);
+  background: var(--cafe-panel);
+}
+.cafe-station-pressure {
+  border-color: var(--cafe-signal);
+}
+.cafe-station h4 {
+  font-size: 14px;
+  font-weight: 700;
+}
+.cafe-station p,
+.cafe-latest,
+.cafe-run-reference {
+  font: 11px/1.45 var(--cafe-mono);
+  color: var(--cafe-muted);
+  overflow-wrap: anywhere;
+}
+.cafe-ticket {
+  display: block;
+  margin-top: 5px;
+  padding: 4px 6px;
+  font-size: 11px;
+  color: var(--cafe-print);
+  background: var(--cafe-paper);
+}
+.cafe-ticket-active {
+  border-left: 2px solid var(--cafe-print);
+}
+.cafe-station-pressure .cafe-ticket {
+  background: var(--cafe-ticket);
+}
+.cafe-resource-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding-block: 6px;
+  border-bottom: 1px solid var(--cafe-rule);
+}
+.cafe-resource-list dd {
+  font-family: var(--cafe-mono);
+}
+@media (max-width: 870px) {
+  .cafe-input-boards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 555px) {
+  .cafe-stations {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cafe-station {
+    min-height: 76px;
+  }
+  .cafe-frame-counts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .cafe-workspace :is(input, select) {
+    font-size: 16px;
+  }
+  .cafe-rail {
+    gap: 3px 12px;
+  }
+}
