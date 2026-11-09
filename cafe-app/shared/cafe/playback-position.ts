@@ -160,10 +160,13 @@ export function changePlayback(
     if (!seeking && change.playing === true) second = start;
     else playing = false;
   }
+  const clearingAnchor =
+    !seeking && change.playing === false && state.startedAtMs !== undefined;
   if (
     second === frame.second &&
     speed === frame.speed &&
-    playing === frame.playing
+    playing === frame.playing &&
+    !clearingAnchor
   )
     return state;
   const { startedAtMs: _, ...paused } = state;

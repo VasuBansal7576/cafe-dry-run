@@ -18,6 +18,7 @@ import seek from "../../../actions/set-playback-position.js";
 import viewScreen from "../../../actions/view-screen.js";
 import {
   calibratePlaybackClock,
+  changePlayback,
   playbackBounds,
   precisePlaybackClock,
 } from "../../../shared/cafe/playback-position.js";
@@ -105,6 +106,27 @@ it("uses healthy slower reads and narrows the estimate when latency switches dir
     offset: 5_000.5,
     earliestOffset: 4_995,
     latestOffset: 5_006,
+  });
+});
+
+it("an explicit pause settles a running anchor that has already reached the end", () => {
+  const anchor = {
+    scenarioId: crypto.randomUUID(),
+    runId: crypto.randomUUID(),
+    second: 36_000,
+    startedAtMs: 2_000,
+  };
+  expect(
+    changePlayback(
+      anchor,
+      { playing: false },
+      { start: 30_000, end: 36_100 },
+      3_000,
+    ),
+  ).toEqual({
+    scenarioId: anchor.scenarioId,
+    runId: anchor.runId,
+    second: 36_100,
   });
 });
 

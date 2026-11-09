@@ -304,7 +304,11 @@ export function Playback({
   const preciseClock = calibration && precisePlaybackClock(calibration);
   const clockAt = (local: number) =>
     Math.max(0, Math.floor(local + (calibration?.offset ?? 0)));
-  const now = clockAt(Math.max(localNow, receivedAt));
+  const localClock = Math.max(localNow, receivedAt);
+  const now = clockAt(localClock);
+  const earliestNow = Math.floor(
+    localClock + (calibration?.earliestOffset ?? 0),
+  );
   const { state: base, exact: exactResult } = restorePlayback(
     identity,
     stored,
@@ -332,7 +336,7 @@ export function Playback({
     loadedClock.revision === revision &&
     base.startedAtMs !== undefined &&
     Math.max(base.startedAtMs, base.commandedAtMs ?? 0) < mountedClock &&
-    playbackFrame(base, end, now).playing;
+    playbackFrame(base, end, earliestNow).playing;
   const [queue, setQueue] = useState<PlaybackQueue | null>(null);
   const inFlight = useRef<PlaybackEdit | null>(null);
   const [failure, setFailure] = useState<{
@@ -351,10 +355,12 @@ export function Playback({
       ? changePlayback(base, { playing: false }, bounds, mountedClock)
       : base,
   );
-  const { second, speed, playing } = playbackFrame(current, end, now);
+  const { second, speed } = playbackFrame(current, end, now);
+  const { playing } = playbackFrame(current, end, earliestNow);
   const approximateTime =
     !preciseClock &&
-    (playing || (edits.length > 0 && playbackFrame(base, end, now).playing));
+    (playing ||
+      (edits.length > 0 && playbackFrame(base, end, earliestNow).playing));
   const clockText = formatClock(second);
   const playbackReady = navigationReady && loadedClock !== null && !pauseOnLoad;
   const playbackUnavailable =
