@@ -239,6 +239,14 @@ it("allows playback identity fields and an exact founder clock time", () => {
   ).toBe(false);
   expect(
     cafeActionTextAllowed(
+      "set-playback-controls",
+      { ...identity, playing: true, speed: 600 },
+      "Play Saturday at 600×.",
+      new Set(),
+    ),
+  ).toBe(true);
+  expect(
+    cafeActionTextAllowed(
       "configure-shop",
       input,
       "Seek to 10:00:01.",

@@ -37,6 +37,7 @@ export const cafeChatTools = [
   "get-simulation",
   "view-screen",
   "set-playback-position",
+  "set-playback-controls",
   "navigate",
   "hello",
 ];

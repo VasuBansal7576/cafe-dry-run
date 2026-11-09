@@ -73,7 +73,7 @@ export function cafeActionTextAllowed(
       }
     }
     if (
-      tool === "set-playback-position" &&
+      (tool === "set-playback-position" || tool === "set-playback-controls") &&
       ["scenarioId", "comparisonScenarioId", "comparisonRunId"].includes(key) &&
       uuid.test(value)
     )

@@ -3,7 +3,6 @@ import {
   actionErrorCode,
   actionErrorMessage,
   callAction,
-  readClientAppStateMany,
   useActionMutation,
   useActionQuery,
 } from "@agent-native/core/client/hooks";
@@ -20,7 +19,6 @@ import {
 } from "react";
 import { useLocation } from "react-router";
 
-import type { NavigationState } from "@/hooks/use-navigation-state";
 import { TAB_ID } from "@/lib/tab-id";
 
 import type { SourceTag } from "../../../server/lib/cafe/provenance";
@@ -33,10 +31,16 @@ import type { Scenario } from "../../../server/lib/cafe/scenario-store";
 import { frameAt } from "../../../server/lib/cafe/service-playback";
 import type { ServiceRun } from "../../../server/lib/cafe/service-run";
 import {
+  changePlayback,
+  initialPlaybackSecond,
   playbackBounds,
-  playbackStateSchema,
-  samePlayback,
+  playbackFrame,
+  playbackSpeeds,
+  playbackSpeedSchema,
+  restorePlayback,
+  type PlaybackChange,
   type PlaybackIdentity,
+  type PlaybackState,
 } from "../../../shared/cafe/playback-position";
 import { useCalculationState } from "./calculation-state";
 import { Stamp } from "./provenance-stamp";
@@ -49,8 +53,6 @@ const waitLabels = {
   steamWand: "steam wand capacity",
 } as const;
 
-const playbackSpeeds = [30, 120, 600] as const;
-const playbackSyncInterval = 1000;
 const playbackReadTimeout = 10_000;
 const playbackStateKey = `cafe-playback:${TAB_ID}`;
 const number = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 1 });
@@ -154,6 +156,17 @@ export function ServiceMetrics({
 
 type PlaybackBoard = { run: ServiceRun; label?: string };
 
+type PlaybackEdit = {
+  change: PlaybackChange;
+  when: number;
+  bootstrap?: true;
+};
+type PlaybackQueue = {
+  scope: string;
+  epoch: string | null;
+  edits: PlaybackEdit[];
+};
+
 export function Playback({
   boards,
   receiptId,
@@ -167,7 +180,7 @@ export function Playback({
 }) {
   const [{ run }] = boards;
   const { summary, playback } = run;
-  const { start, end } = playbackBounds(
+  const bounds = playbackBounds(
     summary.hours,
     boards.map(
       ({
@@ -177,10 +190,12 @@ export function Playback({
       }) => timeline[timeline.length - 1]?.at ?? 0,
     ),
   );
+  const { start, end } = bounds;
   const other = boards[1]?.run;
   const identity: PlaybackIdentity = {
     scenarioId: run.scenarioId,
     runId: run.id,
+    ...(stale ? { historical: true } : {}),
     ...(receiptId && other
       ? {
           receiptId,
@@ -191,34 +206,47 @@ export function Playback({
   };
   const location = useLocation();
   const resultId = receiptId ?? run.id;
-  const scope = `${location.key}:${resultId}`;
+  const scope = `${location.key}:${resultId}:${stale}`;
   const queryKey = ["app-state", playbackStateKey, scope];
   const queryClient = useQueryClient();
   const savedPosition = useQuery({
     queryKey,
     queryFn: async ({ signal }) => {
-      const { values } = await readClientAppStateMany(
-        ["navigation", playbackStateKey],
+      const {
+        selection,
+        playback: incoming,
+        sampledAtMs,
+      } = await callAction(
+        "get-playback-clock",
+        {},
         {
+          method: "GET",
           signal: AbortSignal.any([
             signal,
             AbortSignal.timeout(playbackReadTimeout),
           ]),
         },
       );
-      const navigation = values.navigation as NavigationState | undefined;
-      const stored = playbackStateSchema.safeParse(values[playbackStateKey]);
+      const receivedAt = performance.now();
+      const previous = queryClient.getQueryData<{
+        playback: PlaybackState | null;
+      }>(queryKey)?.playback;
       return {
         navigationReady:
-          navigation?.view === "cafe" &&
-          navigation.scenarioId === identity.scenarioId &&
-          navigation.comparisonScenarioId === identity.comparisonScenarioId,
-        playback: stored.success ? stored.data : null,
+          selection?.scenarioId === identity.scenarioId &&
+          selection.comparisonScenarioId === identity.comparisonScenarioId,
+        sampledAtMs,
+        receivedAt,
+        playback:
+          (previous?.clockRevision ?? 0) > (incoming?.clockRevision ?? 0)
+            ? (previous ?? null)
+            : incoming,
       };
     },
-    enabled: !stale,
     staleTime: Infinity,
     refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
+    refetchOnReconnect: "always",
     retry: false,
   });
   const navigationReady =
@@ -228,7 +256,7 @@ export function Playback({
   const activeScope = useRef<string | null>(null);
   const retriedNavigation = useRef<string | null>(null);
   useEffect(() => {
-    activeScope.current = stale ? null : scope;
+    activeScope.current = scope;
     retriedNavigation.current = null;
     return () => {
       activeScope.current = null;
@@ -242,7 +270,6 @@ export function Playback({
   });
   useEffect(() => {
     if (
-      !stale &&
       savedPosition.data &&
       !navigationReady &&
       savedPosition.isFetchedAfterMount
@@ -255,162 +282,204 @@ export function Playback({
     savedPosition.data,
     savedPosition.isFetchedAfterMount,
   ]);
-  const initialSecond = playback.timeline.length
-    ? Math.min(end, start + 25 * 60)
-    : start;
-  const [time, setTime] = useState(initialSecond);
-  const [baselineScope, setBaselineScope] = useState<string | null>(null);
-  const playbackReady = stale || (navigationReady && baselineScope === scope);
+  const stored = savedPosition.data?.playback;
+  const epoch = stored?.seekId ?? null;
+  const initial = initialPlaybackSecond(bounds, playback.timeline.length > 0);
+  const [mountedAt] = useState(() => performance.now());
+  const [localNow, setLocalNow] = useState(mountedAt);
+  const { sampledAtMs = 0, receivedAt = mountedAt } = savedPosition.data ?? {};
+  const clockAt = (local: number) =>
+    Math.max(0, Math.floor(sampledAtMs + local - receivedAt));
+  const now = clockAt(Math.max(localNow, receivedAt));
+  const { state: base, exact: exactResult } = restorePlayback(
+    identity,
+    stored,
+    { ...bounds, initial },
+    now,
+  );
+  const mountedClock = clockAt(mountedAt);
+  const pauseOnLoad =
+    exactResult &&
+    base.startedAtMs !== undefined &&
+    base.startedAtMs < mountedClock &&
+    playbackFrame(base, end, now).playing;
+  const [queue, setQueue] = useState<PlaybackQueue | null>(null);
+  const inFlight = useRef<PlaybackEdit | null>(null);
+  const [failure, setFailure] = useState<{
+    scope: string;
+    message: string;
+  } | null>(null);
+  const attemptedBootstrap = useRef<string | null>(null);
+  const edits =
+    queue?.scope === scope && queue.epoch === epoch ? queue.edits : [];
+  const current = edits.reduce(
+    (state, edit) =>
+      edit.bootstrap && "at" in edit.change
+        ? state
+        : changePlayback(state, edit.change, bounds, edit.when),
+    pauseOnLoad
+      ? changePlayback(base, { playing: false }, bounds, mountedClock)
+      : base,
+  );
+  const { second, speed, playing } = playbackFrame(current, end, now);
+  const playbackReady = navigationReady && !pauseOnLoad;
   const playbackUnavailable =
-    !playbackReady &&
-    !navigationReady &&
-    !savedPosition.isFetching &&
-    (savedPosition.isError || savedPosition.isFetchedAfterMount);
+    (!navigationReady &&
+      !savedPosition.isFetching &&
+      (savedPosition.isError || savedPosition.isFetchedAfterMount)) ||
+    (pauseOnLoad && failure?.scope === scope);
   const playbackStatusId = useId();
-  const [playing, setPlaying] = useState(false);
-  const [speed, setSpeed] = useState<number>(120);
-  const second = Math.floor(time);
-  const clockGeneration = useRef(0);
+
   useEffect(() => {
     if (!playing || !playbackReady) return;
-    const generation = clockGeneration.current;
-    let previous = performance.now();
-    const timer = window.setInterval(() => {
-      if (generation !== clockGeneration.current) return;
-      const now = performance.now();
-      const elapsed = (now - previous) / 1000;
-      previous = now;
-      setTime((value) => Math.min(end, value + elapsed * speed));
-    }, 100);
+    const timer = window.setInterval(() => setLocalNow(performance.now()), 100);
     return () => window.clearInterval(timer);
-  }, [end, playbackReady, playing, speed]);
-  useEffect(() => {
-    if (time >= end) setPlaying(false);
-  }, [end, time]);
-  const synced = useRef({
-    scope: null as string | null,
-    seekId: null as string | null,
-    applied: null as string | null,
-    remoteSecond: null as number | null,
-  });
-  const pending = useRef<{ position: string; queued: boolean } | null>(null);
-  const positionKey = (value: number) => `${resultId}:${value}`;
-  const applySavedPosition = useEffectEvent(() => {
-    if (!navigationReady || stale) return;
-    const stored = savedPosition.data?.playback;
-    const state = synced.current;
-    const seekId = stored?.seekId ?? null;
-    const hadBaseline = state.scope !== null;
-    const initial = state.scope !== scope;
-    const agentSeek = seekId !== null && state.seekId !== seekId;
-    state.scope = scope;
-    state.seekId = seekId;
-    const exactResult = stored && samePlayback(stored, identity);
-    const sameRuns =
-      exactResult ||
-      (stored?.receiptId &&
-        receiptId &&
-        samePlayback(stored, { ...identity, receiptId: stored.receiptId }));
-    const restored =
-      stored && sameRuns && stored.second >= start && stored.second <= end
-        ? stored.second
-        : null;
-    if (!initial && (!agentSeek || !exactResult || restored === null)) return;
-    state.applied =
-      exactResult && restored !== null ? positionKey(restored) : null;
-    state.remoteSecond = null;
-    if (restored !== null && (!hadBaseline || agentSeek)) {
-      state.remoteSecond = restored;
-      clockGeneration.current += 1;
-      setTime(restored);
-      setPlaying(false);
-    }
-    if (initial) setBaselineScope(scope);
-  });
-  useEffect(
-    () => applySavedPosition(),
-    [scope, navigationReady, savedPosition.data?.playback, stale],
-  );
+  }, [playing, playbackReady]);
 
-  const publishPosition = useEffectEvent((): void => {
-    const state = synced.current;
+  function enqueue(change: PlaybackChange) {
+    if (!playbackReady) return;
+    const local = performance.now();
+    const edit = { change, when: clockAt(local) };
+    setLocalNow(local);
+    setFailure(null);
+    setQueue((pending) => {
+      const entries =
+        pending?.scope === scope && pending.epoch === epoch
+          ? pending.edits
+          : [];
+      const last = entries[entries.length - 1];
+      return {
+        scope,
+        epoch,
+        edits:
+          last &&
+          last !== inFlight.current &&
+          !last.bootstrap &&
+          "at" in last.change &&
+          "at" in change
+            ? [...entries.slice(0, -1), edit]
+            : [...entries, edit],
+      };
+    });
+  }
+
+  const bootstrap = useEffectEvent(() => {
+    const attempt = `${scope}:${savedPosition.dataUpdatedAt}`;
     if (
-      activeScope.current !== scope ||
-      state.scope !== scope ||
-      !playbackReady ||
-      stale
+      !navigationReady ||
+      (exactResult && !pauseOnLoad) ||
+      edits.length ||
+      attemptedBootstrap.current === attempt
     )
       return;
-    if (state.remoteSecond !== null) {
-      if (state.remoteSecond !== second) return;
-      state.remoteSecond = null;
-    }
-    const position = positionKey(second);
-    if (state.applied === position) return;
-    if (pending.current) {
-      if (pending.current.position !== position) pending.current.queued = true;
-      return;
-    }
-    const request = { position, queued: false };
-    pending.current = request;
-    const seekId = state.seekId;
-    void callAction("set-playback-position", {
+    attemptedBootstrap.current = attempt;
+    setQueue({
+      scope,
+      epoch,
+      edits: [
+        pauseOnLoad
+          ? { change: { playing: false }, when: mountedClock, bootstrap: true }
+          : {
+              change: { at: base.second },
+              when: clockAt(performance.now()),
+              bootstrap: true,
+            },
+      ],
+    });
+  });
+  useEffect(
+    () => bootstrap(),
+    [
+      scope,
+      navigationReady,
+      exactResult,
+      pauseOnLoad,
+      savedPosition.dataUpdatedAt,
+    ],
+  );
+
+  const publish = useEffectEvent((edit: PlaybackEdit) => {
+    if (activeScope.current !== scope || inFlight.current === edit) return;
+    inFlight.current = edit;
+    const options = { signal: AbortSignal.timeout(playbackReadTimeout) };
+    const args = {
       ...identity,
-      at: second,
-      observedSeekId: seekId,
-    })
-      .then(({ applied }) => {
-        if (activeScope.current !== scope) return;
-        if (!applied) {
-          void savedPosition.refetch();
-        } else if (state.seekId === seekId) {
-          state.applied = position;
+      observedSeekId: epoch,
+      observedClockRevision:
+        queryClient.getQueryData<typeof savedPosition.data>(queryKey)?.playback
+          ?.clockRevision ?? 0,
+      returnPlayback: true as const,
+      effectiveAtMs: edit.when,
+    };
+    const action =
+      "at" in edit.change
+        ? callAction(
+            "set-playback-position",
+            { ...args, at: edit.change.at, initialize: edit.bootstrap },
+            options,
+          )
+        : callAction(
+            "set-playback-controls",
+            { ...args, ...edit.change },
+            options,
+          );
+    function finish(applied: boolean) {
+      setQueue((pending) => {
+        if (pending?.edits[0] !== edit) return pending;
+        return applied && pending.edits.length > 1
+          ? { ...pending, edits: pending.edits.slice(1) }
+          : null;
+      });
+      if (inFlight.current === edit) inFlight.current = null;
+    }
+    void action
+      .then(({ applied, playback }) => {
+        if (activeScope.current !== scope) return finish(false);
+        if (applied && playback) {
           queryClient.setQueryData<typeof savedPosition.data>(
             queryKey,
-            (current) =>
-              current && {
-                ...current,
-                playback: {
-                  ...identity,
-                  second,
-                  ...(seekId ? { seekId } : {}),
-                },
-              },
+            (current) => {
+              if (
+                !current ||
+                (current.playback?.clockRevision ?? 0) >
+                  (playback.clockRevision ?? 0)
+              )
+                return current;
+              return { ...current, playback };
+            },
           );
+        } else {
+          if (!edit.bootstrap)
+            setFailure({
+              scope,
+              message: "Playback changed. Try the control again.",
+            });
+          void savedPosition.refetch();
         }
+        finish(applied);
       })
       .catch((error: unknown) => {
-        if (
-          activeScope.current === scope &&
-          actionErrorCode(error) === "scenario_conflict"
-        )
+        finish(false);
+        if (activeScope.current !== scope) return;
+        setFailure({
+          scope,
+          message:
+            actionErrorMessage(error) ??
+            "Couldn’t save playback. Try the control again.",
+        });
+        if (actionErrorCode(error) === "scenario_conflict")
           refreshNavigationOnce();
-      })
-      .finally(() => {
-        pending.current = null;
-        if (request.queued) publishPosition();
       });
   });
+  const first = edits[0];
   useEffect(() => {
-    if (!playing || stale) return;
-    const timer = window.setInterval(
-      () => publishPosition(),
-      playbackSyncInterval,
-    );
-    return () => window.clearInterval(timer);
-  }, [playing, stale]);
-  useEffect(() => {
-    if (playing || stale || !playbackReady) return;
-    const timer = window.setTimeout(() => publishPosition(), 300);
-    return () => window.clearTimeout(timer);
-  }, [
-    playing,
-    scope,
-    second,
-    playbackReady,
-    savedPosition.dataUpdatedAt,
-    stale,
-  ]);
+    if (!navigationReady || !first || inFlight.current === first) return;
+    if (!first.bootstrap && "at" in first.change && edits.length === 1) {
+      const timer = window.setTimeout(() => publish(first), 300);
+      return () => window.clearTimeout(timer);
+    }
+    publish(first);
+  }, [scope, navigationReady, first, edits.length]);
 
   return (
     <div className="cafe-playback">
@@ -427,19 +496,21 @@ export function Playback({
             aria-describedby={playbackReady ? undefined : playbackStatusId}
             onClick={() => {
               if (!playbackReady) {
-                if (playbackUnavailable) void savedPosition.refetch();
+                if (playbackUnavailable) {
+                  setFailure(null);
+                  attemptedBootstrap.current = null;
+                  void savedPosition.refetch();
+                }
                 return;
               }
-              synced.current.remoteSecond = null;
-              if (time >= end) setTime(start);
-              setPlaying(!playing);
+              enqueue({ playing: !playing });
             }}
           >
             {playbackUnavailable
               ? "Retry playback"
               : playing && playbackReady
                 ? "Pause"
-                : time >= end
+                : second >= end
                   ? "Replay Saturday"
                   : "Play Saturday"}
           </button>
@@ -447,7 +518,12 @@ export function Playback({
             Playback speed
             <select
               value={speed}
-              onChange={(event) => setSpeed(Number(event.target.value))}
+              disabled={!playbackReady}
+              onChange={(event) =>
+                enqueue({
+                  speed: playbackSpeedSchema.parse(Number(event.target.value)),
+                })
+              }
             >
               {playbackSpeeds.map((rate) => (
                 <option key={rate} value={rate}>
@@ -468,13 +544,10 @@ export function Playback({
             disabled={!playbackReady}
             aria-describedby={playbackReady ? undefined : playbackStatusId}
             aria-valuetext={`${formatClock(second)}:${String(second % 60).padStart(2, "0")}`}
-            onChange={(event) => {
-              synced.current.remoteSecond = null;
-              setTime(Number(event.target.value));
-            }}
+            onChange={(event) => enqueue({ at: Number(event.target.value) })}
           />
         </label>
-        {!playbackReady && (
+        {(!playbackReady || failure?.scope === scope) && (
           <span
             className="cafe-playback-status"
             id={playbackStatusId}
@@ -482,7 +555,9 @@ export function Playback({
           >
             {playbackUnavailable
               ? "Couldn’t load the saved playback position."
-              : "Loading saved playback position…"}
+              : failure?.scope === scope
+                ? failure.message
+                : "Loading saved playback position…"}
           </span>
         )}
       </div>

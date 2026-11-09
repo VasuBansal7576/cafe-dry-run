@@ -16,4 +16,4 @@ Run `founder` to repeat the same seed and compare the full stored timeline and r
 
 Keep counts at the playhead separate from totals. A static result or same seed alone gives no playback or determinism proof.
 
-To verify agent seeking, open a fresh result on Service test and call `view-screen`, then `set-playback-position` with the returned run identity and the founder’s clock time. The same action publishes founder slider changes. Check the live slider, the current tab’s saved position, and an untouched second tab. A stale result stays playable as history in the UI and is unavailable to this agent action.
+To verify shared playback, open a result on Service test and call `view-screen`. Use its playback IDs with `set-playback-position` to seek or `set-playback-controls` to play, pause, or set speed. The same actions back the founder’s controls. Check the live slider, the current tab’s saved clock, and an untouched second tab. A stale result stays playable as history. Verify that actions require `historical: true` for that result and that `view-screen` identifies it as stale.

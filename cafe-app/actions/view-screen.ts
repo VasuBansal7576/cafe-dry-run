@@ -4,11 +4,14 @@ import { z } from "zod";
 
 import { currentPlaybackBounds } from "../server/lib/cafe/playback-position.js";
 import { findScenario } from "../server/lib/cafe/scenario-store.js";
-import { playbackStateSchema } from "../shared/cafe/playback-position.js";
+import {
+  playbackFrame,
+  playbackStateSchema,
+} from "../shared/cafe/playback-position.js";
 
 export default defineAction({
   description:
-    "Read the current tab's view. In the café, returns the visible document and its documentHash, selected A and B, the saved site and the displayed run IDs and timeline position.",
+    "Read the current tab's view. In the café, returns the visible document and its documentHash, selected A and B, the saved site, and the displayed playback IDs, current timeline position, play state, and speed. A historical playback describes a stale result.",
   schema: z.object({}),
   http: false,
   readOnly: true,
@@ -53,14 +56,24 @@ export default defineAction({
             ? navigation.comparisonScenarioId
             : undefined)
       ) {
-        const { seekId: _, ...playback } = stored.data;
+        const {
+          seekId: _,
+          startedAtMs: __,
+          clockRevision: ___,
+          ...playback
+        } = stored.data;
         const bounds = await currentPlaybackBounds(owner, playback);
         if (
           bounds &&
           playback.second >= bounds.start &&
           playback.second <= bounds.end
-        )
-          screen.playback = playback;
+        ) {
+          screen.playback = {
+            ...playback,
+            ...playbackFrame(stored.data, bounds.end, Date.now()),
+          };
+          if (playback.historical) screen.playbackStatus = "stale";
+        }
       }
       if (!screen.playback) screen.playbackStatus = "unavailable";
     }
