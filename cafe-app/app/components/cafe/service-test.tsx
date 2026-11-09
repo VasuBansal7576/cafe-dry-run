@@ -377,6 +377,7 @@ export function ServiceTest({
       id="service-test"
       className="cafe-section"
       aria-labelledby="service-title"
+      tabIndex={-1}
     >
       <header>
         <p className="cafe-kicker">02 · Saturday rehearsal</p>

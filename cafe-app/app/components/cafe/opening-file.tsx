@@ -8,6 +8,7 @@ export function OpeningFile({ action }: { action: ReactNode }) {
       id="opening-file"
       className="cafe-opening"
       aria-labelledby="opening-title"
+      tabIndex={-1}
     >
       <div className="cafe-opening-spread">
         <div className="cafe-opening-copy">

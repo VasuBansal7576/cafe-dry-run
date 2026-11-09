@@ -3,12 +3,12 @@ import {
   useActionMutation,
   useActionQuery,
 } from "@agent-native/core/client/hooks";
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
 
 import { ComparisonWorkspace } from "@/components/cafe/comparison";
-import { OpeningFile } from "@/components/cafe/opening-file";
 import { scenarioVersion } from "@/components/cafe/finance-ledger";
+import { OpeningFile } from "@/components/cafe/opening-file";
 import { DemandForm, ShopForm } from "@/components/cafe/scenario-inputs";
 import { SiteMap } from "@/components/cafe/site-map";
 
@@ -18,14 +18,21 @@ import "@/components/cafe/cafe.css";
 
 export default function CafeRoute() {
   const query = useActionQuery("list-scenarios", {});
-  const { hash } = useLocation();
+  const location = useLocation();
+  const { hash } = location;
   const navigate = useNavigate();
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
   const selected = params.get("scenario");
   const comparisonId = params.get("compare");
   const scenario = selected
     ? query.data?.scenarios.find(({ id }) => id === selected)
     : query.data?.scenarios[0];
+  const hasScenario = !!scenario;
+  const workspace = useRef<HTMLDivElement>(null);
+  const lastFragment = useRef<{
+    location: typeof location;
+    id: string;
+  } | null>(null);
   const alternatives =
     query.data?.scenarios.filter(({ id }) => id !== scenario?.id) ?? [];
   const comparison = alternatives.find(({ id }) => id === comparisonId);
@@ -49,9 +56,18 @@ export default function CafeRoute() {
       ...decision.receipt.settings,
     });
   }
+  function selectScenario(id: string | null, replace = false) {
+    const next = new URLSearchParams(params);
+    if (id) next.set("scenario", id);
+    else next.delete("scenario");
+    if (!id || id === comparisonId) next.delete("compare");
+    void navigate(
+      { search: next.toString(), hash },
+      { replace, preventScrollReset: true },
+    );
+  }
   const create = useActionMutation("create-scenario", {
-    onSuccess: ({ scenario }) =>
-      setParams({ scenario: scenario.id }, { replace: true }),
+    onSuccess: ({ scenario }) => selectScenario(scenario.id, true),
   });
   const setSpot = useActionMutation("set-spot");
   useEffect(() => {
@@ -64,8 +80,33 @@ export default function CafeRoute() {
     );
   }, [scenario, selected, params, hash, navigate]);
 
+  // Scenario documents mount after the router's first scroll attempt.
+  useLayoutEffect(() => {
+    const { hash } = location;
+    const previous = lastFragment.current;
+    if (!hash || previous?.location === location) return;
+    let id: string;
+    try {
+      id = decodeURIComponent(hash.slice(1));
+    } catch {
+      return;
+    }
+    if (!hasScenario && id !== "opening-file") return;
+    const target = document.getElementById(id);
+    if (!target || !workspace.current?.contains(target)) return;
+    lastFragment.current = { location, id };
+    target.scrollIntoView();
+    const focused = document.activeElement;
+    if (
+      focused === document.body ||
+      (previous && previous.id !== id && focused?.id === previous.id)
+    ) {
+      target.focus({ preventScroll: true });
+    }
+  }, [hasScenario, location]);
+
   return (
-    <div className="cafe-workspace">
+    <div className="cafe-workspace" ref={workspace}>
       <header className="cafe-masthead">
         <span className="cafe-wordmark">
           <span className="cafe-mark" aria-hidden="true" /> DRY RUN
@@ -130,7 +171,7 @@ export default function CafeRoute() {
       {!query.isPending && !query.error && selected && !scenario && (
         <p role="status">
           Scenario unavailable.{" "}
-          <button className="cafe-link" onClick={() => setParams({})}>
+          <button className="cafe-link" onClick={() => selectScenario(null)}>
             Open your scenarios
           </button>
         </p>
@@ -145,7 +186,7 @@ export default function CafeRoute() {
           Scenario
           <select
             value={scenario?.id ?? ""}
-            onChange={(event) => setParams({ scenario: event.target.value })}
+            onChange={(event) => selectScenario(event.currentTarget.value)}
           >
             {query.data.scenarios.map(({ id, demand, label }) => (
               <option value={id} key={id}>

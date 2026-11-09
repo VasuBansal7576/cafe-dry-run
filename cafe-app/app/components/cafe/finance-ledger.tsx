@@ -682,6 +682,7 @@ export function FinanceLedger({
       id="cash-ledger"
       className="cafe-section"
       aria-labelledby="cash-title"
+      tabIndex={-1}
     >
       <header>
         <p className="cafe-kicker">03 · Opening assumptions</p>
