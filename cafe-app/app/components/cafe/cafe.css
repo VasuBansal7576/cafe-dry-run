@@ -52,7 +52,8 @@
 .cafe-workspace button {
   cursor: pointer;
 }
-.cafe-workspace button:is(:disabled, [aria-disabled="true"]) {
+.cafe-workspace button:is(:disabled, [aria-disabled="true"]),
+.cafe-customer-assumption input[aria-disabled="true"] {
   opacity: 0.62;
   cursor: default;
 }

@@ -4,7 +4,7 @@ import {
   useActionMutation,
   useActionQuery,
 } from "@agent-native/core/client/hooks";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { TAB_ID } from "@/lib/tab-id";
 
@@ -19,6 +19,11 @@ import {
   COMPARISON_REVIEW_CONTEXT,
   COMPARISON_REVIEW_PROMPT,
 } from "../../../shared/cafe/structured-review";
+import {
+  checkingRead,
+  pairCalculationScope,
+  useCalculationState,
+} from "./calculation-state";
 import {
   countFormat,
   FinanceLedger,
@@ -194,8 +199,9 @@ function ComparisonPlayback({
         <button
           type="button"
           className="cafe-secondary"
-          disabled={cashStale || disabled}
+          aria-disabled={cashStale || disabled}
           onClick={() => {
+            if (cashStale || disabled) return;
             const scope = {
               kind: "cafe-comparison-review",
               aId: a.service.scenarioId,
@@ -340,8 +346,11 @@ function ComparisonMetrics({
           <input
             type="checkbox"
             checked={savedCustomers.enabled}
-            disabled={disabled || cashStale}
-            onChange={(event) => setSavedCustomers(event.currentTarget.checked)}
+            aria-disabled={disabled || cashStale}
+            onChange={(event) => {
+              if (!disabled && !cashStale)
+                setSavedCustomers(event.currentTarget.checked);
+            }}
           />
           Count weekend customers who would have left but now place an order
         </label>
@@ -359,21 +368,39 @@ function PairedWorkspace({
   b,
   controls,
   compare,
+  scenarioRequirement,
   rerunAfterShopSave,
 }: {
   a: Scenario;
   b: Scenario;
   controls: ReactNode;
   compare: CompareMutation;
+  scenarioRequirement: string | null;
   rerunAfterShopSave: (scenario: Scenario) => void;
 }) {
   const saved = useActionQuery("get-comparison", { aId: a.id, bId: b.id });
+  const scope = pairCalculationScope(a.id, b.id);
+  const calculation = useCalculationState(scope);
   const compute = useActionMutation("compute-runway", {
+    mutationKey: [...scope, "compute-runway"],
     onError: () => void saved.refetch(),
   });
+  const requirementId = useId();
+  const compareButton = useRef<HTMLButtonElement>(null);
+  const checking = checkingRead(saved);
+  const comparisonError = !checking && saved.isError;
+  const readRequirement = checking
+    ? saved.data
+      ? "Checking the saved comparison…"
+      : "Loading the comparison…"
+    : comparisonError
+      ? (actionErrorMessage(saved.error) ?? "Could not verify the saved comparison.")
+      : scenarioRequirement ??
+        (!saved.data?.arrivalSource ? "Shared Saturday demand is unavailable." : null);
   const currentPair =
     compare.variables?.a.id === a.id && compare.variables?.b.id === b.id;
-  const busy = (currentPair && compare.isPending) || compute.isPending;
+  const busy = calculation.pending;
+  const actionsUnavailable = busy || !!readRequirement;
   const switchEdit = !!compute.variables?.comparison?.savedCustomers;
   const [draft, setDraft] = useState<{
     seed?: string;
@@ -387,7 +414,13 @@ function PairedWorkspace({
     ...draft,
   };
   function refresh(assumption?: boolean) {
-    if (busy || !decision || decision.serviceStale) return;
+    if (
+      readRequirement ||
+      calculation.inFlight() ||
+      !decision ||
+      decision.serviceStale
+    )
+      return;
     compute.mutate({
       comparison: {
         a: scenarioVersion(a),
@@ -401,7 +434,7 @@ function PairedWorkspace({
   }
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (busy || !saved.data?.arrivalSource) return;
+    if (readRequirement || calculation.inFlight()) return;
     compare.mutate({
       a: scenarioVersion(a),
       b: scenarioVersion(b),
@@ -424,7 +457,10 @@ function PairedWorkspace({
         </header>
         <div className="cafe-board cafe-service">
           {decision && (
-            <ComparisonPlayback decision={decision} disabled={busy} />
+            <ComparisonPlayback
+              decision={decision}
+              disabled={actionsUnavailable}
+            />
           )}
           {controls}
           {saved.data?.arrivalSource && (
@@ -493,8 +529,10 @@ function PairedWorkspace({
               />
             </label>
             <button
+              ref={compareButton}
               className="cafe-primary"
-              aria-disabled={busy || !saved.data?.arrivalSource}
+              aria-disabled={actionsUnavailable}
+              aria-describedby={readRequirement ? requirementId : undefined}
             >
               {currentPair && compare.isPending
                 ? "Comparing Saturdays…"
@@ -509,25 +547,33 @@ function PairedWorkspace({
                 "Could not compare these scenarios."}
             </p>
           )}
-          {saved.error && (
-            <p className="cafe-notice" role="alert">
-              {actionErrorMessage(saved.error) ??
-                "Could not load the saved comparison."}{" "}
-              <button
-                className="cafe-link"
-                onClick={() => void saved.refetch()}
-              >
-                Try again
-              </button>
-            </p>
+          {readRequirement && (
+            <div
+              className="cafe-notice"
+              role={comparisonError ? "alert" : "status"}
+            >
+              <p id={requirementId}>{readRequirement}</p>
+              {comparisonError && (
+                <button
+                  className="cafe-link"
+                  onClick={(event) => {
+                    if (document.activeElement === event.currentTarget)
+                      compareButton.current?.focus({ preventScroll: true });
+                    void saved.refetch();
+                  }}
+                >
+                  Try again
+                </button>
+              )}
+            </div>
           )}
-          {!decision && !saved.isPending && !saved.error && (
+          {!decision && !readRequirement && (
             <p>Compare to see the same customers pass through both shops.</p>
           )}
           {decision && (
             <ComparisonMetrics
               decision={decision}
-              disabled={busy}
+              disabled={actionsUnavailable}
               setSavedCustomers={refresh}
             />
           )}
@@ -553,9 +599,12 @@ function PairedWorkspace({
         decision={decision}
         pending={busy}
         serviceRequirement={
-          !decision || decision.serviceStale
-            ? "Run a fresh Saturday comparison to compute paired runway."
-            : null
+          comparisonError
+            ? "Could not verify the saved comparison. Retry in Service test."
+            : readRequirement ??
+              (!decision || decision.serviceStale
+                ? "Run a fresh Saturday comparison to compute paired runway."
+                : null)
         }
         error={switchEdit ? null : compute.error}
         onCompute={() => refresh()}
@@ -567,9 +616,11 @@ function PairedWorkspace({
 function SingleWorkspace({
   scenario,
   controls,
+  scenarioRequirement,
 }: {
   scenario: Scenario;
   controls: ReactNode;
+  scenarioRequirement: string | null;
 }) {
   const saved = useActionQuery("get-comparison", { aId: scenario.id });
   const latest = useActionQuery(
@@ -577,11 +628,16 @@ function SingleWorkspace({
     { id: scenario.id, includePlayback: "true" },
     { enabled: !!scenario.latestRunId },
   );
-  const compute = useActionMutation("compute-runway");
+  const mutationKey = ["cafe-calculation", "compute-runway", scenario.id];
+  const compute = useActionMutation("compute-runway", { mutationKey });
+  const calculation = useCalculationState(mutationKey);
   const previous = saved.data?.decision;
   const decision = previous ? staleAgainst(previous, scenario) : previous;
   const run = latest.data?.run;
+  const checkingRun = !!scenario.latestRunId && checkingRead(latest);
   const readyRun =
+    !scenarioRequirement &&
+    !checkingRun &&
     !latest.error &&
     run &&
     !run.stale &&
@@ -591,14 +647,20 @@ function SingleWorkspace({
       : null;
   const serviceRequirement = readyRun
     ? null
-    : latest.error
+    : !checkingRun && latest.isError
       ? "Could not verify the saved Saturday simulation. Try loading it again in Service test."
-      : scenario.latestRunId && latest.isPending
-        ? "Checking the saved Saturday simulation…"
-        : "Run a fresh Saturday simulation to compute runway.";
+      : scenarioRequirement ??
+        (checkingRun
+          ? "Checking the saved Saturday simulation…"
+          : "Run a fresh Saturday simulation to compute runway.");
   return (
     <>
-      <ServiceTest scenario={scenario} controls={controls} latest={latest} />
+      <ServiceTest
+        scenario={scenario}
+        controls={controls}
+        latest={latest}
+        scenarioRequirement={scenarioRequirement}
+      />
       {saved.error && (
         <p className="cafe-notice" role="alert">
           {actionErrorMessage(saved.error) ?? "Could not load saved runway."}
@@ -607,11 +669,11 @@ function SingleWorkspace({
       <FinanceLedger
         a={scenario}
         decision={decision}
-        pending={compute.isPending}
+        pending={calculation.pending}
         serviceRequirement={serviceRequirement}
         error={compute.error}
         onCompute={() => {
-          if (readyRun)
+          if (readyRun && !calculation.inFlight())
             compute.mutate({
               ...scenarioVersion(scenario),
               runId: readyRun.id,
@@ -628,6 +690,7 @@ export function ComparisonWorkspace({
   options,
   select,
   compare,
+  scenarioRequirement,
   rerunAfterShopSave,
 }: {
   a: Scenario;
@@ -635,6 +698,7 @@ export function ComparisonWorkspace({
   options: Scenario[];
   select: (id: string | null) => void;
   compare: CompareMutation;
+  scenarioRequirement: string | null;
   rerunAfterShopSave: (scenario: Scenario) => void;
 }) {
   const copy = useActionMutation("configure-shop", {
@@ -758,9 +822,14 @@ export function ComparisonWorkspace({
       b={b}
       controls={controls}
       compare={compare}
+      scenarioRequirement={scenarioRequirement}
       rerunAfterShopSave={rerunAfterShopSave}
     />
   ) : (
-    <SingleWorkspace scenario={a} controls={controls} />
+    <SingleWorkspace
+      scenario={a}
+      controls={controls}
+      scenarioRequirement={scenarioRequirement}
+    />
   );
 }

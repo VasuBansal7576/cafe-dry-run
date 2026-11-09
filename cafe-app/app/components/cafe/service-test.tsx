@@ -8,6 +8,7 @@ import {
 import {
   useEffect,
   useEffectEvent,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -25,6 +26,7 @@ import {
 } from "../../../server/lib/cafe/scenario";
 import type { Scenario } from "../../../server/lib/cafe/scenario-store";
 import type { ServiceRun } from "../../../server/lib/cafe/service-run";
+import { useCalculationState } from "./calculation-state";
 import { Stamp } from "./provenance-stamp";
 import { formatClock } from "./scenario-inputs";
 
@@ -462,12 +464,17 @@ export function ServiceTest({
   scenario,
   controls,
   latest,
+  scenarioRequirement,
 }: {
   scenario: Scenario;
   controls?: ReactNode;
   latest: ReturnType<typeof useActionQuery<undefined, "get-simulation">>;
+  scenarioRequirement: string | null;
 }) {
-  const simulate = useActionMutation("run-simulation");
+  const mutationKey = ["cafe-calculation", "run-simulation", scenario.id];
+  const simulate = useActionMutation("run-simulation", { mutationKey });
+  const calculation = useCalculationState(mutationKey);
+  const requirementId = useId();
   const run = latest.data?.run;
   const stale =
     !!run && (run.stale || run.scenarioRevision !== scenario.revision);
@@ -476,7 +483,7 @@ export function ServiceTest({
   const [level, setLevel] = useState<(typeof demandLevels)[number]>("base");
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (simulate.isPending) return;
+    if (scenarioRequirement || calculation.inFlight()) return;
     simulate.mutate({
       id: scenario.id,
       expectedRevision: scenario.revision,
@@ -553,14 +560,23 @@ export function ServiceTest({
               onChange={(event) => setCount(event.target.value)}
             />
           </label>
-          <button className="cafe-primary" aria-disabled={simulate.isPending}>
-            {simulate.isPending
+          <button
+            className="cafe-primary"
+            aria-disabled={calculation.pending || !!scenarioRequirement}
+            aria-describedby={scenarioRequirement ? requirementId : undefined}
+          >
+            {calculation.pending
               ? "Running Saturday…"
               : stale
                 ? "Rerun simulation"
                 : "Run simulation"}
           </button>
         </form>
+        {scenarioRequirement && (
+          <p id={requirementId} role="status">
+            {scenarioRequirement}
+          </p>
+        )}
         {simulate.error && (
           <p className="cafe-notice" role="alert">
             {actionErrorMessage(simulate.error) ??

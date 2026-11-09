@@ -6,6 +6,10 @@ import {
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
 
+import {
+  checkingRead,
+  pairCalculationScope,
+} from "@/components/cafe/calculation-state";
 import { ComparisonWorkspace } from "@/components/cafe/comparison";
 import { scenarioVersion } from "@/components/cafe/finance-ledger";
 import { OpeningFile } from "@/components/cafe/opening-file";
@@ -62,7 +66,17 @@ export default function CafeRoute() {
     { enabled: !!scenario && !!comparison },
   );
   const demandScenario = comparison ? pair.data?.arrivalSource : scenario;
-  const compare = useActionMutation("compare-scenarios");
+  const compare = useActionMutation("compare-scenarios", {
+    mutationKey: [
+      ...pairCalculationScope(scenario?.id, comparison?.id),
+      "compare-scenarios",
+    ],
+  });
+  const scenarioRequirement = checkingRead(query)
+    ? "Checking the saved scenarios…"
+    : query.isError
+      ? "Could not verify the saved scenarios. Retry near the opening file."
+      : null;
   async function rerunAfterShopSave(updated: Scenario) {
     const decision = pair.data?.decision;
     if (!scenario || !comparison || !decision) return;
@@ -355,6 +369,7 @@ export default function CafeRoute() {
             b={comparison}
             options={alternatives}
             compare={compare}
+            scenarioRequirement={scenarioRequirement}
             rerunAfterShopSave={rerunAfterShopSave}
             select={(id) => {
               const next = new URLSearchParams(params);
