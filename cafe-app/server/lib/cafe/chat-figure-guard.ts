@@ -38,7 +38,9 @@ const numberWord =
 const writtenDate =
   /\b(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+(?:first|second)\b/iu;
 const implicitNumber =
-  /\b(?:couple of|(?:first|second)[ -]place|(?:a|an) (?:second|minute|hour|day|week|month|year|rupee)(?=\s+(?:of|faster|slower|less|more|off|per|each|longer|shorter)\b|[.,;!?)\n]|$)|a k rupees|doubl(?:e|ed)|tripl(?:e|ed))\b/iu;
+  /\b(?:couple of|(?:first|second)[ -]place|(?:a|an) (?:second|minute|hour|day|week|month|year|rupee)(?=\s+(?:of|faster|slower|less|more|off|per|each|longer|shorter)\b|[.,;!?)\n]|$)|a k rupees|double(?![- ]check\b)|doubled|tripl(?:e|ed))\b/iu;
+const approximateMeasure =
+  /\b(?:(?:several|a few|few)\s+(?:seconds|minutes|hours|days|weeks|months|years|rupees|orders|customers)|(?:under|over|about|within|less than|more than|at least|at most|around)\s+(?:a|an)\s+(?:second|minute|hour|day|week|month|year|rupee|order|customer))\b/iu;
 
 function object(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -71,6 +73,40 @@ function resultPayload(
     : undefined;
 }
 
+function visibleScenarioHeaders(content: string) {
+  if (!content.startsWith('{\n  "scenarios": [\n')) return [];
+  // Only authorize complete quote records. The raw shop or finance fields can be clipped later in the same scenario.
+  const headers = [
+    ...content.matchAll(
+      /^ {4}\{\n((?: {6}"(?:id|revision|financeRevision|label|latestRunId)": [^\n]+,\n){5}) {6}"chatFigures": \{\n/gm,
+    ),
+  ];
+  return headers.flatMap((match, index) => {
+    const scenario = object(
+      parseJson("{" + match[1]!.trimEnd().slice(0, -1) + "}"),
+    );
+    if (!scenario) return [];
+    const remainder = content.slice(
+      match.index + match[0].length,
+      headers[index + 1]?.index,
+    );
+    const end = remainder.search(/^ {6}\},?$/m);
+    const figures = end < 0 ? remainder : remainder.slice(0, end);
+    const chatFigures = Object.fromEntries(
+      [
+        ...figures.matchAll(
+          /^ {8}("(?:[^"\\]|\\.)*"): (\{\n[\s\S]*?^ {8}\})(?=,?$)/gm,
+        ),
+      ].flatMap(([, key, figure]) => {
+        const name = parseJson(key!);
+        const value = parseJson(figure!);
+        return typeof name === "string" && value ? [[name, value]] : [];
+      }),
+    );
+    return [{ ...scenario, chatFigures }];
+  });
+}
+
 type ScenarioVersion = ChatFigureBasis["scenarios"][number];
 type QuoteSource = { index: number; basis: ChatFigureBasis; quotes: string[] };
 
@@ -90,7 +126,7 @@ function turnQuoteSources({
   const sources: QuoteSource[] = [];
   const scenarios = new Map<string, ScenarioVersion>();
   const assumptionRevisions = new Map<string, number>();
-  const latestRuns = new Map<string, string>();
+  const latestRuns = new Map<string, string | null>();
   const staleRuns = new Set<string>();
   const staleReceipts = new Set<string>();
   const unknownEdits: { index: number; id?: string }[] = [];
@@ -122,6 +158,9 @@ function turnQuoteSources({
       parsed?.scenario,
       parsed?.arrivalSource,
       ...(Array.isArray(parsed?.scenarios) ? parsed.scenarios : []),
+      ...(!parsed && name === "list-scenarios"
+        ? visibleScenarioHeaders(content)
+        : []),
     ];
     for (const raw of returnedScenarios) {
       const scenario = object(raw);
@@ -137,6 +176,13 @@ function turnQuoteSources({
           ? { financeRevision: scenario.financeRevision }
           : {}),
       };
+      if (
+        (scenario.latestRunId === null ||
+          typeof scenario.latestRunId === "string") &&
+        scenario.revision >= (scenarios.get(scenario.id)?.revision ?? -1)
+      ) {
+        latestRuns.set(scenario.id, scenario.latestRunId);
+      }
       observeScenario(version);
       const quotes = quoteTexts(scenario.chatFigures);
       if (typeof scenario.label === "string") {
@@ -144,6 +190,14 @@ function turnQuoteSources({
           "scenario " + JSON.stringify(scenario.label),
           "Scenario " + JSON.stringify(scenario.label),
         );
+        if (/^\p{L}+(?: \p{L}+){0,4} \d{1,2}$/u.test(scenario.label)) {
+          for (const verb of ["choose", "prefer", "recommend", "select"]) {
+            quotes.push(
+              `${verb} ${scenario.label}`,
+              `${verb[0]!.toUpperCase()}${verb.slice(1)} ${scenario.label}`,
+            );
+          }
+        }
       }
       if (quotes.length)
         sources.push({ index, basis: { scenarios: [version] }, quotes });
@@ -182,6 +236,8 @@ function turnQuoteSources({
     }
     if (name === "run-simulation" && basis.scenarios[0] && basis.runIds?.[0]) {
       latestRuns.set(basis.scenarios[0].id, basis.runIds[0]);
+    } else if (basis.latestRun) {
+      latestRuns.set(basis.latestRun.scenarioId, basis.latestRun.id);
     }
     sources.push({ index, basis, quotes: quoteTexts(payload?.chatFigures) });
   }
@@ -190,7 +246,8 @@ function turnQuoteSources({
     if (basis.runIds?.some((id) => staleRuns.has(id))) return false;
     if (basis.latestRun) {
       const latestId = latestRuns.get(basis.latestRun.scenarioId);
-      if (latestId && latestId !== basis.latestRun.id) return false;
+      if (latestId !== undefined && latestId !== basis.latestRun.id)
+        return false;
     }
     if (
       basis.assumption &&
@@ -279,11 +336,14 @@ function hasUnsupportedNumber(
       .sort((a, b) => b.length - a.length)
       .map((quote) => {
         const literal = escapeRegex(quote);
+        const clauseEnd = "(?=[ \\t*_\\x60~]*(?:[.!?,;:()\\n]|$))";
+        if (/^(?:choose|prefer|recommend|select) .+ \d{1,2}$/iu.test(quote))
+          return literal + clauseEnd;
         if (!/^(?:"|From ")/.test(quote)) return literal;
         return (
           "(?<=^|[.!?\\n][ \\t]*|^[ \\t]*|[\\n][ \\t]*)(?:[*_\\x60~]*)" +
           literal +
-          "(?=[ \\t*_\\x60~]*(?:[.!?,;:()\\n]|$))"
+          clauseEnd
         );
       })
       .join("|");
@@ -312,7 +372,8 @@ function hasUnsupportedNumber(
     /[\p{N}\p{Sc}%]/u.test(remainder) ||
     numberWord.test(remainder) ||
     writtenDate.test(remainder) ||
-    implicitNumber.test(remainder)
+    implicitNumber.test(remainder) ||
+    approximateMeasure.test(remainder)
   );
 }
 

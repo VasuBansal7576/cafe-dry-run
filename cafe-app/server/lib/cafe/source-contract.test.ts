@@ -1,4 +1,7 @@
-import type { ActionRunContext } from "@agent-native/core/action";
+import {
+  resolveToolMaxResultChars,
+  type ActionRunContext,
+} from "@agent-native/core/action";
 import type { AgentEngine } from "@agent-native/core/agent/engine";
 import { closeDbExec } from "@agent-native/core/db";
 import {
@@ -46,6 +49,21 @@ const versions = (scenario: Scenario) => ({
   ...serviceVersion(scenario),
   expectedFinanceRevision: scenario.financeRevision,
 });
+const tool = (name: string, value: unknown) => ({
+  name,
+  isError: false,
+  content: JSON.stringify(value, null, 2),
+});
+const check = (text: string, toolResults: ReturnType<typeof tool>[]) =>
+  guardCafeFigures({
+    messages: [],
+    assistantContent: [],
+    toolCalls: [],
+    retryCount: 0,
+    executionMode: "act",
+    text,
+    toolResults,
+  });
 
 beforeAll(() => migrate({}));
 afterAll(() => closeDbExec());
@@ -164,25 +182,10 @@ it("revokes old quotes after a shared input edit while keeping quotes across unr
     owner,
   );
   const quote = comparison.chatFigures!["scenarioA.waitP50"]!.text;
-  const tool = (name: string, value: unknown) => ({
-    name,
-    isError: false,
-    content: JSON.stringify(value),
-  });
   const prefix = [
     tool("compare-scenarios", comparison),
     tool("configure-shop", unrelated),
   ];
-  const check = (text: string, toolResults: ReturnType<typeof tool>[]) =>
-    guardCafeFigures({
-      messages: [],
-      assistantContent: [],
-      toolCalls: [],
-      retryCount: 0,
-      executionMode: "act",
-      text,
-      toolResults,
-    });
   expect(await check(quote, prefix)).toBeUndefined();
   expect(await check(`The grinder p90 is ${quote}.`, prefix)).toBeDefined();
   expect(await check(`- **${quote}**`, prefix)).toBeUndefined();
@@ -216,6 +219,80 @@ it("revokes old quotes after a shared input edit while keeping quotes across unr
     await check("The median wait is 55 seconds.", [
       tool("list-scenarios", { scenarios: [a] }),
     ]),
+  ).toBeDefined();
+});
+
+it("revokes a solo runway when a scenario read reveals a later service run without a revision edit", async () => {
+  const { scenario } = await createScenario.run(
+    { label: "Freshness test" },
+    owner,
+  );
+  const run = await runSimulation.run(
+    { ...serviceVersion(scenario), ...settings },
+    owner,
+  );
+  const runway = await computeRunway.run(
+    { ...versions(scenario), runId: run.id },
+    owner,
+  );
+  const cash = runway.chatFigures!["scenarioA.monthlyCash"]!.text;
+  const original = tool("compute-runway", runway);
+  expect(await check(cash, [original])).toBeUndefined();
+  const next = await runSimulation.run(
+    { ...serviceVersion(scenario), ...settings, seed: 43 },
+    owner,
+  );
+  const listed = await listScenarios.run({}, owner);
+  expect(listed.scenarios.find(({ id }) => id === scenario.id)).toMatchObject({
+    revision: scenario.revision,
+    latestRunId: next.id,
+  });
+  expect(
+    (await getComparison.run({ aId: scenario.id }, owner)).decision?.cashStale,
+  ).toBe(true);
+  expect(
+    await check(cash, [original, tool("list-scenarios", listed)]),
+  ).toBeDefined();
+});
+
+it("keeps complete scenario quotes visible within Agent-Native's real list cutoff", async () => {
+  const listOwner = { ...owner, userEmail: "list-cutoff@example.invalid" };
+  for (let i = 0; i < 14; i++) {
+    await createScenario.run(
+      { label: `Survey scenario ${i}`, baseHourlyDemand: 75 },
+      listOwner,
+    );
+  }
+  const listed = await listScenarios.run({}, listOwner);
+  const result = tool("list-scenarios", listed);
+  const max = resolveToolMaxResultChars(listScenarios);
+  expect(result.content.length).toBeGreaterThan(max);
+  const clipped = result.content.slice(0, max);
+  const complete = listed.scenarios.filter(({ chatFigures }) => {
+    const serialized = JSON.stringify(
+      chatFigures!["demand.base"],
+      null,
+      2,
+    ).replace(/\n/g, "\n        ");
+    return clipped.includes(serialized);
+  });
+  expect(complete.length).toBeGreaterThan(0);
+  expect(complete.length).toBeLessThan(listed.scenarios.length);
+  const shown = { ...result, content: clipped + "\n\n...[truncated]" };
+  for (const { chatFigures } of complete) {
+    expect(
+      await check(`${chatFigures!["demand.base"]!.text}.`, [shown]),
+    ).toBeUndefined();
+  }
+  const hidden = listed.scenarios.find(
+    (scenario) => !complete.includes(scenario),
+  )!;
+  expect(
+    await check(`${hidden.chatFigures!["demand.base"]!.text}.`, [shown]),
+  ).toBeDefined();
+  expect(await check(`Choose ${complete[0]!.label}.`, [shown])).toBeUndefined();
+  expect(
+    await check(`Choose ${complete[0]!.label} minutes sooner.`, [shown]),
   ).toBeDefined();
 });
 
@@ -262,6 +339,20 @@ it("returns quote-ready service and cash figures without changing the underlying
     owner,
   );
   const scope = { aId: a.id, bId: b.id };
+  const actionResult = [tool("compare-scenarios", comparison)];
+  for (const [key, { text }] of Object.entries(comparison.chatFigures!)) {
+    if (key.startsWith("bMinusA."))
+      expect(text).toMatch(/^From "Baseline" to "Cover barista", /);
+  }
+  for (const { text } of Object.values(comparison.chatFigures!).filter(
+    ({ text }) => /\d/.test(text),
+  )) {
+    expect(await check(`${text}.`, actionResult), text).toBeUndefined();
+    expect(
+      await check(`For the grinder, revenue is ${text}.`, actionResult),
+      text,
+    ).toBeDefined();
+  }
   expect(comparison.chatFigures?.["scenarioA.waitP50"]).toEqual(
     run.chatFigures.waitP50,
   );

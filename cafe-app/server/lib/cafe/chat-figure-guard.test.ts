@@ -76,6 +76,8 @@ it.each([
   "The median wait is 215.17 seconds per order.",
   "The grinder saves a couple of minutes.",
   "The grinder saves a minute.",
+  "The grinder takes several minutes off the wait.",
+  "The median wait is under a minute in every scenario.",
   "The median wait is p50 seconds.",
   "The cash delta is ₹1,23,456.70 per month.",
   "The cash delta is -$1,23,456.70 per month.",
@@ -92,6 +94,7 @@ it.each([
 it("accepts ordinary qualitative references to the better one", async () => {
   expect(await check("The grinder is the better one.")).toBeUndefined();
   expect(await check("I would add a second barista.")).toBeUndefined();
+  expect(await check("I can double-check the comparison.")).toBeUndefined();
 });
 
 it("uses successful current action results, never numbers from the founder or stale payloads", async () => {

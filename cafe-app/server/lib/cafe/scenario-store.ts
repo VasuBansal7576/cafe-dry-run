@@ -49,6 +49,7 @@ export const scenarioSchema = z.object({
   revision: z.number().int().nonnegative(),
   financeRevision: z.number().int().nonnegative(),
   label: scenarioLabel,
+  latestRunId: z.string().uuid().nullable(),
   chatFigures: chatFiguresSchema.optional(),
   parentId: z.string().uuid().nullable(),
   finance: financeSchema,
@@ -57,7 +58,6 @@ export const scenarioSchema = z.object({
   baseHourlyDemand: hourlyRateSchema,
   demand: demandSchema,
   shop: shopSchema,
-  latestRunId: z.string().uuid().nullable(),
 });
 export type Scenario = z.infer<typeof scenarioSchema>;
 
