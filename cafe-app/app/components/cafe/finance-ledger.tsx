@@ -324,15 +324,37 @@ function CashChart({
     ...a.map(({ value }) => value),
     ...(b?.map(({ value }) => value) ?? []),
   );
-  const x = (index: number) => 20 + index * 47;
-  const y = (value: number) => 18 + ((max - value) / (max - min || 1)) * 120;
+  const top = 18;
+  const bottom = 138;
+  const x = (index: number) => 20 + index * 45;
+  const y = (value: number) =>
+    top + ((max - value) / (max - min || 1)) * (bottom - top);
   const labelX = (position: number) => `${(position / 390) * 100}%`;
   const labelY = (position: number) => `${(position / 164) * 100}%`;
-  const labelColumn = labelX(309);
-  const aEnd = y(a[a.length - 1]!.value);
-  const bEnd = b ? y(b[b.length - 1]!.value) : null;
+  const endX = x(a.length - 1);
+  const labelColumn = 309;
   const zeroY = y(0);
-  const endLabelsOverlap = bEnd !== null && Math.abs(aEnd - bEnd) < 16;
+  const anchors: { text: string; anchor: number; series?: "a" | "b" }[] = [
+    { text: "₹0 cash", anchor: zeroY },
+    { text: "A", anchor: y(a[a.length - 1]!.value), series: "a" },
+  ];
+  if (b) {
+    anchors.push({ text: "B", anchor: y(b[b.length - 1]!.value), series: "b" });
+  }
+  const spacing = 24;
+  let previous = top - spacing;
+  const labels = anchors
+    .sort((first, second) => first.anchor - second.anchor)
+    .map((label, index) => {
+      const remaining = anchors.length - 1 - index;
+      const row = Math.min(
+        Math.max(label.anchor, previous + spacing),
+        bottom - remaining * spacing,
+      );
+      previous = row;
+      return { ...label, row };
+    });
+  const coincident = b?.every(({ value }, index) => value === a[index]?.value);
   const points = (figures: typeof a) =>
     figures.map(({ value }, index) => `${x(index)},${y(value)}`).join(" ");
   return (
@@ -357,38 +379,55 @@ function CashChart({
           {caseLabels[demandLevel]} case closing cash projection. Exact values
           follow.
         </title>
-        <svg viewBox="0 0 390 164" width="100%" height="100%">
+        <svg
+          viewBox="0 0 390 164"
+          width="100%"
+          height="100%"
+          preserveAspectRatio="none"
+        >
           <line
             x1={x(0)}
             y1={zeroY}
-            x2={x(a.length - 1)}
+            x2={endX}
             y2={zeroY}
             className="cafe-zero-line"
           />
           <polyline points={points(a)} className="cafe-chart-a" />
-          {b && <polyline points={points(b)} className="cafe-chart-b" />}
+          {b && (
+            <polyline
+              points={points(b)}
+              className="cafe-chart-b"
+              strokeDasharray={coincident ? "4 4" : undefined}
+            />
+          )}
+          {labels
+            .filter(({ anchor, row }) => anchor !== row)
+            .map(({ text, series, anchor, row }) => (
+              <line
+                key={text}
+                className={
+                  series
+                    ? `cafe-chart-${series} cafe-chart-leader`
+                    : "cafe-zero-line"
+                }
+                x1={endX}
+                y1={anchor}
+                x2={labelColumn - 4}
+                y2={row}
+              />
+            ))}
         </svg>
-        <text x={labelColumn} y={labelY(zeroY)} dy="4">
-          ₹0 cash
-        </text>
-        <text
-          className="cafe-chart-label-a"
-          x={labelColumn}
-          y={labelY(aEnd)}
-          dy={endLabelsOverlap || Math.abs(aEnd - zeroY) < 16 ? -8 : 4}
-        >
-          A
-        </text>
-        {bEnd !== null && (
+        {labels.map(({ text, series, row }) => (
           <text
-            className="cafe-chart-label-b"
-            x={labelColumn}
-            y={labelY(bEnd)}
-            dy={endLabelsOverlap || Math.abs(bEnd - zeroY) < 16 ? 16 : 4}
+            key={text}
+            className={series ? `cafe-chart-label-${series}` : undefined}
+            x={labelX(labelColumn)}
+            y={labelY(row)}
+            dominantBaseline="central"
           >
-            B
+            {text}
           </text>
-        )}
+        ))}
         {a.map((_, index) => (
           <text
             key={index}

@@ -730,6 +730,9 @@
 .cafe-chart-b {
   stroke: #a43615;
 }
+.cafe-chart-leader {
+  stroke-width: 1.5;
+}
 .cafe-chart-label-a,
 .cafe-chart-label-b {
   font-weight: bold;
