@@ -230,6 +230,37 @@ describe("simulateSaturday", () => {
     ]);
   });
 
+  it("keeps the longer shift free for long jobs regardless of worker order", () => {
+    const longer = { id: "longer", shifts: [{ startsAt: 0, endsAt: 300 }] };
+    const shorter = { id: "shorter", shifts: [{ startsAt: 0, endsAt: 120 }] };
+    const timedShop: Shop = {
+      ...shop,
+      menu: [...shop.menu, { id: "tea", tasks: [{ id: "brew", staffSeconds: 30 }] }],
+      patienceSeconds: 5,
+    };
+    const saturday = {
+      hours: { opensAt: 0, closesAt: 300 },
+      arrivals: [arrival("quick", 100), arrival("slow", 100, "tea")],
+    };
+    const first = simulateSaturday({ ...timedShop, workers: [longer, shorter] }, saturday);
+    const second = simulateSaturday({ ...timedShop, workers: [shorter, longer] }, saturday);
+    expect(starts(first.timeline)).toEqual([
+      ["quick", "serve", 100, "shorter"],
+      ["slow", "brew", 100, "longer"],
+    ]);
+    expect(second.timeline).toEqual(first.timeline);
+    expect(first.stats).toMatchObject({ ordersServed: 2, customersLost: 0, waitP90Seconds: 0 });
+    expect(second.stats).toMatchObject({ ordersServed: 2, customersLost: 0, waitP90Seconds: 0 });
+  });
+
+  it("uses worker IDs to break a tie between shifts ending at the same time", () => {
+    const result = simulateSaturday(
+      { ...shop, workers: [{ ...worker, id: "second" }, worker] },
+      { hours, arrivals: [arrival("a", 0)] },
+    );
+    expect(starts(result.timeline)).toEqual([["a", "serve", 0, "first"]]);
+  });
+
   it("applies patience to all queue time and excludes time spent on tasks", () => {
     const result = simulateSaturday(
       {

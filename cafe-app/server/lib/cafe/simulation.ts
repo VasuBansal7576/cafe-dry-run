@@ -318,14 +318,24 @@ function day(
   let running: Running[] = [];
 
   function availableWorker(staffSeconds: number, time: number) {
-    return workers.find(
-      (worker) =>
-        worker.busyUntil <= time &&
-        worker.shifts.some(
-          ({ startsAt, endsAt }) =>
-            startsAt <= time && time <= endsAt - staffSeconds,
-        ),
-    );
+    let available: (typeof workers)[number] | undefined;
+    let earliestEnd = Infinity;
+    for (const worker of workers) {
+      if (worker.busyUntil > time) continue;
+      const shift = worker.shifts.find(
+        ({ startsAt, endsAt }) =>
+          startsAt <= time && time <= endsAt - staffSeconds,
+      );
+      if (
+        shift &&
+        (!available || shift.endsAt < earliestEnd ||
+          (shift.endsAt === earliestEnd && worker.id < available.id))
+      ) {
+        available = worker;
+        earliestEnd = shift.endsAt;
+      }
+    }
+    return available;
   }
 
   function availableMachine(machine: Machine, time: number) {
