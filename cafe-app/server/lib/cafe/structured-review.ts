@@ -229,9 +229,13 @@ function renderReview(evidence: ReviewEvidence, choice: ReviewChoice) {
     const { text, tag } = evidence.figures[key]!;
     return `- ${text}${tag ? ` (${tag})` : ""}`;
   });
-  return [recommendation, figures.join("\n"), reversalText[evidence.reversal]].join(
-    "\n\n",
-  );
+  // The stock transcript follows the end of a new reply.
+  return [
+    figures.join("\n"),
+    "## Recommendation",
+    recommendation,
+    reversalText[evidence.reversal],
+  ].join("\n\n");
 }
 
 export const guardStructuredReview: AgentLoopFinalResponseGuard = async (
