@@ -12,7 +12,7 @@ function DemandForm({ scenario }: { scenario: { id: string; baseHourlyDemand: nu
   }
   return <form onSubmit={save} className="mt-6 flex max-w-sm flex-col gap-3">
     <label htmlFor="base-demand">Base customers per hour <span className="text-sm">Illustrative</span></label>
-    <input id="base-demand" className="rounded border px-3 py-2 text-black" type="number" min="0" max="1000" step="1" value={demand} onChange={(event) => setDemand(event.target.value)} required />
+    <input id="base-demand" className="rounded border border-[#59534c] bg-[#393530] px-3 py-2 text-[#f7f0e3]" type="number" min="0" max="1000" step="1" value={demand} onChange={(event) => setDemand(event.target.value)} required />
     <button className="rounded bg-orange-600 px-4 py-3 text-white disabled:opacity-50" disabled={update.isPending}>Save demand</button>
     {update.error && <p role="alert">{actionErrorMessage(update.error) ?? "Could not save demand."}</p>}
   </form>;
