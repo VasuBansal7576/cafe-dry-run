@@ -95,7 +95,13 @@
 }
 
 [data-cafe-layout] .agent-sidebar-panel .agentkit-editing-row {
-  min-block-size: 44px;
+  min-block-size: 45px;
+}
+
+[data-cafe-layout] .agent-sidebar-panel .agentkit-editing-row button,
+body:has([data-cafe-layout] .agent-sidebar-panel[data-agent-sidebar-state="open"])
+  [data-agent-composer-effort-level] {
+  min-block-size: 45px;
 }
 
 [data-cafe-layout] .agent-sidebar-panel
