@@ -15,3 +15,5 @@ Run `founder` to repeat the same seed and compare the full stored timeline and r
 ## Gotchas
 
 Keep counts at the playhead separate from totals. A static result or same seed alone gives no playback or determinism proof.
+
+To verify agent seeking, open a fresh result on Service test and call `view-screen`, then `set-playback-position` with the returned run identity and the founder’s clock time. The same action publishes founder slider changes. Check the live slider, the current tab’s saved position, and an untouched second tab. A stale result stays playable as history in the UI and is unavailable to this agent action.

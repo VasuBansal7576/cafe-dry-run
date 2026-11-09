@@ -1,10 +1,12 @@
 import { sendToAgentChat } from "@agent-native/core/client/agent-chat";
 import {
   actionErrorMessage,
+  callAction,
+  readClientAppState,
   useActionMutation,
   useActionQuery,
-  writeClientAppState,
 } from "@agent-native/core/client/hooks";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useEffect,
   useEffectEvent,
@@ -26,12 +28,19 @@ import {
 } from "../../../server/lib/cafe/scenario";
 import type { Scenario } from "../../../server/lib/cafe/scenario-store";
 import type { ServiceRun } from "../../../server/lib/cafe/service-run";
+import {
+  playbackBounds,
+  playbackStateSchema,
+  samePlayback,
+  type PlaybackIdentity,
+} from "../../../shared/cafe/playback-position";
 import { useCalculationState } from "./calculation-state";
 import { Stamp } from "./provenance-stamp";
 import { formatClock } from "./scenario-inputs";
 
 const playbackSpeeds = [30, 120, 600] as const;
 const playbackSyncInterval = 1000;
+const playbackStateKey = `cafe-playback:${TAB_ID}`;
 const number = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 1 });
 const comparisonNumber = new Intl.NumberFormat("en-IN", {
   maximumFractionDigits: 2,
@@ -208,16 +217,40 @@ export function Playback({
 }) {
   const [{ run }] = boards;
   const { summary, playback } = run;
-  const start = summary.hours.opensAt;
-  const end = Math.ceil(
-    Math.max(
-      summary.hours.closesAt,
-      ...boards.map(
-        ({ run: { playback } }) =>
-          playback.timeline[playback.timeline.length - 1]?.at ?? 0,
-      ),
+  const { start, end } = playbackBounds(
+    summary.hours,
+    boards.map(
+      ({
+        run: {
+          playback: { timeline },
+        },
+      }) => timeline[timeline.length - 1]?.at ?? 0,
     ),
   );
+  const other = boards[1]?.run;
+  const identity: PlaybackIdentity = {
+    scenarioId: run.scenarioId,
+    runId: run.id,
+    ...(receiptId && other
+      ? {
+          receiptId,
+          comparisonScenarioId: other.scenarioId,
+          comparisonRunId: other.id,
+        }
+      : {}),
+  };
+  const queryClient = useQueryClient();
+  const savedPosition = useQuery({
+    queryKey: ["app-state", playbackStateKey],
+    queryFn: async ({ signal }) => {
+      const stored = playbackStateSchema.safeParse(
+        await readClientAppState(playbackStateKey, { signal }),
+      );
+      return stored.success ? stored.data : null;
+    },
+    enabled: !stale,
+    staleTime: Infinity,
+  });
   const [time, setTime] = useState(
     playback.timeline.length ? Math.min(end, start + 25 * 60) : start,
   );
@@ -238,44 +271,91 @@ export function Playback({
   useEffect(() => {
     if (time >= end) setPlaying(false);
   }, [end, time]);
-  const lastPublished = useRef<string | null>(null);
-  const publishPosition = useEffectEvent(() => {
-    const position = `${receiptId ?? run.id}:${second}`;
-    if (lastPublished.current === position) return;
-    lastPublished.current = position;
-    void writeClientAppState(
-      `cafe-playback:${TAB_ID}`,
-      {
-        scenarioId: run.scenarioId,
-        runId: run.id,
-        second,
-        ...(receiptId
-          ? {
-              receiptId,
-              comparisonScenarioId: boards[1]?.run.scenarioId,
-              comparisonRunId: boards[1]?.run.id,
-            }
-          : {}),
-      },
-      { requestSource: TAB_ID },
-    ).catch(() => {
-      if (lastPublished.current === position) lastPublished.current = null;
-    });
+  const synced = useRef({
+    ready: false,
+    seekId: null as string | null,
+    applied: null as string | null,
+    remoteSecond: null as number | null,
+  });
+  const pending = useRef<{ position: string; queued: boolean } | null>(null);
+  const positionKey = (value: number) => `${receiptId ?? run.id}:${value}`;
+  const applySavedPosition = useEffectEvent(() => {
+    if (savedPosition.data === undefined || stale) return;
+    const stored = savedPosition.data;
+    const state = synced.current;
+    const seekId = stored?.seekId ?? null;
+    const changed = !state.ready || state.seekId !== seekId;
+    state.ready = true;
+    state.seekId = seekId;
+    if (
+      changed &&
+      stored &&
+      samePlayback(stored, identity) &&
+      stored.second >= start &&
+      stored.second <= end
+    ) {
+      state.applied = positionKey(stored.second);
+      state.remoteSecond = stored.second;
+      setTime(stored.second);
+      setPlaying(false);
+    }
+  });
+  useEffect(() => applySavedPosition(), [savedPosition.data, stale]);
+
+  const publishPosition = useEffectEvent((): void => {
+    const state = synced.current;
+    if (!state.ready || stale) return;
+    if (state.remoteSecond !== null) {
+      if (state.remoteSecond !== second) return;
+      state.remoteSecond = null;
+    }
+    const position = positionKey(second);
+    if (state.applied === position) return;
+    if (pending.current) {
+      if (pending.current.position !== position) pending.current.queued = true;
+      return;
+    }
+    const request = { position, queued: false };
+    pending.current = request;
+    const seekId = state.seekId;
+    void callAction("set-playback-position", {
+      ...identity,
+      at: second,
+      observedSeekId: seekId,
+    })
+      .then(({ applied }) => {
+        if (!applied) {
+          void savedPosition.refetch();
+        } else if (state.seekId === seekId) {
+          state.applied = position;
+          queryClient.setQueryData(["app-state", playbackStateKey], {
+            ...identity,
+            second,
+            ...(seekId ? { seekId } : {}),
+          });
+        }
+      })
+      .catch(() => {
+        // The local clock can keep moving if the selected result is no longer current.
+      })
+      .finally(() => {
+        pending.current = null;
+        if (request.queued) publishPosition();
+      });
   });
   useEffect(() => {
-    publishPosition();
-    if (!playing) return;
+    if (!playing || stale) return;
     const timer = window.setInterval(
       () => publishPosition(),
       playbackSyncInterval,
     );
     return () => window.clearInterval(timer);
-  }, [playing]);
+  }, [playing, stale]);
   useEffect(() => {
-    if (playing) return;
+    if (playing || stale || savedPosition.data === undefined) return;
     const timer = window.setTimeout(() => publishPosition(), 300);
     return () => window.clearTimeout(timer);
-  }, [playing, receiptId, second]);
+  }, [playing, receiptId, second, savedPosition.data, stale]);
 
   return (
     <div className="cafe-playback">
@@ -289,6 +369,7 @@ export function Playback({
             className="cafe-primary"
             type="button"
             onClick={() => {
+              synced.current.remoteSecond = null;
               if (time >= end) setTime(start);
               setPlaying(!playing);
             }}
@@ -322,7 +403,10 @@ export function Playback({
             step={1}
             value={second}
             aria-valuetext={`${formatClock(second)}:${String(second % 60).padStart(2, "0")}`}
-            onChange={(event) => setTime(Number(event.target.value))}
+            onChange={(event) => {
+              synced.current.remoteSecond = null;
+              setTime(Number(event.target.value));
+            }}
           />
         </label>
       </div>

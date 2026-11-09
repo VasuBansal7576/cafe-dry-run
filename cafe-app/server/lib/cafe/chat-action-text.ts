@@ -73,6 +73,12 @@ export function cafeActionTextAllowed(
       }
     }
     if (
+      tool === "set-playback-position" &&
+      ["scenarioId", "comparisonScenarioId", "comparisonRunId"].includes(key) &&
+      uuid.test(value)
+    )
+      return true;
+    if (
       parent === "workers" &&
       key === "id" &&
       /^(?:barista|worker)-[1-9]\d?$/i.test(value)

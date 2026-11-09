@@ -210,3 +210,39 @@ it("permits only exact figures from a successful, current café action", () => {
     ),
   ).toBe(false);
 });
+
+it("allows playback identity fields and an exact founder clock time", () => {
+  const id = "c8f8f5fd-0e99-43ef-bcf5-7ee870e43fe4";
+  const identity = {
+    scenarioId: id,
+    runId: id,
+    comparisonScenarioId: id,
+    comparisonRunId: id,
+    receiptId: id,
+  };
+  const input = { ...identity, at: "10:00:01" };
+  expect(
+    cafeActionTextAllowed(
+      "set-playback-position",
+      input,
+      "Seek to 10:00:01.",
+      new Set(),
+    ),
+  ).toBe(true);
+  expect(
+    cafeActionTextAllowed(
+      "set-playback-position",
+      input,
+      "Seek to 10:00:02.",
+      new Set(),
+    ),
+  ).toBe(false);
+  expect(
+    cafeActionTextAllowed(
+      "configure-shop",
+      input,
+      "Seek to 10:00:01.",
+      new Set(),
+    ),
+  ).toBe(false);
+});

@@ -2,7 +2,9 @@ import { defineAction } from "@agent-native/core/action";
 import { readAppStateForCurrentTab } from "@agent-native/core/application-state";
 import { z } from "zod";
 
+import { currentPlaybackBounds } from "../server/lib/cafe/playback-position.js";
 import { findScenario } from "../server/lib/cafe/scenario-store.js";
+import { playbackStateSchema } from "../shared/cafe/playback-position.js";
 
 export default defineAction({
   description:
@@ -37,22 +39,30 @@ export default defineAction({
           };
         }
       }
-      const playback = await readAppStateForCurrentTab("cafe-playback");
+      const stored = playbackStateSchema.safeParse(
+        await readAppStateForCurrentTab("cafe-playback"),
+      );
+      const owner = ctx?.userEmail;
       if (
-        playback &&
-        typeof playback === "object" &&
-        "scenarioId" in playback &&
+        owner &&
+        stored.success &&
         "scenarioId" in navigation &&
-        playback.scenarioId === navigation.scenarioId &&
-        ("comparisonScenarioId" in playback
-          ? playback.comparisonScenarioId
-          : undefined) ===
+        stored.data.scenarioId === navigation.scenarioId &&
+        stored.data.comparisonScenarioId ===
           ("comparisonScenarioId" in navigation
             ? navigation.comparisonScenarioId
             : undefined)
       ) {
-        screen.playback = playback;
+        const { seekId: _, ...playback } = stored.data;
+        const bounds = await currentPlaybackBounds(owner, playback);
+        if (
+          bounds &&
+          playback.second >= bounds.start &&
+          playback.second <= bounds.end
+        )
+          screen.playback = playback;
       }
+      if (!screen.playback) screen.playbackStatus = "unavailable";
     }
 
     if (Object.keys(screen).length === 0) {
