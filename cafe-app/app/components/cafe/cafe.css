@@ -388,6 +388,12 @@
 }
 .cafe-frame-counts {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 102px), 1fr));
+  gap: 3px;
+  border: 0;
+  background: transparent;
+}
+.cafe-frame-counts div {
+  border: 1px solid var(--cafe-rule);
 }
 .cafe-metrics dt,
 .cafe-frame-counts dt {
@@ -615,6 +621,9 @@
 .cafe-receipt h3 {
   margin-top: 8px;
 }
+.cafe-print-stale {
+  display: none;
+}
 .cafe-receipt-sensitivity {
   display: grid;
   gap: 8px;
@@ -814,6 +823,14 @@
   .cafe-receipt h3 {
     font-size: 26px;
   }
+  .cafe-print-stale {
+    display: block;
+    position: fixed;
+    inset: auto 0 -6mm auto;
+    z-index: 2;
+    font: 11px var(--cafe-mono);
+    color: #a43615;
+  }
   .cafe-receipt-main,
   .cafe-receipt-aside,
   .cafe-cash-chart {
@@ -842,5 +859,11 @@
   }
   .cafe-cash-chart thead th:first-child {
     width: 19%;
+  }
+  .cafe-receipt-aside:has(.cafe-cash-chart details[open]) .cafe-receipt-sensitivity {
+    order: -2;
+  }
+  .cafe-receipt-aside:has(.cafe-cash-chart details[open]) footer {
+    order: -1;
   }
 }

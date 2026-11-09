@@ -507,6 +507,11 @@ function Receipt({ decision }: { decision: StoredDecision }) {
   ];
   return (
     <article className="cafe-receipt" aria-label="Cash runway receipt">
+      {cashStale && (
+        <p className="cafe-print-stale" aria-hidden="true">
+          Stale cash receipt · Earlier inputs
+        </p>
+      )}
       <div className="cafe-receipt-main">
         <header>
           <p className="cafe-kicker">
@@ -701,6 +706,12 @@ function Receipt({ decision }: { decision: StoredDecision }) {
             aria-label="Saved-customer assumption"
           >
             <h4>Saved-customer cash sensitivity</h4>
+            {cashStale && (
+              <p>
+                <strong>Stale cash sensitivity.</strong> These figures use the
+                inputs saved on this receipt.
+              </p>
+            )}
             <p>
               Count recovered weekend customers ·{" "}
               {receipt.savedCustomers.enabled ? "On" : "Off"}{" "}

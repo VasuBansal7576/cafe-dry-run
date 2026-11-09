@@ -839,12 +839,21 @@ export async function runFounder({ context, page, origin, map, record, section, 
     .locator('dl[aria-label="Counts at the selected time"] > div')
     .filter({ hasText: "Arrived" });
   await assertStamp(staleArrived, runA.summary.provenance, true);
+  await receiptPanel.getByText("Stale cash sensitivity.", { exact: true }).waitFor();
+  await balanceSummary.click();
   for (const width of base.widths) {
     await page.setViewportSize({ width, height: 900 });
     await assertPlaybackStampLayout(page, width);
     await viewportCapture(page, page.locator("#service-test .cafe-paired-heading"), screenshot, `stale-service-${width}.png`);
+    await page.emulateMedia({ media: "print" });
+    await checkReceiptSensitivity();
+    assert(await balances.isVisible(), "Stale expanded balances must remain visible in print");
+    assert(await receiptPanel.getByText("Stale cash sensitivity.", { exact: true }).isVisible());
+    await print(`paired-receipt-stale-expanded-${width}.pdf`);
+    await page.emulateMedia({ media: "screen" });
   }
   await page.setViewportSize({ width: 1440, height: 900 });
+  await balanceSummary.click();
   await receiptPanel.getByText("Stale cash receipt.").waitFor();
   assert.equal((await service(barista.id, runA.id)).stale, true);
   const combinedStale = await decision(barista.id, grinder.id, on.receipt.id);
