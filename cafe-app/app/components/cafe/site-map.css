@@ -196,8 +196,8 @@
 .cafe-map-road-badge {
   display: inline-grid;
   place-items: center;
-  width: 17px;
-  height: 17px;
+  width: var(--cafe-road-badge-size);
+  height: var(--cafe-road-badge-size);
   border: 1px solid var(--cafe-print, #29241d);
   background: var(--cafe-receipt, #fff3d9);
   color: var(--cafe-print, #29241d);
@@ -205,7 +205,6 @@
 }
 
 .cafe-map-road-mark {
-  --cafe-road-leader: 9px;
   position: absolute;
   pointer-events: none;
 }
@@ -224,46 +223,20 @@
   border-radius: 50%;
 }
 
-.cafe-map-road-mark:not([data-side="above"])::before {
+.cafe-map-road-mark::before {
   top: -0.5px;
-  width: var(--cafe-road-leader);
-  height: 1px;
-}
-
-.cafe-map-road-mark[data-side="left"]::before {
-  right: 0;
-}
-
-.cafe-map-road-mark[data-side="right"]::before {
   left: 0;
-}
-
-.cafe-map-road-mark[data-side="above"]::before {
-  bottom: 0;
-  left: -0.5px;
-  width: 1px;
-  height: var(--cafe-road-leader);
+  width: var(--cafe-road-leader-length);
+  height: 1px;
+  transform-origin: left center;
+  transform: rotate(var(--cafe-road-leader-angle));
 }
 
 .cafe-map-road-mark .cafe-map-road-badge {
   position: absolute;
-}
-
-.cafe-map-road-mark[data-side="left"] .cafe-map-road-badge {
-  top: 0;
-  right: var(--cafe-road-leader);
-  transform: translateY(-50%);
-}
-
-.cafe-map-road-mark[data-side="right"] .cafe-map-road-badge {
-  top: 0;
-  left: var(--cafe-road-leader);
-  transform: translateY(-50%);
-}
-
-.cafe-map-road-mark[data-side="above"] .cafe-map-road-badge {
-  bottom: var(--cafe-road-leader);
-  transform: translateX(-50%);
+  left: var(--cafe-road-badge-x);
+  top: var(--cafe-road-badge-y);
+  transform: translate(-50%, -50%);
 }
 
 .cafe-map-street-key {

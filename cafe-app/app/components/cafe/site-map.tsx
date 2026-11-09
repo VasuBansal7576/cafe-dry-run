@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from "react";
+import { useCallback, useId, useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent, PointerEvent } from "react";
 
 import {
@@ -16,6 +16,11 @@ import {
   type Spot,
 } from "../../../shared/cafe/site-map";
 import { Stamp } from "./provenance-stamp";
+import {
+  placeRoadCallouts,
+  preferredRoadOffset,
+  roadBadgeSize,
+} from "./road-callouts";
 
 import "./site-map.css";
 
@@ -70,11 +75,29 @@ const paths = layers.map((kind) => ({
 }));
 
 const streetMarkers = [
-  { letter: "A", osmId: 1378838837, segment: 4, fraction: 0.25, side: "left" },
-  { letter: "B", osmId: 543470383, segment: 4, fraction: 0.04, side: "right" },
-  { letter: "C", osmId: 107218840, segment: 5, fraction: 0.33, side: "above" },
-  { letter: "D", osmId: 691155646, segment: 0, fraction: 0.57, side: "above" },
-].flatMap(({ letter, osmId, segment, fraction, side }) => {
+  {
+    letter: "A",
+    osmId: 1378838837,
+    segment: 4,
+    fraction: 0.25,
+    angle: Math.PI,
+  },
+  { letter: "B", osmId: 543470383, segment: 4, fraction: 0.04, angle: 0 },
+  {
+    letter: "C",
+    osmId: 107218840,
+    segment: 5,
+    fraction: 0.33,
+    angle: -Math.PI / 2,
+  },
+  {
+    letter: "D",
+    osmId: 691155646,
+    segment: 0,
+    fraction: 0.57,
+    angle: -Math.PI / 2,
+  },
+].flatMap(({ letter, osmId, segment, fraction, angle }) => {
   const way = features.find((feature) => feature.osmId === osmId);
   const start = way?.points[segment];
   const end = way?.points[segment + 1];
@@ -85,7 +108,7 @@ const streetMarkers = [
     {
       letter,
       osmId,
-      side,
+      angle,
       name: way.name,
       coordinate: {
         lon: lon + (endLon - lon) * fraction,
@@ -94,6 +117,10 @@ const streetMarkers = [
     },
   ];
 });
+
+const preferredOffsets = streetMarkers.map(({ angle }) =>
+  preferredRoadOffset(angle),
+);
 
 const arrowSteps = {
   ArrowUp: { lat: 1, lon: 0 },
@@ -122,6 +149,8 @@ export function SiteMap({
   const streetKeyId = useId();
   const photoId = useId();
   const stage = useRef<HTMLDivElement>(null);
+  const [roadOffsets, setRoadOffsets] =
+    useState<((typeof preferredOffsets)[number] | null)[]>(preferredOffsets);
   const [showStorefront, setShowStorefront] = useState(false);
   const [draft, setDraft] = useState<{
     baseline: number;
@@ -142,6 +171,52 @@ export function SiteMap({
   const missing = missingGroups.map((group) =>
     placeGroups[group].toLowerCase(),
   );
+
+  const fitRoadMarks = useCallback(() => {
+    const element = stage.current;
+    if (!element?.clientWidth) return;
+    const frame = element.getBoundingClientRect();
+    const obstacles = Array.from(
+      element.querySelectorAll("[data-map-obstacle]"),
+      (obstacle) => {
+        const box = obstacle.getBoundingClientRect();
+        return {
+          left: box.left - frame.left,
+          top: box.top - frame.top,
+          right: box.right - frame.left,
+          bottom: box.bottom - frame.top,
+        };
+      },
+    );
+    const anchors = streetMarkers.map(({ coordinate: { lon, lat }, angle }) => {
+      const [x, y] = project(lon, lat);
+      return {
+        point: { x: (x / width) * frame.width, y: (y / height) * frame.height },
+        angle,
+      };
+    });
+    const next = placeRoadCallouts(anchors, frame, obstacles);
+    setRoadOffsets((previous) =>
+      previous.every(
+        (offset, index) =>
+          offset?.x === next[index]?.x && offset?.y === next[index]?.y,
+      )
+        ? previous
+        : next,
+    );
+  }, []);
+
+  useLayoutEffect(() => {
+    const element = stage.current;
+    if (!element) return;
+    const observer = new ResizeObserver(fitRoadMarks);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [fitRoadMarks]);
+
+  useLayoutEffect(() => {
+    fitRoadMarks();
+  }, [fitRoadMarks, current.lat, current.lon, showStorefront]);
 
   function choose(next: Spot) {
     if (!pending) setDraft({ baseline: spotRevision, spot: next });
@@ -264,7 +339,14 @@ export function SiteMap({
         <figcaption>Illustrative photograph</figcaption>
       </figure>
 
-      <figure id={mapId} className="cafe-map-plate" hidden={showStorefront}>
+      <figure
+        id={mapId}
+        className="cafe-map-plate"
+        hidden={showStorefront}
+        style={
+          { "--cafe-road-badge-size": `${roadBadgeSize}px` } as CSSProperties
+        }
+      >
         <div
           className="cafe-map-art"
           ref={stage}
@@ -298,34 +380,52 @@ export function SiteMap({
               ))}
             </svg>
           </button>
-          <div className="cafe-map-compass" aria-hidden="true">
+          {streetMarkers.map(({ letter, osmId, coordinate }, index) => {
+            const offset = roadOffsets[index];
+            if (!offset) return null;
+            const { x, y } = offset;
+            return (
+              <span
+                key={osmId}
+                className="cafe-map-road-mark"
+                data-osm-way={osmId}
+                style={
+                  {
+                    ...pointStyle(coordinate),
+                    "--cafe-road-badge-x": `${x}px`,
+                    "--cafe-road-badge-y": `${y}px`,
+                    "--cafe-road-leader-length": `${Math.hypot(x, y)}px`,
+                    "--cafe-road-leader-angle": `${Math.atan2(y, x)}rad`,
+                  } as CSSProperties
+                }
+                aria-hidden="true"
+              >
+                <span className="cafe-map-road-badge">{letter}</span>
+              </span>
+            );
+          })}
+          <div
+            className="cafe-map-compass"
+            aria-hidden="true"
+            data-map-obstacle
+          >
             ↑ N
           </div>
           <div
             className="cafe-map-scale"
             aria-hidden="true"
+            data-map-obstacle
             style={{ width: `${(100 / width) * 100}%` }}
           >
-            100 m
+            <span data-map-obstacle>100 m</span>
           </div>
-          {streetMarkers.map(({ letter, osmId, side, coordinate }) => (
-            <span
-              key={osmId}
-              className="cafe-map-road-mark"
-              data-osm-way={osmId}
-              data-side={side}
-              style={pointStyle(coordinate)}
-              aria-hidden="true"
-            >
-              <span className="cafe-map-road-badge">{letter}</span>
-            </span>
-          ))}
           {places.map((place, index) => (
             <span
               className="cafe-map-place-dot"
               key={`${place.osmType}/${place.osmId}`}
               style={pointStyle(place)}
               aria-hidden="true"
+              data-map-obstacle
             >
               {index + 1}
             </span>
@@ -336,6 +436,7 @@ export function SiteMap({
               data-dragging={dragging}
               style={pointStyle(current)}
               aria-hidden="true"
+              data-map-obstacle
               onPointerDown={(event) => {
                 if (pending || event.button !== 0 || !event.isPrimary) return;
                 dragStart.current = {
