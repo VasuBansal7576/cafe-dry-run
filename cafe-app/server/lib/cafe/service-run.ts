@@ -90,6 +90,9 @@ export const serviceRunSchema = z.object({
   id: z.string().uuid(),
   scenarioId: z.string().uuid(),
   scenarioRevision: count,
+  arrivalSource: z
+    .object({ id: z.string().uuid(), revision: count })
+    .optional(),
   summary: serviceSummarySchema,
   playback: servicePlaybackSchema,
 });

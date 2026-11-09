@@ -67,8 +67,9 @@ export function firstBreakEvenOrdersPerDay(price: Decimal, cost: Decimal, fixedP
   const revenueStep = unitsAtScale(price, places) * BigInt(openDays);
   const costStep = unitsAtScale(cost, places) * BigInt(openDays);
   const margin = revenueStep - costStep;
-  if (margin <= 0n) return null;
+  if (openDays === 0) return null;
   if (fixedPaise === 0) return 0;
+  if (margin <= 0n) return null;
 
   const belowTarget = BigInt(fixedPaise) - 1n;
   const firstPossible = belowTarget * divisor / margin + 1n;

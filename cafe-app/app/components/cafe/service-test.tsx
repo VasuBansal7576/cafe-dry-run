@@ -12,6 +12,7 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type ReactNode,
 } from "react";
 
 import { TAB_ID } from "@/lib/tab-id";
@@ -28,7 +29,7 @@ import { formatClock, sourceLabels } from "./scenario-inputs";
 const playbackSpeeds = [30, 120, 600] as const;
 const playbackSyncInterval = 1000;
 const number = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 1 });
-const displayWait = (seconds: number | null) =>
+export const displayWait = (seconds: number | null) =>
   seconds === null ? "Unavailable" : `${number.format(seconds / 60)} min`;
 
 type Ticket = {
@@ -93,17 +94,25 @@ function frameAt(playback: ServiceRun["playback"], time: number) {
   };
 }
 
-function Playback({
-  run,
+type PlaybackBoard = { run: ServiceRun; label?: string };
+
+export function Playback({
+  boards,
+  receiptId,
 }: {
-  run: Omit<ServiceRun, "playback"> & { playback: ServiceRun["playback"] };
+  boards: readonly [PlaybackBoard, ...PlaybackBoard[]];
+  receiptId?: string;
 }) {
+  const [{ run }] = boards;
   const { summary, playback } = run;
   const start = summary.hours.opensAt;
   const end = Math.ceil(
     Math.max(
       summary.hours.closesAt,
-      playback.timeline[playback.timeline.length - 1]?.at ?? 0,
+      ...boards.map(
+        ({ run: { playback } }) =>
+          playback.timeline[playback.timeline.length - 1]?.at ?? 0,
+      ),
     ),
   );
   const [time, setTime] = useState(
@@ -112,7 +121,6 @@ function Playback({
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<number>(120);
   const second = Math.floor(time);
-  const frame = useMemo(() => frameAt(playback, second), [playback, second]);
   useEffect(() => {
     if (!playing) return;
     let previous = performance.now();
@@ -127,17 +135,28 @@ function Playback({
   useEffect(() => {
     if (time >= end) setPlaying(false);
   }, [end, time]);
-  const lastPublishedSecond = useRef<number | null>(null);
+  const lastPublished = useRef<string | null>(null);
   const publishPosition = useEffectEvent(() => {
-    if (lastPublishedSecond.current === second) return;
-    lastPublishedSecond.current = second;
+    const position = `${receiptId ?? run.id}:${second}`;
+    if (lastPublished.current === position) return;
+    lastPublished.current = position;
     void writeClientAppState(
       `cafe-playback:${TAB_ID}`,
-      { scenarioId: run.scenarioId, runId: run.id, second },
+      {
+        scenarioId: run.scenarioId,
+        runId: run.id,
+        second,
+        ...(receiptId
+          ? {
+              receiptId,
+              comparisonScenarioId: boards[1]?.run.scenarioId,
+              comparisonRunId: boards[1]?.run.id,
+            }
+          : {}),
+      },
       { requestSource: TAB_ID },
     ).catch(() => {
-      if (lastPublishedSecond.current === second)
-        lastPublishedSecond.current = null;
+      if (lastPublished.current === position) lastPublished.current = null;
     });
   });
   useEffect(() => {
@@ -153,18 +172,8 @@ function Playback({
     if (playing) return;
     const timer = window.setTimeout(() => publishPosition(), 300);
     return () => window.clearTimeout(timer);
-  }, [playing, second]);
+  }, [playing, receiptId, second]);
 
-  const longest = frame.tickets
-    .filter(
-      ([, ticket]) =>
-        !ticket.active && ticket.station && ticket.queuedAt !== undefined,
-    )
-    .reduce<Ticket | undefined>(
-      (oldest, [, ticket]) =>
-        oldest && oldest.queuedAt! <= ticket.queuedAt! ? oldest : ticket,
-      undefined,
-    );
   return (
     <div className="cafe-playback">
       <div className="cafe-clock">
@@ -214,6 +223,42 @@ function Playback({
           />
         </label>
       </div>
+      <div className={boards.length > 1 ? "cafe-paired-boards" : undefined}>
+        {boards.map((board) => (
+          <StationBoard key={board.run.id} board={board} second={second} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StationBoard({
+  board: {
+    run: { summary, playback },
+    label,
+  },
+  second,
+}: {
+  board: PlaybackBoard;
+  second: number;
+}) {
+  const frame = useMemo(() => frameAt(playback, second), [playback, second]);
+  const longest = frame.tickets
+    .filter(
+      ([, ticket]) =>
+        !ticket.active && ticket.station && ticket.queuedAt !== undefined,
+    )
+    .reduce<Ticket | undefined>(
+      (oldest, [, ticket]) =>
+        oldest && oldest.queuedAt! <= ticket.queuedAt! ? oldest : ticket,
+      undefined,
+    );
+  return (
+    <section
+      className="cafe-station-board"
+      aria-label={label ?? "Saturday board"}
+    >
+      {label && <h3>{label}</h3>}
       <dl
         className="cafe-frame-counts"
         aria-label="Counts at the selected time"
@@ -279,11 +324,17 @@ function Playback({
       <p className="cafe-latest">
         {frame.latest || "The first customer has yet to arrive."}
       </p>
-    </div>
+    </section>
   );
 }
 
-export function ServiceTest({ scenario }: { scenario: Scenario }) {
+export function ServiceTest({
+  scenario,
+  controls,
+}: {
+  scenario: Scenario;
+  controls?: ReactNode;
+}) {
   const latest = useActionQuery(
     "get-simulation",
     { id: scenario.id, includePlayback: "true" },
@@ -330,6 +381,7 @@ export function ServiceTest({ scenario }: { scenario: Scenario }) {
         <h2 id="service-title">Service test</h2>
       </header>
       <div className="cafe-board cafe-service">
+        {controls}
         <form
           className="cafe-service-settings"
           onSubmit={submit}
@@ -461,7 +513,10 @@ export function ServiceTest({ scenario }: { scenario: Scenario }) {
                 : "No resource delays recorded"}
             </p>
             {run.playback && (
-              <Playback key={run.id} run={{ ...run, playback: run.playback }} />
+              <Playback
+                key={run.id}
+                boards={[{ run: { ...run, playback: run.playback } }]}
+              />
             )}
             <details>
               <summary>Staff & equipment utilization</summary>

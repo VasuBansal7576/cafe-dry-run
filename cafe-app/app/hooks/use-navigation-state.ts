@@ -19,6 +19,7 @@ export interface NavigationState {
   publicPath?: string;
   threadId?: string;
   scenarioId?: string;
+  comparisonScenarioId?: string;
 }
 
 export function useNavigationState() {
@@ -29,6 +30,9 @@ export function useNavigationState() {
       ...navigationStateForPath(pathname),
       ...(pathname === "/cafe" && searchParams.get("scenario")
         ? { scenarioId: searchParams.get("scenario")! }
+        : {}),
+      ...(pathname === "/cafe" && searchParams.get("compare")
+        ? { comparisonScenarioId: searchParams.get("compare")! }
         : {}),
     }),
     getCommandPath: commandPathForNavigation,

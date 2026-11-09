@@ -6,6 +6,11 @@ import { getDb } from "../server/db/index.js";
 import { scenarios, serviceRuns } from "../server/db/schema.js";
 import { createArrivalPlan } from "../server/lib/cafe/arrivals.js";
 import {
+  expectedDailyArrivals,
+  isServicePlanSizeAllowed,
+  summarizeService,
+} from "../server/lib/cafe/decision.js";
+import {
   requireOwner,
   scenarioConflict,
   scenarioEditKey,
@@ -15,11 +20,7 @@ import {
   toScenario,
   validateInput,
 } from "../server/lib/cafe/scenario-store.js";
-import {
-  arrivalInputs,
-  serviceInputs,
-  serviceProvenance,
-} from "../server/lib/cafe/scenario.js";
+import { arrivalInputs, serviceInputs } from "../server/lib/cafe/scenario.js";
 import {
   serviceParameters,
   serviceRunSchema,
@@ -53,14 +54,12 @@ export default defineAction({
       const scenario = toScenario(row);
 
       const { demand, menuMix } = arrivalInputs(scenario.demand, scenario.shop);
-      const openHours = (demand.hours.closesAt - demand.hours.opensAt) / 3600;
-      const weightedHours = demand.hourlyMultipliers.reduce(
-        (sum, multiplier, index) =>
-          sum + multiplier * Math.min(1, openHours - index),
-        0,
-      );
-      const expectedArrivals = demand.hourly[demandLevel] * weightedHours;
-      if (expectedArrivals > 3000 || expectedArrivals * runCount > 100_000) {
+      if (
+        !isServicePlanSizeAllowed(
+          expectedDailyArrivals(demand, demandLevel),
+          runCount,
+        )
+      ) {
         return scenarioErrors.fail(
           "This test is too large. Reduce demand, the service window, or the number of Saturdays.",
           "invalid_scenario",
@@ -92,30 +91,19 @@ export default defineAction({
         id: runId,
         scenarioId: id,
         scenarioRevision: expectedRevision,
-        summary: {
-          seed,
-          demandLevel,
-          runCount,
-          hours: demand.hours,
-          staffNames: Object.fromEntries(
-            scenario.shop.workers.map(({ id, name }) => [id, name]),
-          ),
-          itemNames: Object.fromEntries(
-            scenario.shop.menu.map(({ id, name }) => [id, name]),
-          ),
-          stats: result.stats,
-          provenance: serviceProvenance(
-            scenario.demand,
-            scenario.shop,
-            demandLevel,
-          ),
-        },
+        arrivalSource: { id, revision: expectedRevision },
+        summary: summarizeService(scenario, scenario, plan, result),
         playback: result.playback,
       });
 
       await tx
         .insert(serviceRuns)
-        .values({ ...run, ownerEmail: owner })
+        .values({
+          ...run,
+          ownerEmail: owner,
+          arrivalSourceId: id,
+          arrivalSourceRevision: expectedRevision,
+        })
         .onConflictDoNothing({ target: serviceRuns.id });
       await tx
         .update(scenarios)
@@ -129,6 +117,7 @@ export default defineAction({
         id: run.id,
         scenarioId: run.scenarioId,
         scenarioRevision: run.scenarioRevision,
+        arrivalSource: run.arrivalSource,
         summary: run.summary,
       };
     });

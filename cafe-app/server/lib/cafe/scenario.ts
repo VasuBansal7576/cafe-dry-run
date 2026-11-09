@@ -3,8 +3,10 @@ import { z } from "zod";
 import { SECONDS_PER_DAY, type Demand, type MenuMixEntry } from "./arrivals";
 import {
   illustrative,
+  calculateMeasure,
   sourced,
   weakestTag,
+  type Source,
   type SourceTag,
   type TaggedNumber,
 } from "./provenance";
@@ -36,7 +38,25 @@ const id = z
   .trim()
   .regex(/^[a-z][a-z0-9-]{0,39}$/);
 
+export const pedestrianSchema = z.object({
+  count: z
+    .object({
+      value: z.number().int().min(0).max(120_000),
+      source: z.object({ tag: z.literal("observed") }),
+    })
+    .describe("People counted during one full Saturday service window"),
+  conversionPercent: sourced(z.number().min(0).max(100)).describe(
+    "Percent of observed Saturday passers-by expected to enter, from 0 to 100",
+  ),
+});
+
 export const demandFields = z.object({
+  pedestrian: pedestrianSchema
+    .nullable()
+    .optional()
+    .describe(
+      "Observed footfall and conversion for one Saturday. When present these replace the hourly range. Set to null to return to the hourly range.",
+    ),
   hourly: z
     .object({
       low: sourced(hourlyRateSchema),
@@ -82,6 +102,18 @@ export const demandSchema = demandFields.superRefine((value, ctx) => {
       message: "Enter one multiplier for each hour or partial hour of service.",
     });
   }
+  if (
+    value.pedestrian &&
+    pedestrianDailyArrivals(value.pedestrian).value > 0 &&
+    value.hourlyMultipliers.every(({ value }) => value === 0)
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["hourlyMultipliers"],
+      message:
+        "Set a positive curve multiplier to distribute the expected arrivals.",
+    });
+  }
 });
 
 const shiftSchema = z.object({ startsAt: time, endsAt: time });
@@ -104,6 +136,19 @@ const drinkSchema = z.object({
   weight: sourced(z.number().min(0).max(100)).describe(
     "Relative frequency from 0 to 100, where zero excludes this drink",
   ),
+  economics: z
+    .object({
+      price: sourced(z.number().min(0).max(1_000_000_000)).describe(
+        "Sale price for this drink in INR",
+      ),
+      ingredientCost: sourced(z.number().min(0).max(1_000_000_000)).describe(
+        "Ingredient cost for this drink in INR",
+      ),
+    })
+    .optional()
+    .describe(
+      "Tagged drink economics. Older menus without these fields use the legacy blended inputs.",
+    ),
   tasks: z.array(taskSchema).min(1).max(stations.length),
 });
 
@@ -241,12 +286,20 @@ export function defaultShop(): ScenarioShop {
         id: "espresso",
         name: "Espresso",
         weight: illustrative(30),
+        economics: {
+          price: illustrative(125),
+          ingredientCost: illustrative(34),
+        },
         tasks: [order, grind, brew, pickup],
       },
       {
         id: "flat-white",
         name: "Flat white",
         weight: illustrative(70),
+        economics: {
+          price: illustrative(175),
+          ingredientCost: illustrative(64),
+        },
         tasks: [
           order,
           grind,
@@ -268,13 +321,23 @@ export function arrivalInputs(
   demand: ScenarioDemand,
   shop: ScenarioShop,
 ): { demand: Demand; menuMix: MenuMixEntry[] } {
+  const openHours = (demand.closesAt.value - demand.opensAt.value) / 3600;
+  const weightedHours = demand.hourlyMultipliers.reduce(
+    (sum, { value }, index) => sum + value * Math.min(1, openHours - index),
+    0,
+  );
+  const observedHourly = demand.pedestrian
+    ? weightedHours > 0
+      ? pedestrianDailyArrivals(demand.pedestrian).value / weightedHours
+      : 0
+    : null;
   return {
     demand: {
       hours: { opensAt: demand.opensAt.value, closesAt: demand.closesAt.value },
       hourly: {
-        low: demand.hourly.low.value,
-        base: demand.hourly.base.value,
-        high: demand.hourly.high.value,
+        low: observedHourly ?? demand.hourly.low.value,
+        base: observedHourly ?? demand.hourly.base.value,
+        high: observedHourly ?? demand.hourly.high.value,
       },
       hourlyMultipliers: demand.hourlyMultipliers.map(({ value }) => value),
     },
@@ -283,6 +346,34 @@ export function arrivalInputs(
       weight: weight.value,
     })),
   };
+}
+
+export function pedestrianDailyArrivals(
+  pedestrian: z.infer<typeof pedestrianSchema>,
+) {
+  const { count, conversionPercent } = pedestrian;
+  return calculateMeasure(
+    count.value * (conversionPercent.value / 100),
+    count,
+    conversionPercent,
+  );
+}
+
+export function demandSources(
+  demand: ScenarioDemand,
+  level: (typeof demandLevels)[number],
+): Source[] {
+  return [
+    ...(demand.pedestrian
+      ? [
+          demand.pedestrian.count.source,
+          demand.pedestrian.conversionPercent.source,
+        ]
+      : [demand.hourly[level].source]),
+    demand.opensAt.source,
+    demand.closesAt.source,
+    ...demand.hourlyMultipliers.map(({ source }) => source),
+  ];
 }
 
 export function serviceInputs(shop: ScenarioShop): Shop {
@@ -316,16 +407,17 @@ export function serviceInputs(shop: ScenarioShop): Shop {
   };
 }
 
-export function serviceProvenance(
+export function serviceSources(
   demand: ScenarioDemand,
   shop: ScenarioShop,
   level: (typeof demandLevels)[number],
-): SourceTag {
-  return weakestTag([
-    demand.hourly[level].source,
-    demand.opensAt.source,
-    demand.closesAt.source,
-    ...demand.hourlyMultipliers.map(({ source }) => source),
+  arrivalMenu = shop.menu,
+): Source[] {
+  const orderedDrinks = new Set(
+    arrivalMenu.filter(({ weight }) => weight.value > 0).map(({ id }) => id),
+  );
+  return [
+    ...demandSources(demand, level),
     ...Object.values(shop.equipment).map(({ source }) => source),
     ...shop.workers.flatMap(({ shifts }) =>
       shifts.flatMap(({ startsAt, endsAt }) => [
@@ -333,17 +425,23 @@ export function serviceProvenance(
         endsAt.source,
       ]),
     ),
-    ...shop.menu.flatMap(({ weight, tasks }) => [
-      weight.source,
-      ...(weight.value > 0
-        ? tasks.flatMap((task) => [
-            task.staffSeconds.source,
-            ...("unattendedSeconds" in task
-              ? [task.unattendedSeconds.source]
-              : []),
-          ])
-        : []),
-    ]),
+    ...arrivalMenu.map(({ weight }) => weight.source),
+    ...shop.menu
+      .filter(({ id }) => orderedDrinks.has(id))
+      .flatMap(({ tasks }) =>
+        tasks.flatMap((task) => [
+          task.staffSeconds.source,
+          ...("unattendedSeconds" in task
+            ? [task.unattendedSeconds.source]
+            : []),
+        ]),
+      ),
     shop.patienceSeconds.source,
-  ]);
+  ];
+}
+
+export function serviceProvenance(
+  ...inputs: Parameters<typeof serviceSources>
+): SourceTag {
+  return weakestTag(serviceSources(...inputs));
 }

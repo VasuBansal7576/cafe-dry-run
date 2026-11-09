@@ -2,11 +2,18 @@ import type { ActionRunContext } from "@agent-native/core/action";
 import { closeDbExec, getDbExec } from "@agent-native/core/db";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
+import compareScenarios from "../../../actions/compare-scenarios.js";
+import configureShop from "../../../actions/configure-shop.js";
+import createScenario from "../../../actions/create-scenario.js";
+import getComparison from "../../../actions/get-comparison.js";
 import getSimulation from "../../../actions/get-simulation.js";
 import listScenarios from "../../../actions/list-scenarios.js";
 import runSimulation from "../../../actions/run-simulation.js";
+import setDemand from "../../../actions/set-demand.js";
+import setSpot from "../../../actions/set-spot.js";
 import migrate from "../../plugins/db.js";
 import { illustrative } from "./provenance.js";
+import type { Scenario } from "./scenario-store.js";
 
 const defaults = vi.hoisted(() => ({ changed: false }));
 vi.mock(import("./scenario.js"), async (importOriginal) => {
@@ -76,4 +83,89 @@ it("keeps the effective inputs of a saved legacy run after defaults change", asy
     saved,
   );
   expect(saved.run?.stale).toBe(false);
+});
+
+const revision = (scenario: Scenario) => ({
+  id: scenario.id,
+  expectedRevision: scenario.revision,
+  expectedFinanceRevision: scenario.financeRevision,
+});
+
+it("copies the selected spot to a new variant without changing the baseline", async () => {
+  const { scenario: original } = await createScenario.run({ label: "Site baseline", baseHourlyDemand: 30 }, owner);
+  const moved = await setSpot.run({ id: original.id, expectedSpotRevision: original.spotRevision, location: { placeName: "Near Indiranagar Metro" } }, owner);
+  const { scenario: variant } = await configureShop.run({ ...revision(original), shop: {}, variantLabel: "Site variant" }, owner);
+  expect(variant.spot).toEqual(moved.spot);
+  expect(variant.spotRevision).toBe(0);
+  const persisted = await listScenarios.run({}, owner);
+  expect(persisted.scenarios.find((row) => row.id === original.id)?.spot).toEqual(moved.spot);
+});
+
+it("distinguishes historical assumptions and invalidates linked runs when the shared arrival scenario changes", async () => {
+  const { scenario: original } = await createScenario.run(
+    { label: "Original", baseHourlyDemand: 55 },
+    owner,
+  );
+  const { scenario: a } = await configureShop.run(
+    { ...revision(original), shop: {}, variantLabel: "Cover" },
+    owner,
+  );
+  const { scenario: b } = await configureShop.run(
+    { ...revision(original), shop: {}, variantLabel: "Grinder" },
+    owner,
+  );
+  const input = {
+    a: revision(a),
+    b: revision(b),
+    seed: 1,
+    demandLevel: "base" as const,
+    runCount: 1,
+  };
+  const old = await compareScenarios.run(
+    { ...input, savedCustomers: { enabled: false, tag: "estimate" } },
+    owner,
+  );
+  const latest = await compareScenarios.run(
+    { ...input, savedCustomers: { enabled: true, tag: "estimate" } },
+    owner,
+  );
+  const scope = { aId: a.id, bId: b.id };
+  const historical = await getComparison.run(
+    { ...scope, receiptId: old.receipt.id },
+    owner,
+  );
+  expect(historical.decision).toMatchObject({
+    cashStale: true,
+    serviceStale: false,
+    historical: true,
+    assumptionStale: true,
+    currentSavedCustomers: { enabled: true, tag: "estimate" },
+    receipt: { savedCustomers: { enabled: false, tag: "estimate" } },
+  });
+  expect((await getComparison.run(scope, owner)).decision).toEqual(latest);
+  const runId = latest.receipt.b!.service.id;
+  expect(
+    (
+      await getSimulation.run(
+        { id: b.id, runId, includePlayback: false },
+        owner,
+      )
+    ).run,
+  ).toMatchObject({
+    stale: false,
+    arrivalSource: { id: original.id, revision: original.revision },
+  });
+  await setDemand.run({ ...revision(original), baseHourlyDemand: 65 }, owner);
+  expect(
+    (
+      await getSimulation.run(
+        { id: b.id, runId, includePlayback: false },
+        owner,
+      )
+    ).run?.stale,
+  ).toBe(true);
+  expect((await getComparison.run(scope, owner)).decision).toMatchObject({
+    serviceStale: true,
+    cashStale: true,
+  });
 });

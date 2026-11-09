@@ -3,6 +3,7 @@ import {
   derive,
   type CalculatedNumber,
   type TaggedNumber,
+  type Source,
   type TaggedValue,
 } from "./provenance";
 import {
@@ -18,6 +19,7 @@ import {
 
 export { calculateMeasure } from "./provenance";
 export type CashMeasure = TaggedNumber | CalculatedNumber;
+type UnitEconomics = { price: CashMeasure; ingredientCost: CashMeasure };
 
 const levels = ["low", "base", "high"] as const;
 export type Levels<T> = Readonly<Record<(typeof levels)[number], T>>;
@@ -42,9 +44,11 @@ export interface CashInputs {
   readonly wages: readonly CashWage[];
   readonly price: CashMeasure;
   readonly ingredientCost: CashMeasure;
+  readonly weekendUnitEconomics?: UnitEconomics;
   readonly weekdays: CashDay;
   readonly weekends: CashDay;
   readonly savedCustomers: boolean;
+  readonly savedCustomersSource?: Source;
   readonly passersByPerOpenDay?: CashMeasure;
 }
 
@@ -115,6 +119,10 @@ function validateInputs(input: CashInputs): void {
   checkNonnegative(input.cash, "Available cash");
   checkNonnegative(input.price, "Price per order");
   checkNonnegative(input.ingredientCost, "Ingredient cost per order");
+  if (input.weekendUnitEconomics) {
+    checkNonnegative(input.weekendUnitEconomics.price, "Weekend price per order");
+    checkNonnegative(input.weekendUnitEconomics.ingredientCost, "Weekend ingredient cost per order");
+  }
   input.startupCosts.forEach((cost) => checkNonnegative(cost, "Startup cost"));
   input.recurringCosts.forEach((cost) => checkNonnegative(cost, "Recurring cost"));
   for (const { hourlyRate, weekdayHoursPerDay, weekendHoursPerDay } of input.wages) {
@@ -159,7 +167,7 @@ function displayCount(figure: DecimalFigure): Figure {
   return derive(decimalNumber(figure.value), figure);
 }
 
-function orders(day: CashDay, level: keyof Levels<unknown>, savedCustomers: boolean) {
+function orders(day: CashDay, level: keyof Levels<unknown>, savedCustomers: boolean, assumptionSource?: Source) {
   const demand = day.demand[level];
   const baseline = day.baselineLosses[level];
   const candidate = day.scenarioLosses?.[level];
@@ -168,9 +176,10 @@ function orders(day: CashDay, level: keyof Levels<unknown>, savedCustomers: bool
   const loss = savedCustomers || candidate.value > baseline.value ? candidate : baseline;
   const sold = subtract(demandAmount, decimal(loss.value));
   const recovered = baseline.value > candidate.value ? subtract(decimal(baseline.value), decimal(candidate.value)) : zero;
+  const assumption = assumptionSource && baseline.value > candidate.value ? [assumptionSource] : [];
   return {
-    sold: savedCustomers ? derive(sold, demand, candidate) : derive(sold, demand, baseline, candidate),
-    recovered: savedCustomers ? derive(recovered, baseline, candidate) : derive(zero),
+    sold: derive(sold, demand, baseline, candidate, ...assumption),
+    recovered: savedCustomers ? derive(recovered, baseline, candidate, ...assumption) : derive(zero, ...assumption),
   };
 }
 
@@ -179,6 +188,8 @@ export function computeRunway(input: CashInputs) {
   const { cash, price, ingredientCost, weekdays, weekends, wages, passersByPerOpenDay, savedCustomers } = input;
   const weekdayDays = weekdays.daysPerMonth;
   const weekendDays = weekends.daysPerMonth;
+  const weekdayUnits = { price, ingredientCost };
+  const weekendUnits = input.weekendUnitEconomics ?? weekdayUnits;
   const openDays = sum([weekdayDays, weekendDays]);
   const startupCents = costTotal(input.startupCosts);
   const recurringCents = costTotal(input.recurringCosts);
@@ -188,10 +199,25 @@ export function computeRunway(input: CashInputs) {
   const fixedCents = sum([recurringCents, staffCents]);
   const fixed = displayMoney(fixedCents);
   const openingCents = derive(postedPaise(decimal(cash.value)) - startupCents.value, cash, startupCents);
-  const priceAmount = decimal(price.value);
-  const ingredientAmount = decimal(ingredientCost.value);
-  const contribution = derive(decimalNumber(subtract(priceAmount, ingredientAmount)), price, ingredientCost);
-  const requiredOrders = firstBreakEvenOrdersPerDay(priceAmount, ingredientAmount, fixedCents.value, openDays.value);
+  const perOpenDayOrders = (key: keyof UnitEconomics) => {
+    const weekday = weekdayUnits[key];
+    const weekend = weekendUnits[key];
+    return sumDecimalFigures([
+      perMonth(derive(decimal(weekday.value), weekday), weekdayDays),
+      perMonth(derive(decimal(weekend.value), weekend), weekendDays),
+    ]);
+  };
+  const priceStep = perOpenDayOrders("price");
+  const ingredientStep = perOpenDayOrders("ingredientCost");
+  const contribution = derive(
+    openDays.value
+      ? decimalNumber(subtract(priceStep.value, ingredientStep.value)) / openDays.value
+      : decimalNumber(subtract(decimal(price.value), decimal(ingredientCost.value))),
+    ...(openDays.value ? [priceStep, ingredientStep, openDays] : [price, ingredientCost]),
+  );
+  const requiredOrders = firstBreakEvenOrdersPerDay(
+    priceStep.value, ingredientStep.value, fixedCents.value, openDays.value ? 1 : 0,
+  );
   const breakEvenOrdersPerDay = derive(
     requiredOrders, fixed, contribution, openDays,
   );
@@ -206,13 +232,21 @@ export function computeRunway(input: CashInputs) {
     }))
     : [];
 
-  function project(level: keyof Levels<unknown>, countSaved: boolean): CashOutcome {
-    const weekday = orders(weekdays, level, countSaved);
-    const weekend = orders(weekends, level, countSaved);
+  function project(level: keyof Levels<unknown>, countSaved: boolean, assumptionSource?: Source): CashOutcome {
+    const weekday = orders(weekdays, level, countSaved, assumptionSource);
+    const weekend = orders(weekends, level, countSaved, assumptionSource);
     const monthlyOrders = sumDecimalFigures([perMonth(weekday.sold, weekdayDays), perMonth(weekend.sold, weekendDays)]);
     const recovered = sumDecimalFigures([perMonth(weekday.recovered, weekdayDays), perMonth(weekend.recovered, weekendDays)]);
-    const revenueCents = post(derive(multiply(monthlyOrders.value, priceAmount), monthlyOrders, price));
-    const ingredientCents = post(derive(multiply(monthlyOrders.value, ingredientAmount), monthlyOrders, ingredientCost));
+    const postMonthlyOrders = (key: keyof UnitEconomics) => {
+      const weekdayUnit = weekdayUnits[key];
+      const weekendUnit = weekendUnits[key];
+      return post(sumDecimalFigures([
+        perMonth(derive(multiply(weekday.sold.value, decimal(weekdayUnit.value)), weekday.sold, weekdayUnit), weekdayDays),
+        perMonth(derive(multiply(weekend.sold.value, decimal(weekendUnit.value)), weekend.sold, weekendUnit), weekendDays),
+      ]));
+    };
+    const revenueCents = postMonthlyOrders("price");
+    const ingredientCents = postMonthlyOrders("ingredientCost");
     const monthlyCents = derive(revenueCents.value - ingredientCents.value - fixedCents.value, revenueCents, ingredientCents, fixedCents);
     const burnCents = derive(Math.max(0, -monthlyCents.value), monthlyCents);
     const months = openingCents.value < 0 || (openingCents.value === 0 && burnCents.value > 0)
@@ -245,7 +279,7 @@ export function computeRunway(input: CashInputs) {
   const low = sensitivity("low");
   const base = sensitivity("base");
   const high = sensitivity("high");
-  const selected = savedCustomers ? "on" : "off";
+
   return {
     breakEvenOrdersPerDay,
     requiredCaptureRate,
@@ -259,8 +293,23 @@ export function computeRunway(input: CashInputs) {
       weekendStaff: displayMoney(weekendStaffCents),
       recurringIncludingStaff: fixed,
     },
-    outcomes: { low: low[selected], base: base[selected], high: high[selected] },
-    assumptions: { weekdayDays, weekendDays, horizonMonths },
+    outcomes: {
+      low: project("low", savedCustomers, input.savedCustomersSource),
+      base: project("base", savedCustomers, input.savedCustomersSource),
+      high: project("high", savedCustomers, input.savedCustomersSource),
+    },
+    assumptions: {
+      weekdayDays, weekendDays, horizonMonths,
+      weekdayUnitEconomics: {
+        price: derive(weekdayUnits.price.value, weekdayUnits.price),
+        ingredientCost: derive(weekdayUnits.ingredientCost.value, weekdayUnits.ingredientCost),
+      },
+      weekendUnitEconomics: {
+        price: derive(weekendUnits.price.value, weekendUnits.price),
+        ingredientCost: derive(weekendUnits.ingredientCost.value, weekendUnits.ingredientCost),
+      },
+      passersByPerOpenDay: passersByPerOpenDay ? derive(passersByPerOpenDay.value, passersByPerOpenDay) : null,
+    },
     savedCustomersAssumption: {
       input: "savedCustomers" as const,
       label: "Customers who would have left place an order",
