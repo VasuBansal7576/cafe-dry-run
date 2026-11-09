@@ -321,7 +321,7 @@ export function Playback({
             max={end}
             step={1}
             value={second}
-            aria-valuetext={formatClock(second)}
+            aria-valuetext={`${formatClock(second)}:${String(second % 60).padStart(2, "0")}`}
             onChange={(event) => setTime(Number(event.target.value))}
           />
         </label>

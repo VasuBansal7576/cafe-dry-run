@@ -120,7 +120,8 @@ function menuEconomics(
         (sum, { weight, unit }) => sum + weight.value * unit.value,
         0,
       ) / totalWeight,
-      ...entries.flatMap(({ weight, unit }) => [weight, unit]),
+      ...mix.map(({ weight }) => weight),
+      ...entries.map(({ unit }) => unit),
     );
   }
   return {

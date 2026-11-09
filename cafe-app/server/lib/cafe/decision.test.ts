@@ -34,6 +34,34 @@ function scenario(id: string): Scenario {
 const parameters = { seed: 1, runCount: 1, demandLevel: "base" as const };
 
 describe("paired café decisions", () => {
+  it("includes zero mix weights, but not excluded drink prices, in weekday provenance", () => {
+    const a = scenario("a");
+    const b = scenario("b");
+    function markObserved(value: unknown): void {
+      if (!value || typeof value !== "object") return;
+      if (Array.isArray(value)) return value.forEach(markObserved);
+      const row = value as Record<string, unknown>;
+      if (typeof row.value === "number" && row.source) {
+        row.source = { tag: "observed" };
+        return;
+      }
+      Object.values(row).forEach(markObserved);
+    }
+    markObserved(a);
+    markObserved(b);
+    b.shop.menu[1]!.weight = illustrative(0);
+    const decision = () =>
+      calculateDecision(a, b, parameters, { enabled: false, tag: "observed" }, a);
+    const zero = decision().cashB!;
+    expect(zero.assumptions.weekdayUnitEconomics.price.tag).toBe("illustrative");
+    expect(zero.outcomes.base.monthlyCash.tag).toBe("illustrative");
+    b.shop.menu[1]!.weight = { value: 0, source: { tag: "observed" } };
+    b.shop.menu[1]!.economics!.price.source = { tag: "illustrative" };
+    expect(decision().cashB!.assumptions.weekdayUnitEconomics.price.tag).toBe(
+      "observed",
+    );
+  });
+
   it("uses each drink's tagged economics for the side's weekday mix and the shared Saturday mix", () => {
     const a = scenario("a");
     const b = scenario("b");
