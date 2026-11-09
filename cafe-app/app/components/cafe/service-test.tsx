@@ -257,10 +257,13 @@ export function Playback({
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<number>(120);
   const second = Math.floor(time);
+  const clockGeneration = useRef(0);
   useEffect(() => {
     if (!playing) return;
+    const generation = clockGeneration.current;
     let previous = performance.now();
     const timer = window.setInterval(() => {
+      if (generation !== clockGeneration.current) return;
       const now = performance.now();
       const elapsed = (now - previous) / 1000;
       previous = now;
@@ -296,6 +299,7 @@ export function Playback({
     ) {
       state.applied = positionKey(stored.second);
       state.remoteSecond = stored.second;
+      clockGeneration.current += 1;
       setTime(stored.second);
       setPlaying(false);
     }
