@@ -21,10 +21,15 @@ import {
   SavedCustomerSensitivity,
   scenarioVersion,
   signedCash,
-  Stamp,
 } from "./finance-ledger";
+import { Stamp } from "./provenance-stamp";
 import { ShopForm } from "./scenario-inputs";
-import { displayWait, Playback, ServiceTest } from "./service-test";
+import {
+  Playback,
+  ServiceFigure,
+  ServiceMetrics,
+  ServiceTest,
+} from "./service-test";
 
 const initialSettings = {
   seed: 42,
@@ -68,47 +73,34 @@ function staleAgainst(
 function SideStats({
   side,
   label,
+  stale,
 }: {
   side: DecisionReceipt["a"];
   label: string;
+  stale: boolean;
 }) {
   const { summary } = side.service;
-  const { stats } = summary;
   return (
     <section className="cafe-comparison-side" aria-label={label}>
       <h3>{label}</h3>
       <p>
-        <Stamp tag={summary.provenance} /> · {summary.runCount} Saturdays
+        {summary.runCount} {summary.runCount === 1 ? "Saturday" : "Saturdays"}
       </p>
-      <dl className="cafe-metrics">
-        <div>
-          <dt>Median wait · p50</dt>
-          <dd>{displayWait(stats.waitP50Seconds)}</dd>
-        </div>
-        <div>
-          <dt>Long wait · p90</dt>
-          <dd>{displayWait(stats.waitP90Seconds)}</dd>
-        </div>
-        <div>
-          <dt>Average served</dt>
-          <dd>{countFormat.format(stats.meanOrdersServed)}</dd>
-        </div>
-        <div>
-          <dt>Average lost</dt>
-          <dd>{countFormat.format(stats.meanCustomersLost)}</dd>
-        </div>
-      </dl>
-      <p className="cafe-pressure">
-        <strong>Bottleneck</strong> ·{" "}
-        {stats.bottleneck
-          ? `${stats.bottleneck.label} · longest task wait ${displayWait(stats.bottleneck.longestTaskWaitSeconds)}`
-          : "No resource delays recorded"}
+      <ServiceMetrics summary={summary} stale={stale} paired />
+      <p className="cafe-run-reference">
+        Service revision {side.service.scenarioRevision} · Run {side.service.id}
       </p>
     </section>
   );
 }
 
-function MatchedPlayback({ receipt }: { receipt: DecisionReceipt }) {
+function MatchedPlayback({
+  receipt,
+  stale,
+}: {
+  receipt: DecisionReceipt;
+  stale: boolean;
+}) {
   const first = useActionQuery("get-simulation", {
     id: receipt.a.service.scenarioId,
     runId: receipt.a.service.id,
@@ -154,6 +146,7 @@ function MatchedPlayback({ receipt }: { receipt: DecisionReceipt }) {
   return (
     <Playback
       receiptId={receipt.id}
+      stale={stale}
       boards={[
         {
           run: { ...a, playback: a.playback },
@@ -185,8 +178,13 @@ function ComparisonPlayback({
         <h3>Matched Saturday results</h3>
         <p>
           Seed {settings.seed} · {settings.demandLevel} demand ·{" "}
-          {countFormat.format(sample.arrivals)} shared arrivals across{" "}
-          {settings.runCount} Saturdays
+          <ServiceFigure
+            value={`${countFormat.format(sample.arrivals)} shared arrivals`}
+            tag={receipt.weekendDemand[settings.demandLevel].tag}
+            stale={serviceStale}
+          />{" "}
+          across {settings.runCount}{" "}
+          {settings.runCount === 1 ? "Saturday" : "Saturdays"}
         </p>
         <button
           type="button"
@@ -222,6 +220,7 @@ function ComparisonPlayback({
       <MatchedPlayback
         key={`${a.service.id}:${b.service.id}`}
         receipt={receipt}
+        stale={serviceStale}
       />
     </>
   );
@@ -236,7 +235,7 @@ function ComparisonMetrics({
   disabled: boolean;
   setSavedCustomers: (enabled: boolean) => void;
 }) {
-  const { receipt, cashStale } = decision;
+  const { receipt, cashStale, serviceStale } = decision;
   const { a, b, delta, savedCustomers, cashBaseline } = receipt;
   if (!b || !delta) return null;
   const moneyDeltas = [
@@ -257,8 +256,8 @@ function ComparisonMetrics({
         role="group"
         aria-label="Metrics across all simulated Saturdays"
       >
-        <SideStats side={a} label={`A · ${a.label}`} />
-        <SideStats side={b} label={`B · ${b.label}`} />
+        <SideStats side={a} label={`A · ${a.label}`} stale={serviceStale} />
+        <SideStats side={b} label={`B · ${b.label}`} stale={serviceStale} />
       </div>
       <div className="cafe-decision-summary">
         <h3>What changes in B?</h3>
@@ -272,18 +271,41 @@ function ComparisonMetrics({
         <dl className="cafe-metrics" aria-label="B minus A">
           <div>
             <dt>Median wait</dt>
-            <dd>{waitDelta(delta.waitP50Seconds.value)}</dd>
-            <Stamp tag={delta.waitP50Seconds.tag} />
+            <dd>
+              <ServiceFigure
+                value={waitDelta(delta.waitP50Seconds.value)}
+                tag={
+                  delta.waitP50Seconds.value === null
+                    ? undefined
+                    : delta.waitP50Seconds.tag
+                }
+                stale={serviceStale}
+              />
+            </dd>
           </div>
           <div>
             <dt>Long wait · p90</dt>
-            <dd>{waitDelta(delta.waitP90Seconds.value)}</dd>
-            <Stamp tag={delta.waitP90Seconds.tag} />
+            <dd>
+              <ServiceFigure
+                value={waitDelta(delta.waitP90Seconds.value)}
+                tag={
+                  delta.waitP90Seconds.value === null
+                    ? undefined
+                    : delta.waitP90Seconds.tag
+                }
+                stale={serviceStale}
+              />
+            </dd>
           </div>
           <div>
             <dt>Lost per Saturday</dt>
-            <dd>{signedCount.format(delta.customersLostPerSaturday.value)}</dd>
-            <Stamp tag={delta.customersLostPerSaturday.tag} />
+            <dd>
+              <ServiceFigure
+                value={signedCount.format(delta.customersLostPerSaturday.value)}
+                tag={delta.customersLostPerSaturday.tag}
+                stale={serviceStale}
+              />
+            </dd>
           </div>
           {moneyDeltas.map(([label, value]) => (
             <div key={label}>

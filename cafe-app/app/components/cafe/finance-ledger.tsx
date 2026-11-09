@@ -12,7 +12,8 @@ import type { ScenarioFinance } from "../../../server/lib/cafe/finance";
 import type { SourceTag } from "../../../server/lib/cafe/provenance";
 import { demandLevels } from "../../../server/lib/cafe/scenario";
 import type { Scenario } from "../../../server/lib/cafe/scenario-store";
-import { FormStatus, sourceLabels, TaggedField } from "./scenario-inputs";
+import { Stamp } from "./provenance-stamp";
+import { FormStatus, TaggedField } from "./scenario-inputs";
 
 export const cashFormat = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -218,10 +219,6 @@ function FinanceForm({
       </fieldset>
     </form>
   );
-}
-
-export function Stamp({ tag }: { tag: SourceTag }) {
-  return <span className="cafe-stamp">{sourceLabels[tag]}</span>;
 }
 
 function Figure({
@@ -660,20 +657,6 @@ function Receipt({ decision }: { decision: StoredDecision }) {
             sample this demand.
           </p>
         )}
-        {b && receipt.delta && (
-          <section
-            className="cafe-receipt-sensitivity"
-            aria-label="Saved-customer assumption"
-          >
-            <h4>Saved-customer cash sensitivity</h4>
-            <p>
-              Count recovered weekend customers ·{" "}
-              {receipt.savedCustomers.enabled ? "On" : "Off"}{" "}
-              <Stamp tag={receipt.savedCustomers.tag} />
-            </p>
-            <SavedCustomerSensitivity receipt={receipt} />
-          </section>
-        )}
         <details>
           <summary>Break-even capture rates</summary>
           <p>
@@ -709,6 +692,23 @@ function Receipt({ decision }: { decision: StoredDecision }) {
             </p>
           ))}
         </details>
+      </div>
+      <div className="cafe-receipt-aside">
+        <CashChart receipt={receipt} />
+        {b && receipt.delta && (
+          <section
+            className="cafe-receipt-sensitivity"
+            aria-label="Saved-customer assumption"
+          >
+            <h4>Saved-customer cash sensitivity</h4>
+            <p>
+              Count recovered weekend customers ·{" "}
+              {receipt.savedCustomers.enabled ? "On" : "Off"}{" "}
+              <Stamp tag={receipt.savedCustomers.tag} />
+            </p>
+            <SavedCustomerSensitivity receipt={receipt} />
+          </section>
+        )}
         <footer>
           <p>Receipt {receipt.id}</p>
           {(b ? [a, b] : [a]).map(({ service, financeRevision }, index) => (
@@ -727,7 +727,6 @@ function Receipt({ decision }: { decision: StoredDecision }) {
           </button>
         </footer>
       </div>
-      <CashChart receipt={receipt} />
     </article>
   );
 }

@@ -230,11 +230,21 @@ function timelineCounts(events, second) {
   return { Arrived: arrived, Waiting: waiting, "In service": state.size - waiting, Served: served, Lost: lost };
 }
 
-async function boardCounts(board) {
+async function assertStamp(figure, tag, stale = false) {
+  const text = stale ? `${tag} · Stale` : tag;
+  assert(await figure.getByText(new RegExp(`^${text}$`, "i")).isVisible(), `Missing adjacent ${text} stamp`);
+}
+
+async function boardCounts(board, tag) {
   const rows = board.locator('dl[aria-label="Counts at the selected time"] > div');
   await rows.first().waitFor();
+  for (const row of await rows.all()) await assertStamp(row.locator("dd"), tag);
+  const stations = await board.getByRole("list", { name: "Service stations" }).getByRole("listitem").all();
+  assert.equal(stations.length, 5, "Playback must show all five service stations");
+  for (const station of stations) await assertStamp(station, tag);
+  await assertStamp(board.locator(".cafe-pressure"), tag);
   return Object.fromEntries(await rows.evaluateAll((entries) => entries.map((row) => [
-    row.querySelector("dt").textContent.trim(), Number(row.querySelector("dd").textContent),
+    row.querySelector("dt").textContent.trim(), parseInt(row.querySelector("dd").innerText, 10),
   ])));
 }
 
@@ -280,7 +290,7 @@ async function checkPlayback(page, runs, labels) {
     const board = page.getByRole("region", { name: label, exact: true }).filter({
       has: page.locator('dl[aria-label="Counts at the selected time"]'),
     });
-    const actual = await boardCounts(board);
+    const actual = await boardCounts(board, runs[index].summary.provenance);
     assert.deepEqual(actual, timelineCounts(runs[index].playback.timeline, second), `${label} counts must match the timeline at the shared playhead`);
     frames.push({ label, counts: actual });
   }
@@ -377,6 +387,14 @@ export async function runFounder({ context, page, origin, map, record, section, 
   const zero = await clickAction(page, "set-demand", saveDemand);
   assert.deepEqual(zero.scenario.demand.pedestrian.count, tagged(0, "observed"));
   await demandForm.getByText(/Expected Saturday arrivals · 0 ·/).waitFor();
+  const noOrders = await solo();
+  assert.equal(noOrders.summary.stats.waitP50Seconds, null);
+  assert.equal(noOrders.summary.stats.waitP90Seconds, null);
+  const unavailable = exact(page, "Metrics across all simulated Saturdays").locator("dd").filter({ hasText: "Unavailable" });
+  await unavailable.first().waitFor();
+  assert.equal(await unavailable.count(), 2);
+  assert.equal(await unavailable.locator(".cafe-stamp").count(), 0, "Missing wait figures must not claim a source");
+  await page.getByText("Wait percentiles need at least one served order.").waitFor();
   await countSwitch.uncheck();
   const cleared = await clickAction(page, "set-demand", saveDemand);
   assert.equal(cleared.scenario.demand.pedestrian, null);
@@ -464,10 +482,14 @@ export async function runFounder({ context, page, origin, map, record, section, 
     ["Average orders served", number.format(first.summary.stats.meanOrdersServed)],
     ["Average customers lost", number.format(first.summary.stats.meanCustomersLost)],
   ]) {
-    await totals.locator("div").filter({ has: page.getByText(name, { exact: true }) }).getByText(value, { exact: true }).waitFor();
+    const row = totals.locator("div").filter({ has: page.getByText(name, { exact: true }) });
+    await row.getByText(value, { exact: true }).waitFor();
+    await assertStamp(row.locator("dd"), first.summary.provenance);
   }
+  await assertStamp(results.locator(".cafe-pressure").filter({ hasText: first.summary.stats.bottleneck.label }).first(), first.summary.provenance);
   await expand(page, "Staff & equipment utilization");
   await results.getByText("Barista 1", { exact: false }).last().waitFor();
+  for (const figure of await results.locator(".cafe-resource-list dd").all()) await assertStamp(figure, first.summary.provenance);
   const soloFrame = await checkPlayback(page, [first], ["Saturday board"]);
   assert.equal((await solo()).id, first.id, "Replaying the same inputs must return the same saved run ID");
   const repeated = await service(id);
@@ -589,6 +611,12 @@ export async function runFounder({ context, page, origin, map, record, section, 
   assert.equal(runA.playback.arrivals.length, weekend.base.arrivals);
   capture("matched-arrivals.json", { receiptId: direct.receipt.id, runs: [runA, runB].map(({ id, playback }) => ({ id, arrivals: playback.arrivals })) });
   const pairedFrame = await checkPlayback(page, [runA, runB], ["A · Two baristas", "B · Extra grinder"]);
+  const pairedMetrics = page.getByRole("group", { name: "Metrics across all simulated Saturdays" });
+  for (const [label, run] of [["A · Two baristas", runA], ["B · Extra grinder", runB]]) {
+    const side = pairedMetrics.getByRole("region", { name: label });
+    for (const figure of await side.locator("dl dd").all()) await assertStamp(figure, run.summary.provenance);
+    await assertStamp(side.locator(".cafe-pressure"), run.summary.provenance);
+  }
   assert.equal(pairedFrame.reducedMotion, true);
   const applicationState = await verifyPublishedPlayback(page, origin, direct.receipt.id, runA, runB, pairedFrame.second);
   record("matched run records and shared keyboard playhead", {
@@ -772,6 +800,10 @@ export async function runFounder({ context, page, origin, map, record, section, 
     Number(await rent.inputValue()) === base.combinedEdit.rent &&
     await exact(aFinance, "Rent per month (₹) source").inputValue() === "estimate");
   await page.getByText("Stale service result.").waitFor();
+  const staleArrived = page.getByRole("region", { name: "A · Two baristas", exact: true })
+    .locator('dl[aria-label="Counts at the selected time"] > div')
+    .filter({ hasText: "Arrived" });
+  await assertStamp(staleArrived, runA.summary.provenance, true);
   await receiptPanel.getByText("Stale cash receipt.").waitFor();
   assert.equal((await service(barista.id, runA.id)).stale, true);
   const combinedStale = await decision(barista.id, grinder.id, on.receipt.id);
@@ -861,6 +893,10 @@ export async function runFounder({ context, page, origin, map, record, section, 
     await page.setViewportSize({ width, height: 900 });
     const dimensions = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth }));
     assert.equal(dimensions.document, dimensions.viewport, `No document overflow at ${width} px`);
+    const overflowingServiceFigures = await page.locator(".cafe-station, .cafe-frame-counts > div").evaluateAll((cells) =>
+      cells.filter((cell) => cell.scrollWidth > cell.clientWidth + 1).map((cell) => cell.innerText),
+    );
+    assert.deepEqual(overflowingServiceFigures, [], `No clipped playback counts at ${width} px`);
     for (const [name, selector] of [
       ["cover", "#opening-file"],
       ["site-demand", "#site-demand"],

@@ -17,6 +17,7 @@ import {
 
 import { TAB_ID } from "@/lib/tab-id";
 
+import type { SourceTag } from "../../../server/lib/cafe/provenance";
 import {
   demandLevels,
   equipmentLabels,
@@ -24,13 +25,109 @@ import {
 } from "../../../server/lib/cafe/scenario";
 import type { Scenario } from "../../../server/lib/cafe/scenario-store";
 import type { ServiceRun } from "../../../server/lib/cafe/service-run";
-import { formatClock, sourceLabels } from "./scenario-inputs";
+import { Stamp } from "./provenance-stamp";
+import { formatClock } from "./scenario-inputs";
 
 const playbackSpeeds = [30, 120, 600] as const;
 const playbackSyncInterval = 1000;
 const number = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 1 });
+const comparisonNumber = new Intl.NumberFormat("en-IN", {
+  maximumFractionDigits: 2,
+});
 export const displayWait = (seconds: number | null) =>
   seconds === null ? "Unavailable" : `${number.format(seconds / 60)} min`;
+
+export function ServiceFigure({
+  value,
+  tag,
+  stale,
+}: {
+  value: string | number;
+  tag?: SourceTag | undefined;
+  stale: boolean;
+}) {
+  return (
+    <span className="cafe-service-figure">
+      <span>{value}</span> <Stamp tag={tag} stale={stale} />
+    </span>
+  );
+}
+
+export function ServiceMetrics({
+  summary,
+  stale,
+  paired = false,
+}: {
+  summary: ServiceRun["summary"];
+  stale: boolean;
+  paired?: boolean;
+}) {
+  const { stats, provenance: tag } = summary;
+  const waits = [
+    ["Median wait · p50", stats.waitP50Seconds],
+    ["Long wait · p90", stats.waitP90Seconds],
+  ] as const;
+  const counts = [
+    [
+      paired ? "Average served" : "Average orders served",
+      stats.meanOrdersServed,
+    ],
+    [
+      paired ? "Average lost" : "Average customers lost",
+      stats.meanCustomersLost,
+    ],
+  ] as const;
+  return (
+    <>
+      <dl
+        className="cafe-metrics"
+        aria-label={
+          paired ? undefined : "Metrics across all simulated Saturdays"
+        }
+      >
+        {waits.map(([label, seconds]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>
+              <ServiceFigure
+                value={displayWait(seconds)}
+                tag={seconds === null ? undefined : tag}
+                stale={stale}
+              />
+            </dd>
+          </div>
+        ))}
+        {counts.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>
+              <ServiceFigure
+                value={(paired ? comparisonNumber : number).format(value)}
+                tag={tag}
+                stale={stale}
+              />
+            </dd>
+          </div>
+        ))}
+      </dl>
+      {waits.some(([, seconds]) => seconds === null) && (
+        <p>Wait percentiles need at least one served order.</p>
+      )}
+      <p className="cafe-pressure">
+        <strong>Bottleneck</strong> ·{" "}
+        <ServiceFigure
+          value={
+            stats.bottleneck
+              ? `${stats.bottleneck.label} · longest task wait ${displayWait(stats.bottleneck.longestTaskWaitSeconds)}`
+              : "No resource delays recorded"
+          }
+          tag={tag}
+          stale={stale}
+        />
+      </p>
+    </>
+  );
+}
 
 type Ticket = {
   itemId: string;
@@ -99,9 +196,11 @@ type PlaybackBoard = { run: ServiceRun; label?: string };
 export function Playback({
   boards,
   receiptId,
+  stale,
 }: {
   boards: readonly [PlaybackBoard, ...PlaybackBoard[]];
   receiptId?: string;
+  stale: boolean;
 }) {
   const [{ run }] = boards;
   const { summary, playback } = run;
@@ -225,7 +324,12 @@ export function Playback({
       </div>
       <div className={boards.length > 1 ? "cafe-paired-boards" : undefined}>
         {boards.map((board) => (
-          <StationBoard key={board.run.id} board={board} second={second} />
+          <StationBoard
+            key={board.run.id}
+            board={board}
+            second={second}
+            stale={stale}
+          />
         ))}
       </div>
     </div>
@@ -238,11 +342,14 @@ function StationBoard({
     label,
   },
   second,
+  stale,
 }: {
   board: PlaybackBoard;
   second: number;
+  stale: boolean;
 }) {
   const frame = useMemo(() => frameAt(playback, second), [playback, second]);
+  const tag = summary.provenance;
   const longest = frame.tickets
     .filter(
       ([, ticket]) =>
@@ -274,14 +381,22 @@ function StationBoard({
         ).map(([label, value]) => (
           <div key={label}>
             <dt>{label}</dt>
-            <dd>{value}</dd>
+            <dd>
+              <ServiceFigure value={value} tag={tag} stale={stale} />
+            </dd>
           </div>
         ))}
       </dl>
       <p className="cafe-pressure">
-        {longest
-          ? `${longest.station} has the longest current wait · ${displayWait(second - longest.queuedAt!)}`
-          : "No orders waiting at this time."}
+        <ServiceFigure
+          value={
+            longest
+              ? `${longest.station} has the longest current wait · ${displayWait(second - longest.queuedAt!)}`
+              : "No orders waiting at this time."
+          }
+          tag={tag}
+          stale={stale}
+        />
       </p>
       <ol className="cafe-stations" aria-label="Service stations">
         {stations.map((station) => {
@@ -303,7 +418,8 @@ function StationBoard({
               <p className="cafe-station-counts">
                 <span>{active.length} active</span>{" "}
                 <span aria-hidden="true">·</span>{" "}
-                <span>{queued.length} waiting</span>
+                <span>{queued.length} waiting</span>{" "}
+                <Stamp tag={tag} stale={stale} />
               </p>
               {[...active.slice(0, 2), ...queued.slice(0, 3)].map(
                 ([id, ticket]) => (
@@ -469,9 +585,7 @@ export function ServiceTest({
                   {run.summary.runCount === 1 ? "Saturday" : "Saturdays"} ·{" "}
                   {run.summary.demandLevel} demand · seed {run.summary.seed} ·
                   revision {run.scenarioRevision}{" "}
-                  <span className="cafe-stamp">
-                    {sourceLabels[run.summary.provenance]}
-                  </span>
+                  <Stamp tag={run.summary.provenance} stale={stale} />
                 </p>
               </div>
               <button
@@ -488,37 +602,12 @@ export function ServiceTest({
                 to see the new result.
               </p>
             )}
-            <dl
-              className="cafe-metrics"
-              aria-label="Metrics across all simulated Saturdays"
-            >
-              <div>
-                <dt>Median wait · p50</dt>
-                <dd>{displayWait(stats.waitP50Seconds)}</dd>
-              </div>
-              <div>
-                <dt>Long wait · p90</dt>
-                <dd>{displayWait(stats.waitP90Seconds)}</dd>
-              </div>
-              <div>
-                <dt>Average orders served</dt>
-                <dd>{number.format(stats.meanOrdersServed)}</dd>
-              </div>
-              <div>
-                <dt>Average customers lost</dt>
-                <dd>{number.format(stats.meanCustomersLost)}</dd>
-              </div>
-            </dl>
-            <p className="cafe-pressure">
-              <strong>Bottleneck</strong> ·{" "}
-              {stats.bottleneck
-                ? `${stats.bottleneck.label} · longest task wait ${displayWait(stats.bottleneck.longestTaskWaitSeconds)}`
-                : "No resource delays recorded"}
-            </p>
+            <ServiceMetrics summary={run.summary} stale={stale} />
             {run.playback && (
               <Playback
                 key={run.id}
                 boards={[{ run: { ...run, playback: run.playback } }]}
+                stale={stale}
               />
             )}
             <details>
@@ -531,7 +620,13 @@ export function ServiceTest({
                         ? (run.summary.staffNames[resource.id] ?? resource.id)
                         : `${equipmentLabels[resource.kind]} · ${resource.id.split("-").pop()}`}
                     </dt>
-                    <dd>{number.format(resource.fraction * 100)}%</dd>
+                    <dd>
+                      <ServiceFigure
+                        value={`${number.format(resource.fraction * 100)}%`}
+                        tag={run.summary.provenance}
+                        stale={stale}
+                      />
+                    </dd>
                   </div>
                 ))}
               </dl>
