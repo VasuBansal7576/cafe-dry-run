@@ -4,6 +4,7 @@ import {
   getRequestRunContext,
   loadActionsFromStaticRegistry,
 } from "@agent-native/core/server";
+import { createError } from "h3";
 
 import actionsRegistry from "../../.generated/actions-registry.js";
 import { recordCafeFounderText } from "../lib/cafe/chat-action-text.js";
@@ -14,24 +15,69 @@ import {
   isCafeChatActionAllowed,
 } from "../lib/cafe/guarded-chat-stream.js";
 import {
+  comparisonReviewRequest,
+  currentReviewScope,
+  guardStructuredReview,
+  REVIEW_ACTION,
+  reviewScopeSchema,
+} from "../lib/cafe/structured-review.js";
+import {
   searchConversationReferences,
   validateConversationReferences,
 } from "../lib/composer-references.js";
 
+const comparisonReviewRequests = new WeakMap<
+  object,
+  {
+    scope: ReturnType<typeof comparisonReviewRequest>;
+    hasDelegatedAgent: boolean;
+  }
+>();
+
 export default createAgentChatPlugin({
   appId: "cafe-app",
   frameworkTools: { database: "off" },
-  resolveActionSurface: ({ availableActionNames }) => ({
-    allowedActionNames: availableActionNames.filter(isCafeChatActionAllowed),
-  }),
+  resolveActionSurface: ({ event, actionScope, availableActionNames }) => {
+    const request = comparisonReviewRequests.get(event);
+    const reviewRequest = actionScope ?? request?.scope;
+    if (reviewRequest !== undefined) {
+      if (request?.hasDelegatedAgent)
+        throw createError({
+          status: 400,
+          message: "Comparison reviews cannot include a delegated agent.",
+        });
+      const scope = reviewScopeSchema.safeParse(reviewRequest);
+      if (!scope.success)
+        throw createError({
+          status: 400,
+          message: "Invalid comparison review scope.",
+        });
+      return { actionScope: scope.data, allowedActionNames: [REVIEW_ACTION] };
+    }
+    return {
+      allowedActionNames: availableActionNames.filter(isCafeChatActionAllowed),
+    };
+  },
   mentionProviders: {
     chats: {
       label: "composerSources.group",
       search: searchConversationReferences,
     },
   },
-  prepareRequest: async ({ references, message, internalContinuation }) => {
+  prepareRequest: async ({
+    event,
+    references,
+    message,
+    internalContinuation,
+  }) => {
     await validateConversationReferences(references);
+    // The stock sidebar drops scoped metadata on the HTTP hop in Core 0.226.0.
+    const scope = comparisonReviewRequest(message);
+    const hasDelegatedAgent = references.some(
+      ({ type }) => type === "agent" || type === "custom-agent",
+    );
+    if (scope !== undefined || hasDelegatedAgent)
+      comparisonReviewRequests.set(event, { scope, hasDelegatedAgent });
     return {
       followUpSuggestions: false,
       prepareAfterModel: () => {
@@ -47,7 +93,10 @@ export default createAgentChatPlugin({
   actions: loadActionsFromStaticRegistry(actionsRegistry),
   mcp: { connectorCatalog: [], appApprovalPage: true },
   initialToolNames: cafeChatTools,
-  finalResponseGuard: guardCafeFigures,
+  finalResponseGuard: (details) =>
+    currentReviewScope()
+      ? guardStructuredReview(details)
+      : guardCafeFigures(details),
   resolveOrgId: async (event) => (await getOrgContext(event)).orgId,
   systemPrompt: `You are the Café Dry Run agent.
 

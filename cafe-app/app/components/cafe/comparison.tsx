@@ -16,6 +16,10 @@ import { illustrative } from "../../../server/lib/cafe/provenance";
 import { demandLevels } from "../../../server/lib/cafe/scenario";
 import type { Scenario } from "../../../server/lib/cafe/scenario-store";
 import {
+  COMPARISON_REVIEW_CONTEXT,
+  COMPARISON_REVIEW_PROMPT,
+} from "../../../shared/cafe/structured-review";
+import {
   countFormat,
   FinanceLedger,
   SavedCustomerSensitivity,
@@ -190,17 +194,23 @@ function ComparisonPlayback({
           type="button"
           className="cafe-secondary"
           disabled={cashStale || disabled}
-          onClick={() =>
+          onClick={() => {
+            const scope = {
+              kind: "cafe-comparison-review",
+              aId: a.service.scenarioId,
+              bId: b.service.scenarioId,
+              receiptId: receipt.id,
+            };
             sendToAgentChat({
-              message:
-                "Explain this café comparison. Use explain-result for the saved receipt. Say which option you favor, the reason, and what changes if we count recovered weekend customers. Use the action's figures and units.",
-              context: `Scenario A ${a.service.scenarioId}, scenario B ${b.service.scenarioId}, receipt ${receipt.id}. Both boards have the same Saturday arrivals.`,
+              message: COMPARISON_REVIEW_PROMPT,
+              context: COMPARISON_REVIEW_CONTEXT + JSON.stringify(scope),
+              actionScope: scope,
               contextLabel: "Matched Saturday result",
               openSidebar: true,
               submit: true,
               tabId: TAB_ID,
-            })
-          }
+            });
+          }}
         >
           Explain
         </button>
