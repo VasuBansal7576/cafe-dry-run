@@ -60,7 +60,7 @@
 }
 
 [data-cafe-layout]
-  .agent-sidebar-panel[data-agent-sidebar-layout="desktop"][data-agent-sidebar-state="open"] {
+  .agent-sidebar-panel[data-agent-sidebar-layout="desktop"][data-agent-sidebar-state="open"]:not([data-agent-sidebar-animation]) {
   width: var(--agent-sidebar-width) !important;
 }
 
