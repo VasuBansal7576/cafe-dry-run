@@ -1,0 +1,1004 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Cafe dry run: statechart and spec</title>
+<style>
+:root{--bg:#faf9f5;--surface:#fff;--ink:#1f1e1d;--muted:#6b6a65;--line:#e4e2da;
+--teal:#0f6e56;--teal-bg:#e1f5ee;--purple:#534ab7;--purple-bg:#eeedfe;
+--amber:#854f0b;--amber-bg:#faeeda;--green:#3b6d11;--green-bg:#eaf3de;
+--blue:#185fa5;--blue-bg:#e6f1fb;--gray:#5f5e5a;--gray-bg:#f1efe8;--red:#a32d2d;--red-bg:#fcebeb}
+@media (prefers-color-scheme:dark){:root{--bg:#1a1a18;--surface:#232321;--ink:#f1efe8;--muted:#b4b2a9;--line:#3a3a37;
+--teal:#5dcaa5;--teal-bg:#04342c;--purple:#afa9ec;--purple-bg:#26215c;
+--amber:#fac775;--amber-bg:#412402;--green:#97c459;--green-bg:#173404;
+--blue:#85b7eb;--blue-bg:#042c53;--gray:#b4b2a9;--gray-bg:#2c2c2a;--red:#f09595;--red-bg:#501313}}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:56px}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:920px;margin:0 auto;padding:0 16px}
+h1{font-size:28px;line-height:1.2;margin:0 0 8px;font-weight:600}
+h2{font-size:22px;margin:0 0 6px;font-weight:600}
+h3{font-size:16px;margin:0 0 6px;font-weight:600}
+p{margin:0 0 10px}
+.muted{color:var(--muted)}
+.hero{padding:28px 0 16px}
+.eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.chip{display:inline-block;font-size:13px;padding:3px 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface)}
+.nav{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line)}
+.nav .wrap{display:flex;gap:4px;overflow-x:auto;padding-top:8px;padding-bottom:8px}
+.nav a{white-space:nowrap;text-decoration:none;color:var(--ink);font-size:14px;padding:4px 10px;border-radius:8px}
+.nav a:hover{background:var(--gray-bg)}
+section{padding:28px 0 8px;border-bottom:1px solid var(--line)}
+section:last-of-type{border-bottom:0}
+.lead{color:var(--muted);margin-bottom:16px}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.card ul,.list{margin:6px 0 0;padding-left:18px}
+.card li,.list li{margin:3px 0}
+.tag{display:inline-block;font-size:12px;font-weight:600;padding:1px 8px;border-radius:6px;margin-right:6px;border:1px solid transparent}
+.t-observed{background:var(--green-bg);color:var(--green);border-color:var(--green)}
+.t-public{background:var(--blue-bg);color:var(--blue);border-color:var(--blue)}
+.t-estimate{background:var(--amber-bg);color:var(--amber);border-color:var(--amber)}
+.t-illustrative{background:var(--gray-bg);color:var(--gray);border:1px dashed var(--gray)}
+.t-none{background:var(--red-bg);color:var(--red);border-color:var(--red)}
+.callout{border-left:4px solid var(--purple);background:var(--purple-bg);padding:10px 14px;border-radius:0;margin:12px 0}
+.callout.warn{border-color:var(--amber);background:var(--amber-bg)}
+.sc{display:grid;gap:16px;grid-template-columns:1fr}
+@media (min-width:780px){.sc{grid-template-columns:380px 1fr}}
+.chartbox{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px}
+#chart{width:100%;height:auto;display:block;max-width:380px;margin:0 auto}
+.state{cursor:pointer;outline:none}
+.state rect{fill:var(--teal-bg);stroke:var(--teal);stroke-width:1}
+.state.computed rect{fill:var(--purple-bg);stroke:var(--purple);stroke-dasharray:4 3}
+.state text{font:13px system-ui,sans-serif;fill:var(--ink)}
+.state .sid{font-size:11px;fill:var(--muted)}
+.state.sel rect{stroke-width:3}
+.state:focus-visible rect{stroke-width:3;stroke:var(--ink)}
+.edge{stroke:var(--muted);stroke-width:1.3;fill:none}
+.edge.back{stroke-dasharray:4 3}
+.lbl{font:11px system-ui,sans-serif;fill:var(--muted)}
+.legend{font-size:13px;color:var(--muted);margin:8px 4px 0}
+.sw{display:inline-block;width:14px;height:10px;border-radius:2px;margin-right:4px;vertical-align:middle}
+.sw.in{background:var(--teal-bg);border:1px solid var(--teal)}
+.sw.calc{background:var(--purple-bg);border:1px dashed var(--purple)}
+#detail h3{font-size:18px}
+.kv{display:grid;gap:10px;margin-top:10px}
+.kv h4{margin:0 0 2px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.kv ul{margin:0;padding-left:18px}
+.pill{display:inline-block;font-size:12px;padding:1px 8px;border-radius:6px;background:var(--gray-bg);margin:2px 4px 2px 0;font-family:ui-monospace,Menlo,Consolas,monospace}
+.btn{font:inherit;font-size:14px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
+.btn:hover{background:var(--gray-bg)}
+.layer{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.layer h3{margin-bottom:8px}
+.layer.l-ui{border-color:var(--teal);background:var(--teal-bg)}
+.layer.l-act{border-color:var(--purple);background:var(--purple-bg)}
+.arrow{text-align:center;color:var(--muted);line-height:1.2;margin:4px 0;font-size:13px}
+.row{display:flex;flex-wrap:wrap;gap:8px}
+.box{flex:1 1 150px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:14px;color:var(--ink)}
+.box b{display:block;font-weight:600}
+.box span{color:var(--muted);font-size:13px}
+.bar{height:10px;border-radius:6px;background:var(--gray-bg);overflow:hidden;margin:8px 0}
+.bar i{display:block;height:100%;width:0;background:var(--teal)}
+.dod h3{margin-top:16px}
+.dod label{display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.dod input{margin-top:5px;width:18px;height:18px;flex:none;accent-color:var(--teal)}
+.dod .lv{font-size:11px;font-weight:600;padding:0 6px;border-radius:5px;margin-left:6px;vertical-align:middle}
+.lv.must{background:var(--red-bg);color:var(--red)}
+.lv.should{background:var(--amber-bg);color:var(--amber)}
+ol.steps{padding-left:20px}
+ol.steps li{margin:6px 0}
+pre{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;overflow:auto;font-size:12px;line-height:1.5;max-height:420px}
+code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.92em}
+footer{padding:24px 0 48px;color:var(--muted);font-size:14px}
+a{color:var(--blue)}
+.big{font-size:18px}
+</style>
+</head>
+<body>
+
+<header class="hero"><div class="wrap">
+  <div class="eyebrow">Agent-Native Hackathon build spec</div>
+  <h1>Cafe dry run</h1>
+  <p class="big">A dry run of your cafe before it exists. Pick a spot, enter a demand range, simulate a Saturday, ask "one more barista or one more grinder?" and watch queue, cost and runway change, while you and the agent edit the same scenario.</p>
+  <div class="chips">
+    <span class="chip">Niche: independent cafe</span>
+    <span class="chip">Demo city: Bengaluru</span>
+    <span class="chip">Stack: Agent-Native, TypeScript</span>
+    <span class="chip">No model training</span>
+    <span class="chip" id="countdown">Deadline: Tue 10 Nov, 1:29 PM IST</span>
+  </div>
+</div></header>
+
+<nav class="nav" aria-label="Sections"><div class="wrap">
+  <a href="#what">What and who</a><a href="#states">Statechart</a><a href="#arch">Architecture</a><a href="#data">Data</a><a href="#sim">Simulation</a><a href="#done">Done means</a><a href="#questions">Open questions</a><a href="#spec">Agent spec</a>
+</div></nav>
+
+<main class="wrap">
+
+<section id="what">
+  <h2>What we are building, and for whom</h2>
+  <p class="lead">One connected flow: spot, demand range, simulated shop, runway. Staff and equipment are the two biggest variable costs, and a first-time founder has to decide them before the lease is signed.</p>
+  <div class="grid">
+    <div class="card"><h3>The problem</h3>
+      <p>A first-time cafe founder makes linked decisions with incomplete information: is the spot busy enough, can one barista serve the rush, do we need another machine, how long does cash last if demand is lower than hoped?</p>
+      <p class="muted">Existing tools cover pieces (financial scenarios in one, restaurant simulation in another). Our angle is connecting them in an inspectable experience before the cafe exists. We do not claim to have invented restaurant simulation.</p></div>
+    <div class="card"><h3>Who it is for</h3>
+      <ul><li><b>Primary:</b> a first-time cafe founder with a shortlisted spot, a cash figure and a rough rent, but no operations experience.</li>
+      <li><b>Co-operator:</b> the agent, which runs scenarios and explains them.</li>
+      <li><b>Not for:</b> operators who already have point-of-sale data, or anyone wanting a sales prediction.</li></ul></div>
+    <div class="card"><h3>The question it answers</h3>
+      <p class="big">"What would have to happen for this cafe to work?"</p>
+      <p class="muted">Not "will this cafe succeed?". The first can be shown truthfully with limited data. The second needs evidence we do not have.</p></div>
+  </div>
+  <div class="grid" style="margin-top:12px">
+    <div class="card"><h3>It promises</h3><ul>
+      <li>A repeatable simulated Saturday you can inspect and edit.</li>
+      <li>The bottleneck named, with the reason it moved.</li>
+      <li>Break-even and runway that follow from the staff and equipment you chose.</li>
+      <li>Every input labeled: observed, public, user estimate or illustrative.</li></ul></div>
+    <div class="card"><h3>It never claims</h3><ul>
+      <li>That the map predicts sales or footfall.</li>
+      <li>That one simulated Saturday equals a month (no multiplying by 30).</li>
+      <li>That faster service always earns more: only if it saves customers who would have left, and that assumption is visible.</li>
+      <li>Numbers the agent invented: every figure comes from an action.</li></ul></div>
+  </div>
+</section>
+
+<section id="states">
+  <h2>The statechart</h2>
+  <p class="lead">The scenario moves through six states. Tap or focus a state to see who can act, what it needs, what it produces, which data it uses and what "done" means for it.</p>
+  <div class="sc">
+    <div>
+      <div class="chartbox">
+        <svg id="chart" viewBox="0 0 360 380" role="group" aria-label="Statechart of the scenario lifecycle">
+          <defs><marker id="ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+          <circle cx="115" cy="12" r="5" fill="var(--ink)"/>
+          <line class="edge" x1="115" y1="17" x2="115" y2="28" marker-end="url(#ah)"/>
+          <line class="edge" x1="115" y1="66" x2="115" y2="86" marker-end="url(#ah)"/>
+          <line class="edge" x1="115" y1="124" x2="115" y2="144" marker-end="url(#ah)"/>
+          <line class="edge" x1="115" y1="182" x2="115" y2="202" marker-end="url(#ah)"/>
+          <line class="edge" x1="115" y1="240" x2="115" y2="260" marker-end="url(#ah)"/>
+          <line class="edge" x1="115" y1="298" x2="115" y2="318" marker-end="url(#ah)"/>
+          <text class="lbl" x="124" y="81">setSpot done</text>
+          <text class="lbl" x="124" y="139">configureShop</text>
+          <text class="lbl" x="124" y="197">runSimulation</text>
+          <text class="lbl" x="124" y="255">compareScenarios</text>
+          <text class="lbl" x="124" y="313">computeRunway</text>
+          <path class="edge back" d="M210 272 H250 V164 H214" marker-end="url(#ah)"/>
+          <text class="lbl" x="256" y="222">edit shop</text>
+          <path class="edge back" d="M210 288 H330 V106 H214" marker-end="url(#ah)"/>
+          <text class="lbl" x="222" y="100">change demand</text>
+          <g class="state" data-id="S1" tabindex="0" role="button" aria-label="State 1, Spot picked"><rect x="20" y="30" width="190" height="36" rx="8"/><text class="sid" x="32" y="52">S1</text><text x="56" y="52">Spot picked</text></g>
+          <g class="state" data-id="S2" tabindex="0" role="button" aria-label="State 2, Demand entered"><rect x="20" y="88" width="190" height="36" rx="8"/><text class="sid" x="32" y="110">S2</text><text x="56" y="110">Demand entered</text></g>
+          <g class="state" data-id="S3" tabindex="0" role="button" aria-label="State 3, Shop configured"><rect x="20" y="146" width="190" height="36" rx="8"/><text class="sid" x="32" y="168">S3</text><text x="56" y="168">Shop configured</text></g>
+          <g class="state computed" data-id="S4" tabindex="0" role="button" aria-label="State 4, Simulated, computed"><rect x="20" y="204" width="190" height="36" rx="8"/><text class="sid" x="32" y="226">S4</text><text x="56" y="226">Simulated</text></g>
+          <g class="state computed" data-id="S5" tabindex="0" role="button" aria-label="State 5, Compared, computed"><rect x="20" y="262" width="190" height="36" rx="8"/><text class="sid" x="32" y="284">S5</text><text x="56" y="284">Compared</text></g>
+          <g class="state computed" data-id="S6" tabindex="0" role="button" aria-label="State 6, Runway, computed"><rect x="20" y="320" width="190" height="36" rx="8"/><text class="sid" x="32" y="342">S6</text><text x="56" y="342">Runway</text></g>
+        </svg>
+        <div class="legend"><span class="sw in"></span>Solid: inputs a person or the agent sets &nbsp; <span class="sw calc"></span>Dashed: computed by code. Dashed arrows are edit loops. Any edit marks S4 to S6 stale until re-run.</div>
+      </div>
+    </div>
+    <div class="card" id="detail" aria-live="polite"></div>
+  </div>
+  <div class="callout"><b>Two parallel actors, one machine.</b> A human and the agent can fire the same transitions. Both go through the same actions and write to the same scenario, so a change by either appears for both without a manual refresh, within a couple of seconds.</div>
+</section>
+
+<section id="arch">
+  <h2>Architecture</h2>
+  <p class="lead">The language model orchestrates and explains; it never computes a number. The simulator and cash model are pure TypeScript called by actions on the server, with no ML model. Actions return or store an event timeline for the UI to play back.</p>
+  <div class="layer l-ui"><h3>1. Interfaces</h3><div class="row">
+    <div class="box"><b>Founder UI</b><span>Map, assumptions panel, animated queue, comparison, runway</span></div>
+    <div class="box"><b>Agent chat</b><span>Side panel inside the same app; tool calls stream visibly and users can stop or redirect the agent</span></div>
+    <div class="box"><b>MCP</b><span>External agents reach the app at /mcp</span></div></div></div>
+  <div class="arrow">UI, agent and integrations share actions; all AI goes through agent chat</div>
+  <div class="layer l-act"><h3>2. Shared actions, defined once with defineAction()</h3><div class="row" id="actionchips"></div><p style="margin:8px 0 0">The UI can call deterministic actions. Explain sends a prompt to agent chat; no UI button calls a model directly and no /api routes wrap actions.</p></div>
+  <div class="arrow">read and write</div>
+  <div class="layer"><h3>3. Engines, deterministic TypeScript</h3><div class="row">
+    <div class="box"><b>Demand panel</b><span>Hourly range, optional pedestrian count, provenance tags</span></div>
+    <div class="box"><b>Resource simulator</b><span>People and machines as shared resources, seeded randomness</span></div>
+    <div class="box"><b>Cash model</b><span>Break-even, monthly cash, runway</span></div></div></div>
+  <div class="arrow">state in, results out</div>
+  <div class="layer"><h3>4. Scenario store (SQL via Drizzle)</h3>
+    <p style="margin:0">Scenarios, runs and stale flags persist in the database. UI and agent share these records. application_state records the current view, selected scenarios and timeline position so the agent can navigate the UI. Each feature has a UI, action, AGENTS.md or skill note, and application state.</p></div>
+  <div class="arrow">inputs and defaults</div>
+  <div class="layer"><h3>5. Data</h3><div class="row">
+    <div class="box"><b>Map snapshot</b><span>Preloaded static JSON, 3 to 5 Bengaluru neighborhoods</span></div>
+    <div class="box"><b>Zomato CSV subset</b><span>Competitor and price-level context only</span></div>
+    <div class="box"><b>defaults.json</b><span>Published specifications where available; other assumptions labeled illustrative</span></div>
+    <div class="box"><b>Founder inputs</b><span>Rent, wages, prices, cash, demand</span></div></div></div>
+  <h3 style="margin-top:18px">Actions</h3>
+  <div class="grid" id="actions"></div>
+</section>
+
+<section id="data">
+  <h2>Data, and how much to trust it</h2>
+  <p class="lead">No model is trained and no GPU is needed. Public data gives context. Money, demand and timings come from the founder or are labeled defaults.</p>
+  <p><span class="tag t-observed">Observed</span><span class="tag t-public">Public data</span><span class="tag t-estimate">User estimate</span><span class="tag t-illustrative">Illustrative default</span></p>
+  <div class="callout warn"><b>Weakest-link rule.</b> A derived number inherits the least trustworthy tag among its inputs. If a result depends on an illustrative service time, the result is shown as illustrative until that input is replaced by an observation.</div>
+  <div class="grid">
+    <div class="card"><span class="tag t-public">Public data</span><h3>Map and nearby places</h3>
+      <p>OpenStreetMap and Overture Places, preloaded as a static snapshot so the demo never waits on a public API.</p>
+      <p class="muted">Context on the map only. Never converted into customers. Businesses can be missing or outdated. Attribution and licence terms apply.</p></div>
+    <div class="card"><span class="tag t-public">Public data</span><h3>Competitor and price context</h3>
+      <p>Kaggle Zomato Bangalore restaurants (about 51.7k rows in the large file, older scrape). Used to show a nearby price level and presence of competitors.</p>
+      <p class="muted">Vote counts are cumulative, not footfall. Check each dataset's licence before bundling a subset, and list it in the submission.</p></div>
+    <div class="card"><span class="tag t-estimate">User estimate</span><h3>Hourly customer arrivals</h3>
+      <p>Founder enters low, base and high customers per hour plus opening hours. The Saturday curve is an editable shape.</p>
+      <p class="muted">Defaults are labeled illustrative until edited.</p></div>
+    <div class="card"><span class="tag t-observed">Observed</span><h3>Pedestrian count (optional)</h3>
+      <p>If the founder has a count, arrivals = passers-by x assumed conversion rate. If not, the app runs in reverse and shows the conversion break-even would require.</p>
+      <p class="muted">Public counts exist for some places, but not for arbitrary Indian storefronts, so this input is optional.</p></div>
+    <div class="card"><span class="tag t-illustrative">Illustrative default</span><h3>Service times and patience</h3>
+      <p>Seconds per task (order, grind, pull shot, steam milk, hand-off) and how long customers wait before leaving.</p>
+      <p class="muted">Replace with the founder's own timings or a stopwatch session. These drive the result most, so they stay visible.</p></div>
+    <div class="card"><span class="tag t-public">Public data</span><h3>Equipment capacities</h3>
+      <p>Group heads, grinders, steam wands. Example: one commercial grinder's maker quotes 4 to 7 g/s, so an 18 g dose is roughly 3 to 5 seconds of grinding before handling.</p>
+      <p class="muted">Defaults use published specifications where available and are not tuned to favor a purchase. The demo shows whatever the model recommends.</p></div>
+    <div class="card"><span class="tag t-estimate">User estimate</span><h3>Money inputs</h3>
+      <p>Rent, wages, menu prices, ingredient costs, startup costs, available cash. Weekday and weekend assumptions are separate; startup and recurring costs are separate.</p></div>
+    <div class="card"><span class="tag t-none">Not used</span><h3>Deliberately excluded</h3>
+      <ul><li>Google Popular Times: relative busyness, not a customer count.</li>
+      <li>WorldPop: modeled residents, not passers-by or buyers.</li>
+      <li>Foursquare OS Places: now gated on Hugging Face, so not a dependency.</li>
+      <li>Live Overpass calls during the demo: rate-limited, so use the snapshot.</li></ul></div>
+  </div>
+</section>
+
+<section id="sim">
+  <h2>Simulation rules</h2>
+  <p class="lead">Small enough to verify, rich enough that the bottleneck can surprise us.</p>
+  <ol class="steps">
+    <li><b>Arrivals</b> follow a time-varying random process driven by the hourly range, using a seeded random generator.</li>
+    <li><b>Tasks</b> per drink: order, grind, pull shot, steam milk, hand-off. Each needs a person. Grind, pull and steam also need a machine.</li>
+    <li><b>People are shared resources.</b> One barista may take orders, grind and steam. A group head is busy during extraction while the person is free for other work.</li>
+    <li><b>Customers leave</b> if the wait exceeds their patience. This counts as lost orders, and the patience assumption is visible.</li>
+    <li><b>Bottleneck</b> is where tasks wait longest before starting, not simply the busiest machine. Shared barista time can be the constraint even when every machine looks underused.</li>
+    <li><b>Fair comparison:</b> alternatives use the same seed and the same arrivals. Report wait p50 and p90 over many runs (target 100).</li>
+    <li><b>Revenue effect:</b> faster service adds revenue only if the saved customers would otherwise have left. That toggle is on screen.</li>
+    <li><b>Validation:</b> test a single-station case against Erlang-C within a stated tolerance.</li>
+    <li><b>Runway:</b> never multiply one Saturday by 30. Weekdays, weekends, startup and recurring costs each have their own assumptions.</li>
+  </ol>
+</section>
+
+<section id="done">
+  <h2>Definition of done</h2>
+  <p class="lead">The product is complete when every <span class="lv must" style="font-size:12px;padding:0 6px;border-radius:5px">MUST</span> item is checked. Should items improve the score but never block the submission. Your ticks are saved in this browser only.</p>
+  <div class="card">
+    <b id="progtext">0 of 0 must items done</b>
+    <div class="bar" aria-hidden="true"><i id="progbar"></i></div>
+    <button class="btn" id="resetdod" type="button">Reset checklist</button>
+  </div>
+  <div class="dod" id="dod"></div>
+
+  <h3 style="margin-top:22px">Demo script for the public Clips recording</h3>
+  <ol class="steps">
+    <li>Open the app in single-user demo mode or with a seeded demo account. Pick a Bengaluru spot. Nearby places appear with a visible source and gaps stated.</li>
+    <li>Enter rent, cash, opening hours and low, base, high customers per hour. Tags appear on every number.</li>
+    <li>Play the simulated Saturday. Queue grows, customers are lost, the bottleneck is named.</li>
+    <li>Ask the agent: "Should I add a barista or buy another grinder?" Watch it create two variants by editing the same controls you can edit.</li>
+    <li>Challenge it: "Only schedule the second barista from 10 to 12." Edit the shift by hand. The agent re-runs and shows deltas in wait, staff cost and cash.</li>
+    <li>Show the assumption that could reverse the recommendation, then the break-even and monthly cash view. Show the recommendation the model actually produces.</li>
+  </ol>
+
+  <h3 style="margin-top:22px">Build order</h3>
+  <ol class="steps">
+    <li>Scaffold with <code>npx @agent-native/core@latest create</code>; decide between single-user demo mode and a seeded demo account.</li>
+    <li>Resource simulator and cash model with tests (same seed, same result).</li>
+    <li>One cafe, one Saturday, the assumptions panel and the animated queue.</li>
+    <li>Actions, then the agent driving them, then the comparison view.</li>
+    <li>Map snapshot layer, as context only. It must never block the demo.</li>
+    <li>Polish, record Clips, submit and confirm receipt.</li>
+  </ol>
+
+  <h3 style="margin-top:22px">How judges score it, and where we answer</h3>
+  <div class="grid">
+    <div class="card"><h3>Usefulness and execution, 40%</h3><p class="muted">A complete working flow from spot to runway. Group A of the checklist.</p></div>
+    <div class="card"><h3>Creativity and design, 20%</h3><p class="muted">An animated queue where you see the bottleneck move and understand why.</p></div>
+    <div class="card"><h3>Innovation, 20%</h3><p class="muted">The agent builds counterfactuals and names the assumption that would flip its advice.</p></div>
+    <div class="card"><h3>Cleverness and use of Agent-Native, 20%</h3><p class="muted">One action set shared by UI, agent and MCP over one scenario store. Group B.</p></div>
+  </div>
+  <div class="callout warn"><b>Deadline.</b> Monday 9 Nov, 11:59 PM PT, which is Tuesday 10 Nov, 1:29 PM IST. Submit early: technical problems do not automatically extend the deadline. A recorded clip alone does not submit; use the form and confirm receipt. The form has one optional Project or GitHub URL field. Name all team members and pre-existing work or templates, libraries and third-party data, state that building started on or after 27 Oct 2026, and explain what changed during the event. Every member must be eligible and at least 18 or the age of majority, if higher; tick the Official Rules agreement and personal-data consent. Show the real app without mocked content in Clips and test the public link in a private window. Fabricated demos are disqualifying. Never put identity, tax or payment documents in the form or demo; non-US winners may face US withholding.</div>
+</section>
+
+<section id="questions">
+  <h2>Open questions to verify</h2>
+  <ul class="list" id="openquestions"></ul>
+</section>
+
+<section id="spec">
+  <h2>Spec for agents</h2>
+  <p class="lead">The interactive state details, actions, checklist and open questions are generated from the JSON below; the surrounding text reflects the same spec. Paste it to any coding agent as the single source of truth for states, actions, data and acceptance criteria.</p>
+  <p><button class="btn" id="copyspec" type="button">Copy spec JSON</button> <span class="muted" id="copymsg" role="status"></span></p>
+  <details><summary>Show the JSON</summary><pre id="specpre"></pre></details>
+  <noscript><p class="callout warn">JavaScript is off, so the interactive statechart and checklist are hidden. The full spec is in the script tag with id "spec" in this file.</p></noscript>
+</section>
+
+</main>
+
+<footer><div class="wrap">
+  <p>Sources: <a href="https://www.builder.io/hackathon/rules">Official rules</a> &middot; <a href="https://www.builder.io/hackathon">Hackathon page</a> &middot; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap licence</a> &middot; <a href="https://docs.overturemaps.org/guides/places/">Overture Places</a> &middot; <a href="https://www.mahlkoenig.com/en-de/products/e65s">Grinder specification example</a></p>
+</div></footer>
+
+<script type="application/json" id="spec">
+{
+  "project": "Cafe dry run",
+  "oneLiner": "A dry run of your cafe before it exists: pick a spot, enter a demand range, simulate a Saturday, compare staff or equipment choices, see runway. The founder and the agent edit the same scenario.",
+  "audience": {
+    "primary": "First-time cafe founder with a shortlisted spot, a cash figure and rough rent",
+    "coOperator": "Agent that runs scenarios and explains them",
+    "notFor": [
+      "Operators with existing point-of-sale data",
+      "Anyone wanting a sales prediction"
+    ]
+  },
+  "coreQuestion": "What would have to happen for this cafe to work?",
+  "principles": [
+    "The language model never computes numbers; it calls actions and explains their results",
+    "Every input carries a provenance tag: observed, public, estimate, illustrative",
+    "Derived numbers inherit the weakest tag of their inputs",
+    "Same seed for every alternative so comparisons are fair",
+    "Never multiply one Saturday by 30",
+    "Each feature has a UI, action, AGENTS.md or skill note, and application state",
+    "All AI goes through agent chat; Explain sends a prompt to chat, while UI may call deterministic actions",
+    "No /api routes wrap actions",
+    "Defaults use published specifications where available, are not tuned to favor a purchase, and the demo shows the model’s actual recommendation"
+  ],
+  "provenanceTags": {
+    "observed": "Measured by the founder or an open count",
+    "public": "From public data or a published specification",
+    "estimate": "The founder's own estimate",
+    "illustrative": "Default placeholder until replaced"
+  },
+  "states": [
+    {
+      "id": "S1",
+      "name": "Spot picked",
+      "kind": "input",
+      "summary": "The founder pins the proposed cafe location. The map shows nearby cafes, offices, colleges and transit as context only.",
+      "requires": "Nothing. Initial state.",
+      "human": [
+        "Drop or drag the pin on the map",
+        "Pick a preloaded Bengaluru neighborhood"
+      ],
+      "agent": [
+        "setSpot with a place name or coordinates"
+      ],
+      "produces": [
+        "Spot: label, latitude, longitude",
+        "Nearby places list with source and attribution",
+        "Coverage-gap notice where map data looks thin"
+      ],
+      "sources": [
+        {
+          "name": "OpenStreetMap and Overture snapshot",
+          "tag": "public"
+        }
+      ],
+      "doneWhen": [
+        "Pin is set and nearby places are drawn",
+        "Source and attribution are visible",
+        "Nothing on screen converts nearby places into customers"
+      ],
+      "stale": "Moving the pin never changes demand or results by itself."
+    },
+    {
+      "id": "S2",
+      "name": "Demand entered",
+      "kind": "input",
+      "summary": "The founder enters how many customers could arrive per hour, as a low, base and high range, or derives it from a pedestrian count.",
+      "requires": "A spot exists.",
+      "human": [
+        "Enter low, base and high customers per hour",
+        "Edit the Saturday curve and opening hours",
+        "Optionally enter a pedestrian count and a conversion rate"
+      ],
+      "agent": [
+        "setDemand",
+        "setPedestrianCount"
+      ],
+      "produces": [
+        "Hourly arrival range with a source tag on each number",
+        "If a count exists: passers-by x conversion = arrivals",
+        "If no count: the conversion rate that break-even would require"
+      ],
+      "sources": [
+        {
+          "name": "Founder estimate",
+          "tag": "estimate"
+        },
+        {
+          "name": "Founder pedestrian count (optional)",
+          "tag": "observed"
+        },
+        {
+          "name": "Default Saturday curve",
+          "tag": "illustrative"
+        }
+      ],
+      "doneWhen": [
+        "Every demand number carries a provenance tag",
+        "Defaults are labeled illustrative until edited",
+        "The required-conversion view works when no count is given"
+      ],
+      "stale": "Editing demand marks S4, S5 and S6 stale."
+    },
+    {
+      "id": "S3",
+      "name": "Shop configured",
+      "kind": "input",
+      "summary": "Staff, shifts, equipment, menu and money inputs define one scenario. Variants are copies with one change.",
+      "requires": "Demand entered.",
+      "human": [
+        "Add staff and set shifts, for example a second barista from 10 to 12",
+        "Set equipment: group heads, grinders, steam wands",
+        "Set menu mix, prices, ingredient costs, rent, wages and cash"
+      ],
+      "agent": [
+        "configureShop",
+        "Create a variant: copy a scenario, change one thing"
+      ],
+      "produces": [
+        "Scenario: staff pool, shifts, equipment, menu, money inputs",
+        "Task list per drink with tagged service times"
+      ],
+      "sources": [
+        {
+          "name": "Founder money inputs",
+          "tag": "estimate"
+        },
+        {
+          "name": "Default service times and patience",
+          "tag": "illustrative"
+        },
+        {
+          "name": "Manufacturer equipment specs",
+          "tag": "public"
+        }
+      ],
+      "doneWhen": [
+        "Two or more scenario variants can exist side by side",
+        "Service times are visible and editable with tags",
+        "Humans and the agent edit the same scenario fields"
+      ],
+      "stale": "Editing the shop marks S4, S5 and S6 stale."
+    },
+    {
+      "id": "S4",
+      "name": "Simulated",
+      "kind": "computed",
+      "summary": "A seeded simulation of one Saturday, repeated over many runs, with people and machines as shared resources.",
+      "requires": "Demand and shop are set.",
+      "human": [
+        "Press play and watch the Saturday",
+        "Scrub the timeline, change speed, choose the seed"
+      ],
+      "agent": [
+        "runSimulation with scenario, seed and number of runs"
+      ],
+      "produces": [
+        "Event timeline returned or stored by server actions for UI playback",
+        "Animated queue: arrivals, waiting, being served, lost",
+        "Wait p50 and p90, orders served, customers lost",
+        "Utilization per person and per machine",
+        "Named bottleneck: where tasks wait longest to start"
+      ],
+      "sources": [
+        {
+          "name": "No external data: deterministic code on scenario inputs",
+          "tag": "illustrative"
+        }
+      ],
+      "doneWhen": [
+        "Same seed gives identical results",
+        "Pure TypeScript simulation runs on the server via actions with no ML model; actions return or store an event timeline for UI playback",
+        "When one barista does several tasks, barista time is named as the blocker if it is"
+      ],
+      "stale": "Results show a stale badge when any input changed after the run."
+    },
+    {
+      "id": "S5",
+      "name": "Compared",
+      "kind": "computed",
+      "summary": "Two scenarios on the same arrivals, with deltas and the assumption that could reverse the recommendation.",
+      "requires": "At least two scenarios with fresh simulation results.",
+      "human": [
+        "Pick A and B",
+        "Change a shift or machine and watch deltas update"
+      ],
+      "agent": [
+        "compareScenarios on the same seed",
+        "explainResult: what changed and why"
+      ],
+      "produces": [
+        "Deltas in wait, orders lost, staff cost and cash",
+        "Recommendation plus the assumption that could reverse it",
+        "Plain-language explanation tied to numbers returned by actions"
+      ],
+      "sources": [
+        {
+          "name": "No external data",
+          "tag": "illustrative"
+        }
+      ],
+      "doneWhen": [
+        "Both scenarios use the same arrivals",
+        "Every number in the explanation traces to an action result",
+        "The reversing assumption is named and can be edited in one click"
+      ],
+      "stale": "Any edit loops back to S3 (edit shop) or S2 (change demand) and the comparison is re-run."
+    },
+    {
+      "id": "S6",
+      "name": "Runway",
+      "kind": "computed",
+      "summary": "Break-even and cash over the first months, built from the chosen staff and equipment.",
+      "requires": "A fresh simulation result for the chosen scenario.",
+      "human": [
+        "Review break-even orders per day",
+        "Review the monthly cash view"
+      ],
+      "agent": [
+        "computeRunway"
+      ],
+      "produces": [
+        "Break-even orders per day and the capture rate it implies",
+        "Monthly cash view with startup and recurring costs separated",
+        "Months of cash under low, base and high demand"
+      ],
+      "sources": [
+        {
+          "name": "Founder money inputs",
+          "tag": "estimate"
+        }
+      ],
+      "doneWhen": [
+        "One Saturday is never multiplied by 30",
+        "Weekday and weekend demand are separate inputs",
+        "Faster service adds revenue only if the saved-customers assumption is on"
+      ],
+      "stale": "Runway recomputes from the latest scenario and simulation."
+    }
+  ],
+  "transitions": [
+    {
+      "from": "S1",
+      "to": "S2",
+      "trigger": "setDemand",
+      "actor": "human or agent"
+    },
+    {
+      "from": "S2",
+      "to": "S3",
+      "trigger": "configureShop",
+      "actor": "human or agent"
+    },
+    {
+      "from": "S3",
+      "to": "S4",
+      "trigger": "runSimulation",
+      "actor": "human or agent"
+    },
+    {
+      "from": "S4",
+      "to": "S5",
+      "trigger": "compareScenarios",
+      "actor": "human or agent"
+    },
+    {
+      "from": "S5",
+      "to": "S6",
+      "trigger": "computeRunway",
+      "actor": "human or agent"
+    },
+    {
+      "from": "S5",
+      "to": "S3",
+      "trigger": "edit shop, then re-run",
+      "actor": "human or agent",
+      "loop": true
+    },
+    {
+      "from": "S5",
+      "to": "S2",
+      "trigger": "change demand, then re-run",
+      "actor": "human or agent",
+      "loop": true
+    }
+  ],
+  "actions": [
+    {
+      "name": "setSpot",
+      "does": "Set or move the cafe location and load nearby places",
+      "state": "S1"
+    },
+    {
+      "name": "setDemand",
+      "does": "Set low, base and high hourly arrivals, curve and opening hours",
+      "state": "S2"
+    },
+    {
+      "name": "setPedestrianCount",
+      "does": "Derive arrivals from passers-by times conversion, or return the required conversion",
+      "state": "S2"
+    },
+    {
+      "name": "configureShop",
+      "does": "Edit staff, shifts, equipment, menu and money inputs; create variants",
+      "state": "S3"
+    },
+    {
+      "name": "tagSource",
+      "does": "Set the provenance tag on any input",
+      "state": "S2, S3"
+    },
+    {
+      "name": "runSimulation",
+      "does": "Run the seeded simulation for a scenario",
+      "state": "S4"
+    },
+    {
+      "name": "compareScenarios",
+      "does": "Run two scenarios on the same seed and return deltas",
+      "state": "S5"
+    },
+    {
+      "name": "explainResult",
+      "does": "Return plain-language reasons built only from action results",
+      "state": "S5"
+    },
+    {
+      "name": "computeRunway",
+      "does": "Return break-even and the monthly cash view",
+      "state": "S6"
+    }
+  ],
+  "nonGoals": [
+    "Predicting whether a cafe will succeed",
+    "Training any model",
+    "Live footfall data",
+    "More than one cafe or a marketplace of staff and equipment",
+    "Dependence on Google Popular Times"
+  ],
+  "dod": [
+    {
+      "group": "A. The core loop works",
+      "level": "must",
+      "items": [
+        {
+          "id": "a1",
+          "text": "Choose single-user demo mode or a seeded demo account; the app opens in the chosen mode and a Bengaluru map snapshot loads from static data, with source and attribution shown."
+        },
+        {
+          "id": "a2",
+          "text": "Founder can enter low, base and high hourly demand plus rent, cash and opening hours."
+        },
+        {
+          "id": "a3",
+          "text": "Every input shows a provenance tag, and derived numbers inherit the weakest tag."
+        },
+        {
+          "id": "a4",
+          "text": "The simulated Saturday animates arrivals, queue, service and lost customers, and shows wait p50 and p90, orders served, customers lost and the named bottleneck."
+        },
+        {
+          "id": "a5",
+          "text": "Same seed gives identical results, covered by a test."
+        },
+        {
+          "id": "a6",
+          "text": "Asking the agent 'barista or grinder?' creates two scenarios that visibly change in the UI."
+        },
+        {
+          "id": "a7",
+          "text": "A manual shift edit (second barista 10 to 12) triggers a re-run and a comparison with deltas in wait, staff cost and cash."
+        },
+        {
+          "id": "a8",
+          "text": "The result names the assumption that could reverse the recommendation."
+        },
+        {
+          "id": "a9",
+          "text": "Runway shows break-even orders per day and a monthly cash view, with weekday, weekend, startup and recurring costs separate. No multiply-by-30."
+        },
+        {
+          "id": "a10",
+          "text": "Shared-barista case: when one person does several tasks, barista time can be named the bottleneck."
+        }
+      ]
+    },
+    {
+      "group": "B. Agent-native quality",
+      "level": "must",
+      "items": [
+        {
+          "id": "b1",
+          "text": "Every UI mutation is an action the agent can also call."
+        },
+        {
+          "id": "b2",
+          "text": "Agent edits appear in the UI without a manual refresh, within a couple of seconds, because both use one database-backed scenario store."
+        },
+        {
+          "id": "b3",
+          "text": "The agent states no number that did not come from an action result."
+        },
+        {
+          "id": "b4",
+          "text": "Built with the Agent-Native framework, scaffolded with npx @agent-native/core@latest create; framework use is verified before ranking."
+        },
+        {
+          "id": "b5",
+          "text": "Each feature has a UI, action, AGENTS.md or skill note, and application state."
+        },
+        {
+          "id": "b6",
+          "text": "application_state records the current view, selected scenarios and timeline position; the agent can navigate the UI."
+        },
+        {
+          "id": "b7",
+          "text": "AGENTS.md encodes the domain rules: never compute numbers, always tag sources, use the same seed for comparisons, and name the reversing assumption."
+        },
+        {
+          "id": "b8",
+          "text": "All AI goes through agent chat; Explain sends a prompt to chat. UI may call deterministic actions; no /api routes wrap actions."
+        },
+        {
+          "id": "b9",
+          "text": "Agent tool calls stream visibly in chat, and the user can stop or redirect the agent."
+        },
+        {
+          "id": "b10",
+          "text": "Scenarios, runs and stale flags persist in the SQL database via Drizzle."
+        }
+      ]
+    },
+    {
+      "group": "C. Submission",
+      "level": "must",
+      "items": [
+        {
+          "id": "c1",
+          "text": "Public Clips recording shows the real app in use with nothing mocked; test the public link in a private window for access without login or request. Fabricated demos are disqualifying."
+        },
+        {
+          "id": "c2",
+          "text": "Submitted through the official form, and receipt confirmed."
+        },
+        {
+          "id": "c3",
+          "text": "Project description names every team member and all pre-existing work or templates, libraries and third-party data, says building started on or after October 27, 2026, and identifies what changed during the event."
+        },
+        {
+          "id": "c4",
+          "text": "Submitted before Mon 9 Nov 11:59 PM PT (Tue 10 Nov 1:29 PM IST)."
+        },
+        {
+          "id": "c5",
+          "text": "Every team member is 18 or older (or the age of majority, if higher) and eligible; tick the Official Rules agreement and personal-data consent on the form."
+        },
+        {
+          "id": "c6",
+          "text": "Submit early: technical problems do not automatically extend the deadline. The form has one optional Project or GitHub URL field only."
+        },
+        {
+          "id": "c7",
+          "text": "Never put identity, tax or payment documents in the form or demo; non-US winners may face US withholding."
+        }
+      ]
+    },
+    {
+      "group": "D. Nice to have",
+      "level": "should",
+      "items": [
+        {
+          "id": "d1",
+          "text": "MCP endpoint demonstrated driving the app from an external agent."
+        },
+        {
+          "id": "d2",
+          "text": "Three or more Bengaluru neighborhood snapshots."
+        },
+        {
+          "id": "d3",
+          "text": "Public repository or live deployment link."
+        },
+        {
+          "id": "d4",
+          "text": "Shareable scenario link."
+        },
+        {
+          "id": "d5",
+          "text": "Nearby competitor price level shown from the Zomato subset, clearly labeled as context."
+        },
+        {
+          "id": "d6",
+          "text": "Test a single-station simulation against Erlang-C within a stated tolerance."
+        },
+        {
+          "id": "d7",
+          "text": "Use published specifications for defaults where available, do not tune them to favor a purchase, and show whatever the model recommends in the demo."
+        }
+      ]
+    }
+  ],
+  "architecture": {
+    "framework": "Agent-Native, scaffolded with npx @agent-native/core@latest create",
+    "store": "Scenario store (SQL via Drizzle): scenarios, runs and stale flags persist in the database",
+    "engines": "Pure TypeScript simulator and cash model called by actions on the server; no ML model",
+    "playback": "Actions return or store an event timeline for UI playback",
+    "applicationState": "Records current view, selected scenarios and timeline position; agent can navigate the UI",
+    "sync": "Agent edits appear without a manual refresh, within a couple of seconds",
+    "ai": "All AI goes through agent chat; Explain sends a prompt to chat. UI may call deterministic actions. No /api routes wrap actions.",
+    "demoAccess": "Decide between single-user demo mode and a seeded demo account; verify template support"
+  },
+  "openQuestions": [
+    {
+      "question": "Which LLM key powers the built-in agent chat, and is there a free route?",
+      "status": "open"
+    },
+    {
+      "question": "Can the database be SQLite for a local demo, or is Postgres required?",
+      "status": "open"
+    },
+    {
+      "question": "Does a shared Clips link play with no login?",
+      "status": "open"
+    },
+    {
+      "question": "Can the template run in single-user demo mode?",
+      "status": "open"
+    }
+  ]
+}
+</script>
+
+<script>
+(function(){
+  var spec = JSON.parse(document.querySelector('script#spec').textContent);
+  var TAGS = {observed:'Observed', 'public':'Public data', estimate:'User estimate', illustrative:'Illustrative default'};
+
+  function h(tag, cls, text){
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  function list(items){
+    var ul = h('ul');
+    items.forEach(function(t){ ul.appendChild(h('li', null, t)); });
+    return ul;
+  }
+  function block(title, node){
+    var d = h('div');
+    d.appendChild(h('h4', null, title));
+    d.appendChild(node);
+    return d;
+  }
+
+  var detail = document.getElementById('detail');
+  var nodes = document.querySelectorAll('.state');
+
+  function show(id){
+    var s = spec.states.filter(function(x){ return x.id === id; })[0];
+    if (!s) return;
+    nodes.forEach(function(n){ n.classList.toggle('sel', n.getAttribute('data-id') === id); });
+    detail.textContent = '';
+    detail.appendChild(h('h3', null, s.id + '. ' + s.name));
+    detail.appendChild(h('p', 'muted', (s.kind === 'input' ? 'Input state. ' : 'Computed state. ') + s.summary));
+    var kv = h('div', 'kv');
+    kv.appendChild(block('Needs before entering', h('p', null, s.requires)));
+    kv.appendChild(block('Human can', list(s.human)));
+    var ag = h('div');
+    s.agent.forEach(function(a){ ag.appendChild(h('span', 'pill', a)); });
+    kv.appendChild(block('Agent can call', ag));
+    kv.appendChild(block('Produces', list(s.produces)));
+    var src = h('div');
+    s.sources.forEach(function(x){
+      var p = h('p'); p.style.margin = '2px 0';
+      p.appendChild(h('span', 'tag t-' + x.tag, TAGS[x.tag] || x.tag));
+      p.appendChild(document.createTextNode(x.name));
+      src.appendChild(p);
+    });
+    kv.appendChild(block('Data used', src));
+    kv.appendChild(block('Done when', list(s.doneWhen)));
+    kv.appendChild(block('Staleness rule', h('p', null, s.stale)));
+    var tr = spec.transitions.filter(function(t){ return t.from === id || t.to === id; })
+      .map(function(t){ return t.from + ' to ' + t.to + ': ' + t.trigger + ' (' + t.actor + ')'; });
+    kv.appendChild(block('Transitions', list(tr)));
+    detail.appendChild(kv);
+  }
+  nodes.forEach(function(n){
+    var id = n.getAttribute('data-id');
+    n.addEventListener('click', function(){ show(id); });
+    n.addEventListener('keydown', function(e){
+      if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); show(id); }
+    });
+  });
+  show('S1');
+
+  var chips = document.getElementById('actionchips');
+  spec.actions.forEach(function(a){ chips.appendChild(h('span', 'pill', a.name)); });
+  var ag = document.getElementById('actions');
+  spec.actions.forEach(function(a){
+    var c = h('div', 'card');
+    c.appendChild(h('h3', null, a.name));
+    c.appendChild(h('p', null, a.does));
+    c.appendChild(h('p', 'muted', 'State: ' + a.state + '. Callable by UI, agent and MCP.'));
+    ag.appendChild(c);
+  });
+
+  var questions = document.getElementById('openquestions');
+  spec.openQuestions.forEach(function(q){ questions.appendChild(h('li', null, q.question + ' (' + q.status + ')')); });
+
+  var KEY = 'cafe-dod-v2';
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { saved = {}; }
+  var dod = document.getElementById('dod');
+  var boxes = [];
+  spec.dod.forEach(function(g){
+    dod.appendChild(h('h3', null, g.group));
+    g.items.forEach(function(it){
+      var lab = h('label');
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!saved[it.id];
+      cb.setAttribute('data-id', it.id);
+      cb.setAttribute('data-level', g.level);
+      lab.appendChild(cb);
+      var sp = h('span', null, it.text);
+      sp.appendChild(h('span', 'lv ' + g.level, g.level === 'must' ? 'MUST' : 'SHOULD'));
+      lab.appendChild(sp);
+      dod.appendChild(lab);
+      boxes.push(cb);
+      cb.addEventListener('change', function(){
+        saved[it.id] = cb.checked;
+        try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) {}
+        progress();
+      });
+    });
+  });
+  function progress(){
+    var must = boxes.filter(function(b){ return b.getAttribute('data-level') === 'must'; });
+    var done = must.filter(function(b){ return b.checked; }).length;
+    document.getElementById('progtext').textContent = done + ' of ' + must.length + ' must items done' + (done === must.length ? ' - product complete' : '');
+    document.getElementById('progbar').style.width = (must.length ? Math.round(100 * done / must.length) : 0) + '%';
+  }
+  progress();
+  document.getElementById('resetdod').addEventListener('click', function(){
+    boxes.forEach(function(b){ b.checked = false; });
+    saved = {};
+    try { localStorage.removeItem(KEY); } catch (e) {}
+    progress();
+  });
+
+  var pretty = JSON.stringify(spec, null, 2);
+  document.getElementById('specpre').textContent = pretty;
+  document.getElementById('copyspec').addEventListener('click', function(){
+    var msg = document.getElementById('copymsg');
+    function fallback(){
+      var d = document.querySelector('details');
+      d.open = true;
+      var r = document.createRange(); r.selectNodeContents(document.getElementById('specpre'));
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+      msg.textContent = 'Selected. Copy it manually.';
+    }
+    try {
+      navigator.clipboard.writeText(pretty).then(function(){ msg.textContent = 'Copied.'; }, fallback);
+    } catch (e) { fallback(); }
+  });
+
+  function tick(){
+    var left = Date.UTC(2026, 10, 10, 7, 59, 0) - Date.now();
+    var el = document.getElementById('countdown');
+    if (left <= 0){ el.textContent = 'Deadline has passed'; return; }
+    var hrs = Math.floor(left / 3600000), mins = Math.floor((left % 3600000) / 60000);
+    el.textContent = hrs + 'h ' + mins + 'm left (Tue 10 Nov, 1:29 PM IST)';
+  }
+  tick(); setInterval(tick, 60000);
+})();
+</script>
+</body>
+</html>
