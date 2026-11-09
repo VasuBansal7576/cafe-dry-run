@@ -1,11 +1,13 @@
 import { getOrgContext } from "@agent-native/core/org";
 import {
   createAgentChatPlugin,
+  getRequestRunContext,
   loadActionsFromStaticRegistry,
 } from "@agent-native/core/server";
 
 import actionsRegistry from "../../.generated/actions-registry.js";
 import { guardCafeFigures } from "../lib/cafe/chat-figure-guard.js";
+import { holdCafeDrafts } from "../lib/cafe/guarded-chat-stream.js";
 import {
   searchConversationReferences,
   validateConversationReferences,
@@ -43,6 +45,16 @@ export default createAgentChatPlugin({
   },
   prepareRequest: async ({ references }) => {
     await validateConversationReferences(references);
+    return {
+      followUpSuggestions: false,
+      prepareAfterModel: () => {
+        // Core 0.226.0 records the selected engine here before starting the interactive loop.
+        const engine = getRequestRunContext()?.engine;
+        if (!engine)
+          throw new Error("Café chat could not prepare grounded replies.");
+        holdCafeDrafts(engine);
+      },
+    };
   },
   actions: loadActionsFromStaticRegistry(actionsRegistry),
   mcp: { connectorCatalog: [], appApprovalPage: true },
