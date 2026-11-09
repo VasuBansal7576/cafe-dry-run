@@ -354,25 +354,32 @@ export function Playback({
     const stored = savedPosition.data?.playback;
     const state = synced.current;
     const seekId = stored?.seekId ?? null;
+    const hadBaseline = state.scope !== null;
     const initial = state.scope !== scope;
     const agentSeek = seekId !== null && state.seekId !== seekId;
     state.scope = scope;
     state.seekId = seekId;
+    const exactResult = stored && samePlayback(stored, identity);
+    const sameRuns =
+      exactResult ||
+      (stored?.receiptId &&
+        receiptId &&
+        samePlayback(stored, { ...identity, receiptId: stored.receiptId }));
     const restored =
-      stored &&
-      samePlayback(stored, identity) &&
-      stored.second >= start &&
-      stored.second <= end
+      stored && sameRuns && stored.second >= start && stored.second <= end
         ? stored.second
         : null;
-    if (!initial && (!agentSeek || restored === null)) return;
-    const nextSecond = restored ?? initialSecond;
-    state.applied = restored === null ? null : positionKey(restored);
-    state.remoteSecond = nextSecond;
-    clockGeneration.current += 1;
-    setTime(nextSecond);
-    setPlaying(false);
-    setBaselineScope(scope);
+    if (!initial && (!agentSeek || !exactResult || restored === null)) return;
+    state.applied =
+      exactResult && restored !== null ? positionKey(restored) : null;
+    state.remoteSecond = null;
+    if (restored !== null && (exactResult || !hadBaseline || agentSeek)) {
+      state.remoteSecond = restored;
+      clockGeneration.current += 1;
+      setTime(restored);
+      setPlaying(false);
+    }
+    if (initial) setBaselineScope(scope);
   });
   useEffect(
     () => applySavedPosition(),
