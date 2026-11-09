@@ -1,0 +1,13 @@
+#!/bin/sh
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+APP="$ROOT/cafe-app"
+if rg -n -i '\b(mock|mocked|stubbed|fake response|sample review)\b' "$APP/actions" "$APP/app/components/cafe" "$APP/server/lib/cafe" -g '!*.test.ts'; then
+  printf '%s\n' 'Potential mock found in a café runtime path; inspect it.' >&2
+  exit 1
+fi
+if find "$APP/app/routes" -type f \( -name 'api.*' -o -path '*/api/*' \) -print | rg .; then
+  printf '%s\n' 'Inspect API routes for action wrappers.' >&2
+  exit 1
+fi
+printf '%s\n' 'No prohibited mock markers or API route wrappers found in scanned café runtime paths.'

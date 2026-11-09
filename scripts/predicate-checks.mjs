@@ -69,6 +69,12 @@ export function runChecks(root) {
   const record = (id, ok, detail) => results.set(id, { ok, detail });
 
   try {
+    for (const name of ['check-structure', 'check-no-mock']) {
+      const check = spawnSync(join(root, 'scripts', name), [], {
+        cwd: root, env, encoding: 'utf8', timeout: 30_000, maxBuffer: 1024 * 1024,
+      });
+      record(name, status(check) === 0, (check.stdout + check.stderr).trim() || `Exit ${status(check)}.`);
+    }
     const suite = pnpm(['vitest', 'run', '--reporter=json', '--outputFile', reportPath]);
     let report;
     try {

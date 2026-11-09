@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+APP="$ROOT/cafe-app"
+for name in set-spot set-demand set-pedestrian-count configure-shop tag-source run-simulation compare-scenarios explain-result compute-runway; do
+  file="$APP/actions/$name.ts"
+  test -f "$file" && rg -q 'defineAction' "$file" || { printf 'Missing framework action: %s\n' "$name" >&2; exit 1; }
+done
+for file in app/routes/cafe.tsx app/components/cafe/site-map.tsx app/components/cafe/scenario-inputs.tsx app/components/cafe/service-test.tsx app/components/cafe/comparison.tsx app/components/cafe/finance-ledger.tsx server/db/schema.ts server/plugins/db.ts server/plugins/agent-chat.ts; do
+  test -s "$APP/$file" || { printf 'Missing product file: %s\n' "$file" >&2; exit 1; }
+done
+rg -q 'drizzle-orm/pg-core' "$APP/server/db/schema.ts"
+rg -q 'runMigrations' "$APP/server/plugins/db.ts"
+rg -q 'createAgentChatPlugin' "$APP/server/plugins/agent-chat.ts"
+rg -q 'useAction(Mutation|Query)' "$APP/app/routes/cafe.tsx"
+printf '%s\n' 'Structure check passed: required action and application surfaces exist.'
