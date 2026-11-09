@@ -308,6 +308,7 @@
   min-height: 45px;
   min-width: 44px;
   max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .cafe-shared-demand a {
   display: inline-flex;

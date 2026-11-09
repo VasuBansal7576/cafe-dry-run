@@ -390,8 +390,8 @@ export function DemandForm({
         ) : (
           <div>
             <p>
-              Without a count, the cash projection uses illustrative footfall
-              levels.
+              Without a count, the cash ledger shows required conversion at
+              illustrative footfall levels.
             </p>
             <a className="cafe-link cafe-conversion-link" href="#cash-ledger">
               See required conversion in the cash ledger
