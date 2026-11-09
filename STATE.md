@@ -2,7 +2,9 @@
 
 Preparation task, 9 November 2026. The user requested corrected build instructions, a public GitHub repository, an official-rules check, and an idea assessment. This task does not implement the app.
 
-- Current slice: repository preparation and framework requirements.
+- Current slice: repository preparation complete; application build has not started.
+- Public repository: https://github.com/VasuBansal7576/cafe-dry-run. Anonymous visibility and matching main were verified at preparation commit c0cea09; publication evidence is under .artifacts/preparation/.
+- Last independently reviewed preparation candidate: 3701744, with concurrency clarification and raw extraction evidence verified afterward. This is separate from app acceptance.
 - Original supplied spec: commit `878d82c`.
 - Last verified app commit: none. No scaffold, app provider, database, simulator, or live acceptance exists yet.
 - Pstack package checked: 0.15.36-codex.8. Resolve its installed root when starting the build.

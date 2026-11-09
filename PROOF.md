@@ -10,6 +10,6 @@ Preparation evidence only. The application has not been scaffolded. Every requir
 | Acceptance scope preserved | VERIFIED | .artifacts/preparation/checks.json; diff from 878d82c | All 20 A/B DoD rows, states, actions, transitions, and principles remain unchanged |
 | Publication exclusions | VERIFIED | .gitignore; .artifacts/preparation/checks.json | Secrets, runtime data, hosting metadata, and evidence paths are ignored; example env files remain eligible |
 | Independent preparation review | VERIFIED | Commit 3701744; .artifacts/preparation/reviewer.md | Fresh read-only reviewer confirmed extraction, preserved acceptance, official requirements, and human boundaries; concurrency wording clarified following review. This is not app verification. |
-| Public repository | Pending publication | No verified remote yet | Must read back visibility and compare remote main to local main |
+| Public repository | VERIFIED | https://github.com/VasuBansal7576/cafe-dry-run; .artifacts/preparation/publication.json | Anonymous GitHub API confirms public visibility, main, matching local/remote SHA c0cea09, and identical README; later metadata-only commits require another remote readback |
 
 During implementation, append product proofs with requirement ID, exact candidate commit, command or journey, result, and .artifacts/ pointer. Automated gates must rerun rather than trust this table.
