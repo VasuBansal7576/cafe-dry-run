@@ -17,7 +17,7 @@ export function Header() {
       actions={
         <>
           {actions}
-          <AgentToggleButton />
+          <AgentToggleButton className="cafe-agent-toggle" />
         </>
       }
     />

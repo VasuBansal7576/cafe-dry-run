@@ -50,6 +50,121 @@
   position: relative;
 }
 
+/* Size the actual Agent-Native controls so adjacent hit areas stay separate.
+   Radix renders the stock menus and dialogs outside the layout. */
+[data-cafe-layout] .cafe-agent-toggle,
+:is(
+    [data-cafe-layout] .agent-sidebar-panel,
+    body:has([data-cafe-layout] .agent-sidebar-panel[data-agent-sidebar-state="open"])
+      :where([data-radix-popper-content-wrapper], body > [role="dialog"], body > [role="alertdialog"])
+  )
+  :where(
+    button,
+    a[href],
+    input:not([type="hidden"], [type="file"]),
+    select,
+    textarea,
+    [role="button"],
+    [role="tab"],
+    [role="option"],
+    [role="menuitem"],
+    [role="menuitemcheckbox"],
+    [role="menuitemradio"],
+    [role="switch"],
+    [role="checkbox"],
+    [contenteditable="true"],
+    [tabindex="0"]:not([role="region"])
+  ) {
+  min-inline-size: 44px;
+  min-block-size: 44px;
+
+  &:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 4px;
+  }
+}
+
+[data-cafe-layout] .agent-sidebar-panel .agentkit-message-content a {
+  display: inline-flex;
+  align-items: center;
+  max-inline-size: 100%;
+}
+
+[data-cafe-layout] .agent-sidebar-panel [data-agent-composer-slot="model-button"] {
+  padding-inline: 0.25rem;
+}
+
+[data-cafe-layout] .agent-sidebar-panel .agentkit-editing-row {
+  min-block-size: 44px;
+}
+
+[data-cafe-layout] .agent-sidebar-panel
+  .agentkit-host-suggestions-slot:has([data-agent-suggestion-scroller]) {
+  block-size: auto;
+}
+
+[data-cafe-layout] .agent-sidebar-panel [data-agent-suggestion-scroller] {
+  min-block-size: 56px;
+  padding: 6px;
+}
+
+[data-cafe-layout] .agent-sidebar-panel [data-agent-suggestion-track] {
+  min-block-size: 44px;
+}
+
+[data-cafe-layout] .agent-sidebar-panel [data-agent-composer-slot="stop-slot"],
+[data-cafe-layout] .agent-sidebar-panel [data-agent-composer-slot="stop-slot"] > div {
+  transition: none;
+}
+
+/* Give the transcript jump its own lane so it never covers a work step. */
+[data-cafe-layout] .agent-sidebar-panel
+  .agentkit-chat:not([data-empty="true"]):has(> .agentkit-scroll-to-bottom-control) {
+  grid-template-rows: auto minmax(0, 1fr) 56px auto;
+
+  > .agentkit-scroll-to-bottom-control {
+    grid-row: 3 / 4;
+    inset-block: 0;
+    block-size: auto;
+    align-items: center;
+  }
+
+  > .agentkit-chat-footer {
+    grid-row: 4;
+  }
+}
+
+/* Stock compact footers use the gap below older messages as their hit area.
+   Let their taller controls take up space without covering the next turn. */
+[data-cafe-layout] .agent-sidebar-panel .agentkit-message-actions {
+  position: static;
+}
+
+[data-cafe-layout] .agent-sidebar-panel .agentkit-message[data-role="user"]:has(
+    > .agentkit-message-actions
+  ) {
+  margin-block-end: var(--agentkit-transcript-message-gap, 1.5rem);
+}
+
+[data-cafe-layout] .agent-sidebar-chat-header .agent-native-shell-topbar {
+  min-block-size: 56px;
+}
+
+[data-cafe-layout] .agent-sidebar-panel .agent-tabs-scroll {
+  padding: 6px;
+}
+
+[data-cafe-layout] .agent-sidebar-panel .agent-tab-group:has(> .agent-tab-close)
+  > .agent-tab {
+  flex: 1;
+  padding-inline-end: 0.5rem;
+}
+
+[data-cafe-layout] .agent-sidebar-panel .agent-tab-close {
+  position: static;
+  translate: none;
+}
+
 [data-cafe-layout] > .agent-sidebar-shell {
   container-type: inline-size;
 }
@@ -82,10 +197,18 @@
   display: none;
   position: absolute;
   z-index: 20;
-  inset-block: 0;
+  inset-block-start: 6px;
   right: var(--cafe-agent-dock-width);
-  width: 1px;
-  background: hsl(var(--border));
+  inline-size: 44px;
+  block-size: 44px;
+  color: hsl(var(--muted-foreground));
+  background: linear-gradient(
+      90deg,
+      currentColor 0 1px,
+      transparent 1px 4px,
+      currentColor 4px
+    )
+    center / 5px 16px no-repeat;
   cursor: col-resize;
   touch-action: none;
   user-select: none;
@@ -98,15 +221,21 @@
   display: block;
 }
 
+/* Keep the thin full-height drag seam in addition to the header grip. */
 .cafe-agent-dock-separator::before {
   content: "";
   position: absolute;
-  inset: 0 -4px;
+  inset-block-start: -6px;
+  right: 0;
+  inline-size: 9px;
+  block-size: 100dvh;
+  background: linear-gradient(hsl(var(--border)), hsl(var(--border)))
+    right / 1px 100% no-repeat;
 }
 
 .cafe-agent-dock-separator:focus-visible {
   outline: 2px solid hsl(var(--ring));
-  outline-offset: -1px;
+  outline-offset: 4px;
 }
 
 @media (48rem <= width < 66rem) {
