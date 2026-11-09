@@ -100,7 +100,10 @@ type DecisionRequest =
       a: Version;
       b: Version;
       savedCustomers?: SavedCustomerAssumption;
-    } & ({ settings: DecisionParameters } | { receiptId: string }))
+    } & (
+      | { settings: DecisionParameters; expectedReceiptId?: string }
+      | { receiptId: string }
+    ))
   | { a: Version; runId: string };
 
 function sharedBaselineId(
@@ -215,18 +218,18 @@ export async function saveDecision(
       const previous = prior?.receipt.savedCustomers ?? defaultSavedCustomers;
       savedCustomers = request.savedCustomers ?? previous;
       assumptionRevision = prior?.receipt.assumptionRevision ?? 0;
+      async function latestOrderedReceipt() {
+        if (prior?.receipt.a.service.scenarioId === a.id) return prior.receipt;
+        const [latest] = await tx
+          .select({ receipt: decisionRuns.receipt })
+          .from(decisionRuns)
+          .where(decisionScope(owner, a.id, b?.id))
+          .orderBy(desc(decisionRuns.sequence))
+          .limit(1);
+        return latest?.receipt;
+      }
       if ("receiptId" in request) {
-        const latest =
-          prior?.receipt.a.service.scenarioId === a.id
-            ? prior.receipt
-            : (
-                await tx
-                  .select({ receipt: decisionRuns.receipt })
-                  .from(decisionRuns)
-                  .where(decisionScope(owner, a.id, b?.id))
-                  .orderBy(desc(decisionRuns.sequence))
-                  .limit(1)
-              )[0]?.receipt;
+        const latest = await latestOrderedReceipt();
         if (latest?.id !== request.receiptId) {
           return scenarioErrors.fail(
             "Read the latest receipt for this pair before refreshing its cash projection.",
@@ -280,6 +283,15 @@ export async function saveDecision(
         settings = latest.settings;
         matchedReceipt = latest;
       } else {
+        if (
+          request.expectedReceiptId !== undefined &&
+          (await latestOrderedReceipt())?.id !== request.expectedReceiptId
+        )
+          return scenarioErrors.fail(
+            "The comparison was updated elsewhere. Retry to check its current settings.",
+            "scenario_conflict",
+            { statusCode: 409 },
+          );
         settings = request.settings;
       }
       if (

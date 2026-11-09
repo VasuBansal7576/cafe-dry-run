@@ -543,12 +543,14 @@ function PairedWorkspace({
                   : "Compare Saturdays"}
             </button>
           </form>
-          {currentPair && compare.error && (
-            <p className="cafe-notice" role="alert">
-              {actionErrorMessage(compare.error) ??
-                "Could not compare these scenarios."}
-            </p>
-          )}
+          {currentPair &&
+            compare.error &&
+            compare.variables?.expectedReceiptId === undefined && (
+              <p className="cafe-notice" role="alert">
+                {actionErrorMessage(compare.error) ??
+                  "Could not compare these scenarios."}
+              </p>
+            )}
           {readRequirement && (
             <div
               className="cafe-notice"

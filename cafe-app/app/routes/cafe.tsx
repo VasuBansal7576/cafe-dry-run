@@ -144,9 +144,14 @@ export default function CafeRoute() {
       );
       if (writing) throw new Error("Another calculation is still running.");
       try {
-        await compare.mutateAsync(rerunComparison);
-      } catch {
-        throw new Error("Could not rerun the comparison.");
+        await compare.mutateAsync({
+          ...rerunComparison,
+          expectedReceiptId: decision.receipt.id,
+        });
+      } catch (error) {
+        throw new Error(
+          actionErrorMessage(error) ?? "Could not rerun the comparison.",
+        );
       }
     },
   });

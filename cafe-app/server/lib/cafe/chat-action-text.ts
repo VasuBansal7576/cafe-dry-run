@@ -11,7 +11,15 @@ const founderTexts = new WeakMap<
   string
 >();
 const uuid = /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i;
-const idKeys = new Set(["id", "aId", "bId", "runId", "receiptId", "threadId"]);
+const idKeys = new Set([
+  "id",
+  "aId",
+  "bId",
+  "runId",
+  "receiptId",
+  "expectedReceiptId",
+  "threadId",
+]);
 const cafeNavigation =
   /^\/cafe(?:\?scenario=[a-f\d-]+(?:&compare=[a-f\d-]+)?)?(?:#(?:opening-file|site-demand|service-test|cash-ledger))?$/i;
 const chatNavigation = /^\/chat\/([a-f\d-]+)$/i;

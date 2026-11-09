@@ -1045,6 +1045,70 @@ it("uses current paired assumptions and rejects a stale service sample or obsole
   });
 });
 
+it("allows only one guarded replacement of an ordered pair's latest receipt", async () => {
+  const { scenario: a } = await createScenario.run({}, owner);
+  const { scenario: b } = await configureShop.run(
+    { ...versions(a), variantLabel: "Guarded alternative" },
+    owner,
+  );
+  const pair = { a: versions(a), b: versions(b) };
+  const order = { aId: a.id, bId: b.id };
+  const original = await compareScenarios.run({ ...pair, ...settings }, owner);
+  const reverse = await compareScenarios.run(
+    { ...settings, a: pair.b, b: pair.a, seed: 12 },
+    owner,
+  );
+  const compareWithReceipt = (expectedReceiptId: string, seed: number) => {
+    const input = { ...pair, ...settings, seed, expectedReceiptId };
+    return compareScenarios.run(input, owner);
+  };
+
+  const competing = await Promise.allSettled([
+    compareWithReceipt(original.receipt.id, 73),
+    compareWithReceipt(original.receipt.id, 99),
+  ]);
+  const [winner] = competing.filter((result) => result.status === "fulfilled");
+  const rejected = competing.filter((result) => result.status === "rejected");
+  expect(rejected).toHaveLength(1);
+  expect(rejected[0]?.reason).toMatchObject({ errorCode: "scenario_conflict" });
+  expect(winner?.value.receipt.id).toBe(
+    (await getComparison.run(order, owner)).decision?.receipt.id,
+  );
+  await expect(
+    compareWithReceipt(reverse.receipt.id, 87),
+  ).rejects.toMatchObject({
+    errorCode: "scenario_conflict",
+  });
+  await expect(
+    compareWithReceipt(original.receipt.id, 87),
+  ).rejects.toMatchObject({
+    errorCode: "scenario_conflict",
+  });
+  expect((await getComparison.run(order, owner)).decision?.receipt.id).toBe(
+    winner?.value.receipt.id,
+  );
+  expect(
+    (await getComparison.run({ aId: b.id, bId: a.id }, owner)).decision?.receipt
+      .id,
+  ).toBe(reverse.receipt.id);
+
+  const manual = await compareScenarios.run(
+    { ...pair, ...settings, seed: 21 },
+    owner,
+  );
+  expect((await getComparison.run(order, owner)).decision?.receipt.id).toBe(
+    manual.receipt.id,
+  );
+  expect(
+    (
+      await getComparison.run(
+        { ...order, receiptId: original.receipt.id },
+        owner,
+      )
+    ).decision?.receipt.id,
+  ).toBe(original.receipt.id);
+});
+
 it("still saves and clears observed counts without substituting an assumed count", async () => {
   const { scenario } = await createScenario.run({}, owner);
   const pedestrian = {

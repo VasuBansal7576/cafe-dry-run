@@ -1,4 +1,5 @@
 import { defineAction } from "@agent-native/core/action";
+import { z } from "zod";
 
 import {
   decisionChatOutputSchema,
@@ -19,6 +20,12 @@ export default defineAction({
   schema: serviceParameters.extend({
     a: scenarioVersionKey,
     b: scenarioVersionKey,
+    expectedReceiptId: z
+      .uuid()
+      .optional()
+      .describe(
+        "Require this to still be the latest receipt for A and B in this order when starting a new comparison with previously read settings.",
+      ),
     savedCustomers: savedCustomerAssumptionSchema
       .optional()
       .describe(
@@ -27,12 +34,13 @@ export default defineAction({
   }),
   outputSchema: decisionChatOutputSchema,
   errors: scenarioErrors,
-  run: async ({ a, b, savedCustomers, ...settings }, ctx) =>
+  run: async ({ a, b, expectedReceiptId, savedCustomers, ...settings }, ctx) =>
     withDecisionChatFigures(
       await saveDecision(requireOwner(ctx?.userEmail), {
         a,
         b,
         settings,
+        ...(expectedReceiptId !== undefined ? { expectedReceiptId } : {}),
         ...(savedCustomers ? { savedCustomers } : {}),
       }),
     ),
