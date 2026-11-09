@@ -4,7 +4,8 @@ import { setTimeout as delay } from "node:timers/promises";
 export const founderInputs = {
   spot: "Near Indiranagar Metro",
   hourly: { low: 45, base: 55, high: 75 },
-  hours: { opens: "08:00", closes: "14:30" },
+  hours: { opens: "08:01", closes: "14:31" },
+  curve: 0.8,
   cash: 510000,
   rent: 58000,
   weekdays: 23,
@@ -18,6 +19,7 @@ export const founderInputs = {
   extraGrinder: 30000,
   shift: { starts: "10:00", ends: "12:00" },
   pedestrian: { count: 600, conversionPercent: 10 },
+  combinedEdit: { grinders: 2, rent: 61000 },
   widths: [1440, 390],
   reducedMotion: "reduce",
 };
@@ -33,6 +35,8 @@ const signedCount = new Intl.NumberFormat("en-IN", { signDisplay: "exceptZero", 
 const waitDelta = (seconds) => seconds === null ? "Unavailable" : `${seconds > 0 ? "+" : ""}${count.format(seconds / 60)} min`;
 const ledgerCash = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 });
 const money = (value) => Math.round(value * 100);
+const seconds = (clock) => clock.split(":").reduce((total, part) => total * 60 + Number(part), 0) * 60;
+const tagged = (value, tag = "estimate") => ({ value, source: { tag } });
 
 async function poll(label, read) {
   const deadline = Date.now() + 20_000;
@@ -61,6 +65,11 @@ function founderActions(page, origin) {
     return response.json();
   }
   return {
+    async post(name, data, expectedStatus = 200) {
+      const response = await page.request.post(`${origin}/_agent-native/actions/${name}`, { data });
+      assert.equal(response.status(), expectedStatus, `${name} must return HTTP ${expectedStatus}`);
+      return response.json();
+    },
     scenarios: async () => (await get("list-scenarios")).scenarios,
     service: async (id, runId) => (await get("get-simulation", {
       id, ...(runId ? { runId } : {}), includePlayback: "true",
@@ -77,18 +86,17 @@ async function tabState(page, origin) {
   const endpoint = `${origin}/_agent-native/application-state`;
   const headers = { "X-Agent-Native-Browser-Tab": tab };
   return {
+    tab,
     playbackKey: `cafe-playback:${tab}`,
     async read(...keys) {
       const response = await page.request.get(endpoint, { headers, params: { keys: keys.join(",") } });
       assert(response.ok(), "Agent-Native application state read failed");
       return (await response.json()).values;
     },
-    async sendNavigationCommand(destination) {
-      const response = await page.request.put(`${endpoint}/navigate`, {
-        headers: { ...headers, "X-Request-Source": "verify-founder" },
-        data: { path: destination, _writeId: `verify-founder-${Date.now()}` },
-      });
-      assert(response.ok(), "Tab-scoped navigation command failed");
+    async action(name, data) {
+      const response = await page.request.post(`${origin}/_agent-native/actions/${name}`, { headers, data });
+      assert(response.ok(), `${name} failed through the isolated action bridge`);
+      return response.json();
     },
   };
 }
@@ -110,16 +118,83 @@ async function verifyPublishedPlayback(page, origin, receiptId, runA, runB, seco
   });
 }
 
+async function documentPosition(page, name) {
+  return page.locator(`#${name}`).evaluate((section) => {
+    const pane = section.closest("main");
+    const padding = parseFloat(getComputedStyle(pane).scrollPaddingBlockStart) || 0;
+    const margin = parseFloat(getComputedStyle(section).scrollMarginBlockStart) || 0;
+    return section.getBoundingClientRect().top - pane.getBoundingClientRect().top - padding - margin;
+  });
+}
+
+async function visibleDocument(page, name) {
+  await poll(`${name} aligned in the café pane`, async () => Math.abs(await documentPosition(page, name)) < 12);
+  const rail = page.getByRole("navigation", { name: "Café Dry Run documents" });
+  await poll(`${name} active in the document rail`, async () =>
+    await rail.locator(`a[href="#${name}"]`).getAttribute("aria-current") === "location");
+}
+
+async function viewScreen(state, { a, b, document, hash = `#${document}` }) {
+  return poll(`tab's view-screen for ${document}`, async () => {
+    const result = await state.action("view-screen", {});
+    const { navigation } = result;
+    if (navigation?.document !== document) return null;
+    assert.equal(navigation.view, "cafe");
+    assert.equal(navigation.path, "/cafe");
+    assert.equal(navigation.scenarioId, a);
+    assert.equal(navigation.comparisonScenarioId, b);
+    assert.equal(navigation.hash, hash);
+    assert.equal(navigation.documentHash, `#${document}`);
+    assert.deepEqual((await state.read("navigation")).navigation, navigation);
+    return result;
+  });
+}
+
+async function navigateTo(page, state, origin, path, document) {
+  await state.action("navigate", { path });
+  await page.waitForURL(origin + path);
+  await visibleDocument(page, document);
+  await poll("tab consumed the navigate command", async () => !(await state.read("navigate")).navigate);
+}
+
 async function submitRun(page, formName, action, submitName) {
   const form = page.getByRole("form", { name: formName });
   await select(form, "Demand case").selectOption("base");
   await exact(form, "Random seed").fill(String(base.seed));
   await exact(form, "Saturdays to run").fill(String(base.runCount));
+  return clickAction(page, action, form.getByRole("button", { name: submitName }));
+}
+
+async function clickAction(page, action, control) {
   const [response] = await Promise.all([
     page.waitForResponse((reply) => reply.url().endsWith(`/actions/${action}`) && reply.request().method() === "POST"),
-    form.getByRole("button", { name: submitName }).click(),
+    control.click(),
   ]);
   assert(response.ok(), `${action} returned status ${response.status()}`);
+  return response.json();
+}
+
+function requiredConversion(result, receipt) {
+  assert.equal(result.expectedSaturdayArrivals, null);
+  assert.equal(result.requiredConversion?.kind, "conditional", "Fresh no-count receipt must return conditional conversion");
+  assert.equal(result.requiredConversion.receiptId, receipt.id, "Conversion must link the current cash receipt");
+  for (const key of ["a", "b"]) {
+    const side = receipt[key];
+    const conditional = result.requiredConversion[key];
+    if (!side) {
+      assert.equal(conditional, null);
+      continue;
+    }
+    const breakEven = side.cash.breakEvenOrdersPerDay;
+    assert(Number.isInteger(breakEven.value), "Conversion fixture must have whole break-even orders");
+    assert.equal(conditional.scenarioId, side.service.scenarioId);
+    assert.deepEqual(conditional.breakEvenOrdersPerDay, breakEven);
+    assert.deepEqual(conditional.illustrativeCaptureRates, [100, 250, 500].map((value) => ({
+      passersByPerOpenDay: { value, tag: "illustrative" },
+      rate: { value: breakEven.value / value, tag: "illustrative" },
+    })), "Illustrative conversion must divide required orders by the stated assumed footfall");
+  }
+  return result.requiredConversion;
 }
 
 function timelineCounts(events, second) {
@@ -249,7 +324,7 @@ function checkCalendar(side, weekendDemand, served, staffHours) {
 }
 
 export async function runFounder({ context, page, origin, map, record, section, screenshot, capture }) {
-  const { scenarios, service, comparison } = founderActions(page, origin);
+  const { scenarios, service, comparison, post } = founderActions(page, origin);
   const find = async (id) => (await scenarios()).find((row) => row.id === id);
   const decision = async (a, b, id) => (await comparison(a, b, id)).decision;
   const compare = (target = page) => submitRun(target, "Comparison settings", "compare-scenarios", /^(Compare Saturdays|Rerun comparison)$/);
@@ -297,16 +372,29 @@ export async function runFounder({ context, page, origin, map, record, section, 
     await exact(demandForm, name).fill(String(base.hourly[key]));
     assert.equal(await exact(demandForm, `${name} source`).inputValue(), "estimate");
   }
-  await exact(demandForm, "Saturday opens source").selectOption("estimate");
+  await exact(demandForm, "Saturday opens").fill(base.hours.opens);
+  assert.equal(await exact(demandForm, "Saturday opens source").inputValue(), "estimate");
   await exact(demandForm, "Saturday closes").fill(base.hours.closes);
-  await button(demandForm, "Save demand").click();
+  await expand(page, "Saturday arrival curve");
+  const firstMultiplier = `${base.hours.opens} multiplier`;
+  assert.equal(await exact(demandForm, `${firstMultiplier} source`).inputValue(), "illustrative");
+  await exact(demandForm, firstMultiplier).fill(String(base.curve));
+  const demandSave = await clickAction(page, "set-demand", button(demandForm, "Save demand"));
   await demandForm.getByText("Current base demand: 55 customers per hour · Estimate").waitFor();
   const savedDemand = (await find(id)).demand;
   for (const [key, value] of Object.entries(base.hourly)) assert.deepEqual(savedDemand.hourly[key], { value, source: { tag: "estimate" } });
-  assert.deepEqual(savedDemand.opensAt, { value: 28800, source: { tag: "estimate" } });
-  assert.deepEqual(savedDemand.closesAt, { value: 52200, source: { tag: "estimate" } });
+  assert.deepEqual(savedDemand.opensAt, tagged(seconds(base.hours.opens)), "Edited Saturday opening must persist");
+  assert.deepEqual(savedDemand.closesAt, tagged(seconds(base.hours.closes)), "Edited Saturday closing must persist");
+  assert.deepEqual(savedDemand.hourlyMultipliers[0], tagged(base.curve), "Edited curve multiplier and source must persist");
+  assert.equal(savedDemand.hourlyMultipliers.length, 7, "The curve must cover the partial last hour");
+  assert.deepEqual(demandSave.scenario.demand, savedDemand);
+  assert.equal(await exact(demandForm, `${firstMultiplier} source`).inputValue(), "estimate");
+  record("Saturday hours and curve saved", {
+    opens: savedDemand.opensAt, closes: savedDemand.closesAt, curve: savedDemand.hourlyMultipliers,
+  });
 
   const shop = page.getByRole("form", { name: "Staff & equipment", exact: true });
+  await exact(shop, "Barista 1 starts").fill(base.hours.opens);
   await exact(shop, "Barista 1 ends").fill(base.hours.closes);
   await expand(page, "Menu mix, prices & service times");
   await exact(shop, "Espresso price (₹)").fill("150");
@@ -344,8 +432,10 @@ export async function runFounder({ context, page, origin, map, record, section, 
   });
 
   section("S4 seeded Saturday and keyboard playback", ["S4", "a4", "a5", "a10", "demo.3"]);
-  await solo();
+  const soloAction = await solo();
   const first = await poll("saved solo service run", () => service(id));
+  assert.equal(first.id, soloAction.id, "Run action must return the saved solo run ID");
+  assert.deepEqual(first.summary.hours, { opensAt: seconds(base.hours.opens), closesAt: seconds(base.hours.closes) });
   const results = page.getByRole("region", { name: "Service test" });
   await results.getByRole("heading", { name: "Saturday results" }).waitFor();
   assert.equal(first.summary.provenance, "illustrative", "An illustrative service assumption must keep the result illustrative");
@@ -363,7 +453,7 @@ export async function runFounder({ context, page, origin, map, record, section, 
   await expand(page, "Staff & equipment utilization");
   await results.getByText("Barista 1", { exact: false }).last().waitFor();
   const soloFrame = await checkPlayback(page, [first], ["Saturday board"]);
-  await solo();
+  assert.equal((await solo()).id, first.id, "Replaying the same inputs must return the same saved run ID");
   const repeated = await service(id);
   assert.deepEqual(repeated, first, "Identical seed and scenario must reproduce full playback and metrics");
   record("repeatable service and synchronized solo playback", {
@@ -376,11 +466,27 @@ export async function runFounder({ context, page, origin, map, record, section, 
   await page.setViewportSize({ width: 1440, height: 900 });
 
   section("S6 solo receipt and spot-only change", ["S1", "S2", "S6", "a9", "demo.6"]);
-  await button(page, "Compute runway").click();
+  const countRead = { id, expectedRevision: financed.revision };
+  const missingConversion = await post("set-pedestrian-count", countRead);
+  assert.equal(missingConversion.requiredConversion?.kind, "needs-runway", "A first no-count read requires a saved runway");
+  assert.equal(missingConversion.expectedSaturdayArrivals, null);
+  const runwayAction = await clickAction(page, "compute-runway", button(page, "Compute runway"));
   const soloReceipt = await poll("saved solo runway", () => decision(id));
+  assert.equal(runwayAction.receipt.id, soloReceipt.receipt.id, "Compute runway must return the saved solo receipt ID");
+  assert.equal(runwayAction.receipt.a.service.id, first.id, "Runway action must link the saved solo run");
+  const soloConversion = requiredConversion(await post("set-pedestrian-count", countRead), soloReceipt.receipt);
+  assert.equal((await find(id)).revision, financed.revision, "Reading conversion must leave inputs unchanged");
   await receiptPanel.getByText("Break-even orders per open day").waitFor();
   await expand(page, "Break-even capture rates");
   await receiptPanel.getByText(/% of 100 passers-by/).first().waitFor();
+  const curveHours = base.curve + 5 + 0.5;
+  for (const [level, hourly] of Object.entries(base.hourly)) {
+    assert(Math.abs(soloReceipt.receipt.weekendDemand[level].value - hourly * curveHours) < 1e-8,
+      `The saved ${level} projection must use the edited curve and partial hour`);
+  }
+  record("no-count action requires runway and then reads the current solo receipt", {
+    missingConversion: missingConversion.requiredConversion, soloConversion, runId: first.id,
+  });
   const pin = mapRegion.getByRole("button", { name: "Place site pin" });
   await pin.press("ArrowRight");
   await pin.press("Enter");
@@ -426,7 +532,7 @@ export async function runFounder({ context, page, origin, map, record, section, 
   assert.equal((await decision(id, barista.id, beforeShift.receipt.id)).serviceStale, true, "The old shift receipt must become stale");
 
   await expand(page, "Create a variant");
-  await page.getByLabel(/Extra grinder price \(₹\)/).fill(String(base.extraGrinder));
+  await page.getByLabel(/Extra grinder price/).fill(String(base.extraGrinder));
   await button(page, "Add grinder variant").click();
   const grinder = await poll("grinder variant", async () => (await scenarios()).find((row) => row.label === "Extra grinder"));
   await poll("grinder selected as B", async () => await pairPicker.inputValue() === grinder.id);
@@ -449,8 +555,17 @@ export async function runFounder({ context, page, origin, map, record, section, 
   await shared.getByText(/Both shops use demand from/).waitFor();
   assert.match(await shared.innerText(), /One barista/);
   assert.equal((await comparison(barista.id, grinder.id)).arrivalSource.id, id, "Sibling pair must use the original as its demand source");
-  await compare();
+  const comparisonAction = await compare();
   const direct = await poll("sibling comparison receipt", () => decision(barista.id, grinder.id));
+  assert.equal(comparisonAction.receipt.id, direct.receipt.id, "Compare action must return the saved pair receipt ID");
+  assert.deepEqual(
+    [comparisonAction.receipt.a.service.id, comparisonAction.receipt.b.service.id],
+    [direct.receipt.a.service.id, direct.receipt.b.service.id],
+    "Compare action must return both saved run IDs",
+  );
+  const comparisonRead = { ...countRead, comparison: { aId: barista.id, bId: grinder.id } };
+  const pairedConversion = requiredConversion(await post("set-pedestrian-count", comparisonRead), direct.receipt);
+  record("no-count conversion links the current shared comparison", pairedConversion);
   const { a, b, weekend } = direct.receipt;
   const [runA, runB] = await Promise.all([service(barista.id, a.service.id), service(grinder.id, b.service.id)]);
   assert(runA.playback.arrivals.length > 0, "Paired fixture must have actual arrivals");
@@ -503,18 +618,155 @@ export async function runFounder({ context, page, origin, map, record, section, 
     costs: a.cash.costs, breakEven: a.cash.breakEvenOrdersPerDay, delta: on.receipt.delta,
   });
 
-  section("S2 shared source edit and stale results", ["S2", "S4", "S5", "S6", "b10"]);
+  section("direct document link and tab-scoped navigation actions", ["b5", "b6"]);
   const second = await context.newPage();
-  await second.goto(workspace(grinder.id, barista.id), { waitUntil: "domcontentloaded", timeout: 60_000 });
+  second.setDefaultTimeout(20_000);
+  const reverseLink = `${workspace(grinder.id, barista.id)}#cash-ledger`;
+  await second.goto(reverseLink, { waitUntil: "domcontentloaded", timeout: 60_000 });
   const reverseDemand = second.getByRole("form", { name: "Shared Saturday demand" });
   await reverseDemand.getByText(/Both shops use demand from/).waitFor();
+  await visibleDocument(second, "cash-ledger");
+
+  const reverseAction = await compare(second);
+  await second.getByRole("heading", { name: "Matched Saturday results" }).waitFor();
+  const reverseRuns = [reverseAction.receipt.a.service.id, reverseAction.receipt.b.service.id];
+  const reverseSlider = second.getByRole("slider", { name: "Saturday timeline" });
+  await reverseSlider.press("Home");
+  const reverseSecond = Number(await reverseSlider.inputValue());
+  await second.getByRole("navigation", { name: "Café Dry Run documents" }).locator('a[href="#cash-ledger"]').click();
+  await visibleDocument(second, "cash-ledger");
+
+  const firstTab = await tabState(page, origin);
+  const secondTab = await tabState(second, origin);
+  assert.notEqual(firstTab.tab, secondTab.tab, "Café tabs must have distinct browser tab IDs");
+  const forward = { a: barista.id, b: grinder.id, document: "service-test" };
+  const reverse = { a: grinder.id, b: barista.id, document: "cash-ledger" };
+  const servicePath = `/cafe?scenario=${barista.id}&compare=${grinder.id}#service-test`;
+  await navigateTo(page, firstTab, origin, servicePath, forward.document);
+  const forwardScreen = await viewScreen(firstTab, forward);
+  const reverseScreen = await viewScreen(secondTab, reverse);
+  assert.deepEqual(forwardScreen.site, { spot: shifted.spot, spotRevision: shifted.spotRevision });
+  assert.deepEqual(reverseScreen.site, { spot: grinder.spot, spotRevision: grinder.spotRevision });
+  assert.equal(forwardScreen.playback?.runId, runA.id, "view-screen must report the displayed saved run");
+  assert.equal(forwardScreen.playback.comparisonRunId, runB.id);
+  assert.equal(forwardScreen.playback.second, pairedFrame.second);
+  assert.equal(forwardScreen.playback.receiptId, on.receipt.id);
+  assert.equal(reverseScreen.playback?.receiptId, reverseAction.receipt.id, "The other tab must report its own saved receipt");
+  assert.deepEqual([reverseScreen.playback.runId, reverseScreen.playback.comparisonRunId], reverseRuns);
+  assert.equal(reverseScreen.playback.second, reverseSecond);
+  assert.notEqual(reverseSecond, pairedFrame.second, "The two open playheads must have independent positions");
+  record("navigate and view-screen actions report different open tabs", { forwardScreen, reverseScreen });
+  await screenshot(second, "direct-cash-link.png");
+
+  section("manual scroll reports visible document without changing the URL", ["b6"]);
+  await page.mouse.move(650, 420);
+  await page.mouse.wheel(0, await documentPosition(page, "cash-ledger"));
+  await visibleDocument(page, "cash-ledger");
+  assert.equal(page.url(), origin + servicePath, "Manual scroll must preserve the service deep link");
+  const scrolled = await viewScreen(firstTab, { ...forward, document: "cash-ledger", hash: "#service-test" });
+  await navigateTo(page, firstTab, origin, servicePath, forward.document);
+  const restored = await viewScreen(firstTab, forward);
+  await visibleDocument(second, reverse.document);
+  assert.equal(second.url(), reverseLink, "Navigate must affect only its originating tab");
+  assert.deepEqual(await viewScreen(secondTab, reverse), reverseScreen);
+  record("manual scroll and repeated navigate use the visible document", { scrolled, restored, otherTab: reverseScreen.navigation });
+
+  section("grounded explanation links saved action results", ["S5", "a7"]);
+  const explanation = await firstTab.action("explain-result", {
+    aId: barista.id, bId: grinder.id, receiptId: on.receipt.id,
+  });
+  assert.equal(explanation.receiptId, on.receipt.id, "Explain action must identify the selected saved receipt");
+  assert.deepEqual([explanation.scenarioA.serviceRun, explanation.scenarioB.serviceRun], [runA.id, runB.id]);
+  assert.deepEqual(explanation.matchedWeekendSample, on.receipt.weekend.base);
+  assert.deepEqual(explanation.scenarioBMinusScenarioA, on.receipt.delta);
+  assert.equal(explanation.reversingAssumption.enabled, on.receipt.savedCustomers.enabled);
+  record("explain-result provides the saved receipt and matching run IDs", {
+    receiptId: explanation.receiptId, runIds: [explanation.scenarioA.serviceRun, explanation.scenarioB.serviceRun],
+  });
+
+  section("regular configure-shop saves both sections and invalidates results", ["S3", "S4", "S5", "S6", "b10"]);
+  const beforeCombined = await find(barista.id);
+  const baristaGrinders = exact(shop, "Grinders");
+  const aFinance = page.locator("#cash-ledger").getByRole("form").first();
+  await expand(page, "Money & demand assumptions");
+  const rent = exact(aFinance, "Rent per month (₹)");
+  assert.notEqual(Number(await baristaGrinders.inputValue()), base.combinedEdit.grinders);
+  assert.notEqual(Number(await rent.inputValue()), base.combinedEdit.rent);
+  const combined = {
+    id: barista.id, expectedRevision: beforeCombined.revision, expectedFinanceRevision: beforeCombined.financeRevision,
+    shop: { equipment: { ...beforeCombined.shop.equipment, grinder: tagged(base.combinedEdit.grinders, "observed") } },
+    finance: { rent: tagged(base.combinedEdit.rent) },
+  };
+  const conflict = await post("configure-shop", { ...combined, expectedFinanceRevision: combined.expectedFinanceRevision + 1 }, 409);
+  assert.equal(conflict.errorCode, "scenario_conflict");
+  assert.deepEqual(await find(barista.id), beforeCombined, "A rejected finance revision must preserve both sections");
+  const { scenario: combinedResult } = await founderActions(second, origin).post("configure-shop", combined);
+  assert.equal(combinedResult.id, barista.id, "Regular configure-shop must update the original scenario ID");
+  assert.equal(combinedResult.revision, beforeCombined.revision + 1);
+  assert.equal(combinedResult.financeRevision, beforeCombined.financeRevision + 1);
+  assert.deepEqual(combinedResult.shop, { ...beforeCombined.shop, ...combined.shop }, "Combined edit must save the tagged shop patch");
+  assert.deepEqual(combinedResult.finance, { ...beforeCombined.finance, ...combined.finance }, "Combined edit must save the tagged finance patch");
+  assert.deepEqual(await find(barista.id), combinedResult, "Combined edit must persist both sections");
+  await poll("combined action to sync shop and money in the already-open tab", async () =>
+    Number(await baristaGrinders.inputValue()) === base.combinedEdit.grinders &&
+    await exact(shop, "Grinders source").inputValue() === "observed" &&
+    Number(await rent.inputValue()) === base.combinedEdit.rent &&
+    await exact(aFinance, "Rent per month (₹) source").inputValue() === "estimate");
+  await page.getByText("Stale service result.").waitFor();
+  await receiptPanel.getByText("Stale cash receipt.").waitFor();
+  assert.equal((await service(barista.id, runA.id)).stale, true);
+  const combinedStale = await decision(barista.id, grinder.id, on.receipt.id);
+  assert.equal(combinedStale.serviceStale, true);
+  assert.equal(combinedStale.cashStale, true);
+  const staleConversion = await post("set-pedestrian-count", comparisonRead);
+  assert.equal(staleConversion.requiredConversion?.kind, "stale-runway", "No-count conversion must reject a stale cash receipt");
+  assert.equal(staleConversion.expectedSaturdayArrivals, null);
+  record("combined action syncs both forms and marks old results stale", {
+    scenarioId: combinedResult.id, serviceRevision: combinedResult.revision, financeRevision: combinedResult.financeRevision,
+    grinder: combinedResult.shop.equipment.grinder, rent: combinedResult.finance.rent, staleReceiptId: on.receipt.id,
+    staleConversion: staleConversion.requiredConversion,
+  });
+
+  section("tag-source preserves the input and invalidates a fresh result", ["S2", "S4", "S5", "S6", "b10"]);
+  const beforeTag = await compare();
+  const currentBeforeTag = await decision(barista.id, grinder.id, beforeTag.receipt.id);
+  assert.equal(currentBeforeTag.serviceStale, false);
+  assert.equal(currentBeforeTag.cashStale, false);
+  const { scenario: retagged } = await founderActions(second, origin).post("tag-source", {
+    ...countRead, section: "demand", path: "hourly.base", source: { tag: "observed" },
+  });
+  assert.equal(retagged.revision, countRead.expectedRevision + 1);
+  assert.deepEqual(retagged.demand, { ...savedDemand, hourly: { ...savedDemand.hourly, base: tagged(base.hourly.base, "observed") } },
+    "Retagging must change only the specified source");
+  assert.deepEqual(await find(id), retagged);
+  await shared.getByText("Current base demand: 55 customers per hour · Observed").waitFor();
+  await page.getByText("Stale service result.").waitFor();
+  await receiptPanel.getByText("Stale cash receipt.").waitFor();
+  const tagStale = await decision(barista.id, grinder.id, beforeTag.receipt.id);
+  assert.equal(tagStale.serviceStale, true);
+  assert.equal(tagStale.cashStale, true);
+  record("source action updates the open form and stales the previous receipt", {
+    scenarioId: id, revision: retagged.revision, hourly: retagged.demand.hourly.base, staleReceiptId: beforeTag.receipt.id,
+  });
+
+  section("S2 shared counted demand action and founder control", ["S2", "S4", "S5", "S6", "b10"]);
   assert.equal((await comparison(grinder.id, barista.id)).arrivalSource.id, id);
-  await exact(reverseDemand, "Use a Saturday pedestrian count").check();
-  await exact(reverseDemand, "People counted on Saturday").fill(String(base.pedestrian.count));
-  await exact(reverseDemand, "Expected conversion (%)").fill(String(base.pedestrian.conversionPercent));
-  await exact(reverseDemand, "Expected conversion (%) source").selectOption("estimate");
-  await button(reverseDemand, "Save demand").click();
+  const countAction = await founderActions(second, origin).post("set-pedestrian-count", {
+    id, expectedRevision: retagged.revision, comparison: { aId: grinder.id, bId: barista.id },
+    pedestrian: { count: tagged(base.pedestrian.count, "observed"), conversionPercent: tagged(base.pedestrian.conversionPercent) },
+  });
+  assert.deepEqual(countAction.expectedSaturdayArrivals, { value: 60, tag: "estimate" }, "Count action must multiply footfall by the tagged conversion");
+  assert.equal(countAction.requiredConversion, null);
+  assert.equal(countAction.scenario.id, id, "Count action must write the pair's shared demand source");
   await reverseDemand.getByText("Expected Saturday arrivals · 60 · Estimate").waitFor();
+  await shared.getByText("Expected Saturday arrivals · 60 · Estimate").waitFor();
+  assert.deepEqual((await find(id)).demand.pedestrian, countAction.scenario.demand.pedestrian);
+  await exact(reverseDemand, "Expected conversion (%)").fill("11");
+  await clickAction(second, "set-demand", button(reverseDemand, "Save demand"));
+  await shared.getByText("Expected Saturday arrivals · 66 · Estimate").waitFor();
+  await exact(reverseDemand, "Expected conversion (%)").fill(String(base.pedestrian.conversionPercent));
+  await clickAction(second, "set-demand", button(reverseDemand, "Save demand"));
+  await shared.getByText("Expected Saturday arrivals · 60 · Estimate").waitFor();
   const edited = await find(id);
   assert.deepEqual(edited.demand.pedestrian, {
     count: { value: base.pedestrian.count, source: { tag: "observed" } },
@@ -561,6 +813,10 @@ export async function runFounder({ context, page, origin, map, record, section, 
   }
   return {
     originalId: id, baristaId: barista.id, grinderId: grinder.id, shift, sourceRevision: edited.revision,
+    sourceDemand: edited.demand, combined: {
+      revision: combinedResult.revision, financeRevision: combinedResult.financeRevision,
+      grinder: combinedResult.shop.equipment.grinder, rent: combinedResult.finance.rent,
+    },
     oldShiftReceiptId: beforeShift.receipt.id, staleReceiptId: on.receipt.id, staleRunId: runA.id,
     currentReceiptId: current.receipt.id,
     currentRunIds: [current.receipt.a.service.id, current.receipt.b.service.id],
@@ -575,8 +831,15 @@ export async function verifyFounderRestart({ context, page, origin, expected, re
   await page.getByRole("article", { name: "Cash runway receipt" }).waitFor();
   const rows = await scenarios();
   assert.equal(rows.length, 3);
-  assert.equal(rows.find((row) => row.id === originalId).revision, expected.sourceRevision);
-  assert.deepEqual(rows.find((row) => row.id === baristaId).shop.workers[1].shifts[0], expected.shift);
+  const source = rows.find((row) => row.id === originalId);
+  const barista = rows.find((row) => row.id === baristaId);
+  assert.equal(source.revision, expected.sourceRevision);
+  assert.deepEqual(source.demand, expected.sourceDemand);
+  assert.deepEqual(barista.shop.workers[1].shifts[0], expected.shift);
+  assert.deepEqual({
+    revision: barista.revision, financeRevision: barista.financeRevision,
+    grinder: barista.shop.equipment.grinder, rent: barista.finance.rent,
+  }, expected.combined);
   const { decision } = await comparison(baristaId, grinderId);
   assert.equal(decision.receipt.id, expected.currentReceiptId);
   assert.equal(decision.receipt.pedestrian.count.value, base.pedestrian.count);
@@ -588,17 +851,6 @@ export async function verifyFounderRestart({ context, page, origin, expected, re
   assert.equal((await service(baristaId, expected.staleRunId)).stale, true);
   await screenshot(page.locator("#cash-ledger"), "restarted-cash.png");
   record("same scenarios, old stale runs and current receipt after restart", expected);
-
-  section("framework navigation command receiver", ["b6"]);
-  const state = await tabState(page, origin);
-  const destination = `/cafe?scenario=${originalId}#site-demand`;
-  await state.sendNavigationCommand(destination);
-  await page.waitForURL(origin + destination);
-  await poll("consumed navigation command and updated view", async () => {
-    const { navigation, navigate } = await state.read("navigation", "navigate");
-    return !navigate && navigation?.view === "cafe" && navigation.scenarioId === originalId && !navigation.comparisonScenarioId;
-  });
-  record("open tab follows and clears a framework navigation command", { destination, liveNavigateAction: "NOT VERIFIED" });
 
   section("isolated chat precondition", []);
   const chat = await context.newPage();

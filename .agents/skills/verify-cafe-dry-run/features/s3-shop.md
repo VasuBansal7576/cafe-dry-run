@@ -10,7 +10,7 @@ Open `/cafe` and use **Staff & equipment**. Open **Money & demand assumptions** 
 
 ## Driving it with Playwright
 
-Run `founder` to save tagged equipment, a menu price and a service time. Compare the new barista against the original, then manually save 10:00 to 12:00 in **Edit B · Two baristas**. Confirm the stale historical receipt, fresh deltas and unchanged original shop. For live coverage, exercise the equivalent agent action and confirm the form updates.
+Run `founder` to save tagged equipment, a menu price and a service time. Compare the new barista against the original, then manually save 10:00 to 12:00 in **Edit B · Two baristas**. Confirm the stale historical receipt, fresh deltas and unchanged original shop. Send a regular `configure-shop` call with both service and finance revisions. Check that a conflict preserves both sections. A current request updates tagged grinders and rent in the already-open tab and invalidates both results. Use real chat to verify the model can call the action.
 
 ## Gotchas
 

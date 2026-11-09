@@ -185,15 +185,20 @@ const readRows = () => readDatabase((query) => query(
 
 async function verifyFounderDatabase(expected) {
   const records = await readDatabase(async (query) => ({
-    scenarios: await query('SELECT id, revision, shop, demand FROM cafe_scenarios ORDER BY id'),
+    scenarios: await query('SELECT id, revision, finance_revision AS "financeRevision", shop, demand, finance FROM cafe_scenarios ORDER BY id'),
     runs: await query('SELECT id, scenario_id, arrival_source_id, arrival_source_revision FROM cafe_service_runs ORDER BY id'),
     receipts: await query('SELECT id, a_scenario_id, b_scenario_id FROM cafe_decision_runs ORDER BY id'),
   }));
   assert.equal(records.scenarios.length, 3);
   const original = records.scenarios.find((row) => row.id === expected.originalId);
   assert.equal(original.revision, expected.sourceRevision);
-  assert.equal(original.demand.pedestrian.count.value, founderInputs.pedestrian.count);
-  assert.deepEqual(records.scenarios.find((row) => row.id === expected.baristaId).shop.workers[1].shifts[0], expected.shift);
+  assert.deepEqual(original.demand, expected.sourceDemand);
+  const barista = records.scenarios.find((row) => row.id === expected.baristaId);
+  assert.deepEqual(barista.shop.workers[1].shifts[0], expected.shift);
+  assert.deepEqual({
+    revision: barista.revision, financeRevision: barista.financeRevision,
+    grinder: barista.shop.equipment.grinder, rent: barista.finance.rent,
+  }, expected.combined);
   const latestRuns = expected.currentRunIds.map((id) => records.runs.find((row) => row.id === id));
   assert.deepEqual(latestRuns.map((row) => row.scenario_id), [expected.baristaId, expected.grinderId]);
   for (const row of latestRuns) {
@@ -205,10 +210,23 @@ async function verifyFounderDatabase(expected) {
     assert(records.receipts.some((row) => row.id === id), "PGlite must preserve current and historical receipts");
   }
   capture("persisted-records.json", {
-    scenarios: records.scenarios.map(({ id, revision }) => ({ id, revision })),
+    scenarios: records.scenarios.map(({ id, revision, financeRevision }) => ({ id, revision, financeRevision })),
+    sourceDemand: original.demand,
+    combined: expected.combined,
     runs: records.runs,
     receipts: records.receipts,
   });
+}
+
+function exposeIsolatedActions() {
+  const actions = ["view-screen", "navigate", "explain-result"];
+  for (const name of actions) {
+    const path = join(app, "actions", `${name}.ts`);
+    const source = readFileSync(path, "utf8");
+    assert.equal(source.split("http: false,").length, 2, `${name} must be private in the committed app`);
+    writeFileSync(path, source.replace("http: false,", 'http: { method: "POST" },'));
+  }
+  check("scratch-only transport for private framework actions", { actions, changedField: "http", providerInvolved: false });
 }
 
 function identifyFounderInputs() {
@@ -284,6 +302,7 @@ try {
   const archive = exec("git", ["-C", repo, "archive", evidence.commit, "cafe-app"], { encoding: "buffer" });
   exec("tar", ["-xf", "-", "-C", scratch], { input: archive });
   assert(readdirSync(app).every((name) => !name.startsWith(".env") || name === ".env.example"), "Committed app has an unexpected environment file");
+  if (founderMode) exposeIsolatedActions();
   phase = "install frozen dependencies";
   exec("pnpm", ["install", "--frozen-lockfile"], { cwd: app });
   evidence.coreVersion = JSON.parse(readFileSync(join(app, "node_modules/@agent-native/core/package.json"), "utf8")).version;
@@ -327,10 +346,14 @@ try {
     const map = JSON.parse(readFileSync(join(app, "shared/cafe/indiranagar.json"), "utf8"));
     const expected = await runFounder({ context, page, origin, map, record, section, screenshot: saveImage, capture: saveJson });
     section("stopped database readback and restart", ["b10"]);
+    await page.close();
+    page = undefined;
     await stopServer();
     await verifyFounderDatabase(expected);
     attach("persisted-records.json");
     check("owned server restarted", { pids: await startServer() });
+    page = await context.newPage();
+    page.setDefaultTimeout(60_000);
     const { composerEditable } = await verifyFounderRestart({ context, page, origin, expected, record, section, screenshot: saveImage });
     evidence.journeys.at(-1).status = "VERIFIED";
     evidence.founder = "VERIFIED";

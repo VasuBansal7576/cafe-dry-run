@@ -31,7 +31,9 @@ The helper checks listener ownership, uses **Continue as local dev**, opens `/ca
 CAFE_PROVIDER_SETUP=manual "$verify" live "$PWD" 8189
 ```
 
-`founder` drives S1 through S6 using the committed app and verifier. It picks a sourced spot, saves tagged inputs, plays the solo Saturday, compares the two variants and edits the second barista's shift. It checks the cash switch, weekday and weekend projections, a shared demand edit, and database readback after restart. It captures 1440 px and 390 px layouts with reduced motion.
+`founder` drives S1 through S6 using the committed app and verifier. It picks a sourced spot, saves tagged inputs, plays the solo Saturday, compares the two variants and edits the second barista's shift. It checks the edited Saturday curve and hours, counted and conditional conversion, a combined shop and finance edit, and source-only retagging. It follows saved run and receipt IDs through the action results and reads both tabs’ document and playback state. It verifies the cash switch, weekday and weekend projections, stale results, and database readback after restart. It captures 1440 px and 390 px layouts with reduced motion.
+
+For the private `view-screen`, `navigate` and `explain-result` actions, `founder` temporarily enables the framework’s HTTP transport in its disposable loopback app. Only the transport flag changes. The authenticated request uses the browser’s tab ID. The checked-in actions remain private. This exercises the actual action handlers and browser behavior independently of model invocation.
 
 `demo` runs the founder journey and returns a failed full-demo verdict until there is separate evidence of real provider tool calls and a model recommendation. Follow [the integrated demo](features/demo.md) for the remaining provider steps.
 
@@ -41,7 +43,7 @@ CAFE_PROVIDER_SETUP=manual "$verify" live "$PWD" 8189
 
 The helper writes `.artifacts/verify-cafe-dry-run/<mode>-*/index.json` and selected screenshots and row fields. Set `CAFE_EVIDENCE_DIR` to an absolute writable path when verifying from a read-only checkout. The index records the commit, app tree, core version, inputs, observations, failure phase, and artifact names. The founder index includes the statechart, design, and verifier hashes. Each journey lists related requirement IDs and its own evidence files. Use the observations to scope any broader predicate claim. Include its path and relevant requirement IDs in the project evidence index.
 
-Drive writes through actual user controls and use the framework read action and offline row projection to corroborate them. Capture the action, the visible result, and the side effect. Keep credentials, cookies, raw provider payloads, and full auth or chat tables out of evidence.
+Drive founder writes through user controls and action checks through the framework transport. Use the framework read actions and offline row projection to corroborate both. Capture the action, the visible result, and the side effect. Keep credentials, cookies, raw provider payloads, and full auth or chat tables out of evidence.
 
 Run `scripts/predicate.sh` after installing the app's frozen dependencies. It reruns Vitest, Agent-Native typecheck, and the framework source doctor. The browser doctor and journeys above cover runtime checks. A partial check supports only the part of a requirement it exercised.
 
