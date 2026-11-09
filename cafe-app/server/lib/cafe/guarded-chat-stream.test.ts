@@ -76,15 +76,22 @@ it("preserves live tool progress and signed tool history without publishing draf
       yield { type: "stop", reason: "tool_use" };
     }),
   );
+  const executed = events.find(({ type }) => type === "tool-call");
+  if (executed?.type !== "tool-call")
+    throw new Error("Expected a completed tool call");
+  expect(executed).toEqual({
+    ...tool,
+    id: expect.stringMatching(/^call_[a-f\d-]+$/),
+  });
+  expect(executed.id).not.toBe(tool.id);
   expect(events).toContainEqual({
     type: "tool-input-start",
-    id: tool.id,
+    id: executed.id,
     name: tool.name,
   });
-  expect(events).toContainEqual(tool);
   expect(events).toContainEqual({
     type: "tool-input-delta",
-    id: tool.id,
+    id: executed.id,
     name: tool.name,
     text: "{}",
   });
@@ -95,7 +102,7 @@ it("preserves live tool progress and signed tool history without publishing draf
     ),
   ).toEqual([]);
   expect(events.slice(-2)).toEqual([
-    { type: "assistant-content", parts: [reasoning, tool] },
+    { type: "assistant-content", parts: [reasoning, executed] },
     { type: "stop", reason: "tool_use" },
   ]);
 });
@@ -250,7 +257,10 @@ it.each([
       "assistant-content",
       "stop",
     ]);
-    expect(events).toContainEqual(call);
+    expect(events).toContainEqual({
+      ...call,
+      id: expect.stringMatching(/^call_[a-f\d-]+$/),
+    });
   },
 );
 
@@ -315,7 +325,10 @@ it("uses an explicit open action envelope and validates its dynamic values", asy
       [tool],
     ),
   );
-  expect(events).toContainEqual(call);
+  expect(events).toContainEqual({
+    ...call,
+    id: expect.stringMatching(/^call_[a-f\d-]+$/),
+  });
 });
 
 it("redacts a known tool's provider error instead of executing its duplicate call", async () => {

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type {
   AgentEngine,
   EngineContentPart,
@@ -9,12 +11,14 @@ import Ajv, { type ValidateFunction } from "ajv";
 import addFormats from "ajv-formats";
 import Ajv2020 from "ajv/dist/2020.js";
 
+import { cafeActionTextCheck } from "./chat-action-text.js";
 import { safeProviderFailure } from "./chat-provider-failure.js";
 
 const guardedEngines = new WeakSet<AgentEngine>();
-const unguardedPresentationTools = new Set([
+const excludedChatTools = new Set([
   "ask-question",
   "render-data-widget",
+  "provider-api-request",
 ]);
 const draft07 = addFormats(
   new Ajv({ strict: false, ownProperties: true, addUsedSchema: false }),
@@ -31,6 +35,7 @@ const safeToolId = /^[a-z\d_.:-]{1,128}$/i;
 type ToolCall = Extract<EngineEvent, { type: "tool-call" }>;
 type ToolError = Extract<EngineEvent, { type: "tool-call-error" }>;
 type ToolRecord = {
+  id: string;
   name?: string;
   inputAnnounced?: boolean;
   startPublished?: boolean;
@@ -38,7 +43,7 @@ type ToolRecord = {
 };
 
 export function isCafeChatActionAllowed(name: string) {
-  return !unguardedPresentationTools.has(name);
+  return !excludedChatTools.has(name);
 }
 
 export function holdCafeDrafts(engine: AgentEngine) {
@@ -130,6 +135,7 @@ async function* holdDraft(
   stream: () => AsyncIterable<EngineEvent>,
   { abortSignal: signal, messages, tools }: EngineStreamOptions,
 ): AsyncGenerator<EngineEvent> {
+  const acceptsText = cafeActionTextCheck();
   const offeredTools = new Map(
     tools
       .filter(({ name }) => isCafeChatActionAllowed(name))
@@ -143,7 +149,7 @@ async function* holdDraft(
   let modelStarted = false;
 
   function claimTool(id: string, name?: string) {
-    const record = toolRecords.get(id) ?? {};
+    const record = toolRecords.get(id) ?? { id: `call_${randomUUID()}` };
     if (name && !record.name) record.name = name;
     toolRecords.set(id, record);
     return record;
@@ -159,18 +165,21 @@ async function* holdDraft(
       call.type === "tool-call"
         ? validatedInput(schema, call.input)
         : undefined;
-    if (input === undefined) {
+    if (input === undefined || !acceptsText(call.name, input)) {
       record.result = {
         type: "tool-call-error",
-        id: call.id,
+        id: record.id,
         name: call.name,
         input: {},
-        error: "The arguments did not match the offered action schema",
+        error:
+          input === undefined
+            ? "The arguments did not match the offered action schema"
+            : "Use qualitative text, or copy the complete numeric text from the founder or a current café action",
       };
     } else if (!record.result) {
       record.result = {
         type: "tool-call",
-        id: call.id,
+        id: record.id,
         name: call.name,
         input,
       };
@@ -268,10 +277,11 @@ async function* holdDraft(
     if (!content.some(({ type }) => type === "text") && textDeltas.length > 0)
       content = [...content, { type: "text", text: textDeltas.join("") }];
   } else {
+    const outcomes = new Set(
+      [...toolRecords.values()].map(({ result }) => result),
+    );
     content = content.filter((part) =>
-      part.type === "tool-call"
-        ? toolRecords.get(part.id)?.result === part
-        : part.type !== "text",
+      part.type === "tool-call" ? outcomes.has(part) : part.type !== "text",
     );
   }
   for (const record of toolRecords.values()) {

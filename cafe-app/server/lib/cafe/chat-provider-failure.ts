@@ -23,6 +23,56 @@ const credentialsMessage =
   "The model provider needs a valid connection. Check Settings > Agent > AI providers.";
 const genericMessage = "The model provider could not complete this reply.";
 
+const providerRecoveryCodes = new Set([
+  "authentication_error",
+  "billing_error",
+  "builder_auth_error",
+  "builder_model_unauthorized",
+  "builder_gateway_error",
+  "builder_gateway_internal_error",
+  "builder_gateway_network_error",
+  "builder_gateway_stream_ended",
+  "builder_gateway_timeout",
+  "builder_oauth_lookup_failed",
+  "builder_oauth_refresh_failed",
+  "context_length_exceeded",
+  "credential_store_unavailable",
+  "gateway_not_enabled",
+  "input_too_long",
+  "invalid_api_key",
+  "invalid_attachment",
+  "invalid_request",
+  "invalid_request_error",
+  "missing_api_key",
+  "missing_credentials",
+  "model_not_found",
+  "not_found_error",
+  "overloaded_error",
+  "permission_error",
+  "provider_config_error",
+  "provider_internal_error",
+  "provider_network_error",
+  "provider_rate_limited",
+  "provider_transient_rejection",
+  "rate_limit_exceeded",
+  "rate_limited",
+  "request_too_large",
+  "timeout",
+  "too_many_concurrent_requests",
+  "unauthorized",
+]);
+
+function knownProviderCode(code: string | undefined) {
+  if (typeof code !== "string") return;
+  const normalized = code.trim().toLowerCase();
+  if (
+    providerRecoveryCodes.has(normalized) ||
+    /^http_[45]\d{2}$/.test(normalized)
+  )
+    return normalized;
+  if (isCreditsLimitErrorCode(normalized)) return "credits-limit";
+}
+
 export function safeProviderFailure(
   failure: unknown,
   messages: EngineMessage[],
@@ -35,7 +85,14 @@ export function safeProviderFailure(
   const classified = classifyProviderError(
     stop ? Object.assign(new Error(message), stop) : failure,
   );
-  const statusCode = structured?.statusCode ?? classified.statusCode;
+  const status = structured?.statusCode ?? classified.statusCode;
+  const statusCode =
+    typeof status === "number" &&
+    Number.isInteger(status) &&
+    status >= 400 &&
+    status <= 599
+      ? status
+      : undefined;
   const explicitCode = structured?.errorCode;
   const hasInlineAttachment = messages.some(({ content }) =>
     content.some(
@@ -73,9 +130,7 @@ export function safeProviderFailure(
     );
   const dailyCap = lower.includes("daily gateway request cap");
   let errorCode =
-    explicitCode && /^[a-z\d][a-z\d_-]{0,63}$/i.test(explicitCode)
-      ? explicitCode
-      : classified.errorCode;
+    knownProviderCode(explicitCode) ?? knownProviderCode(classified.errorCode);
   if (attachmentRejected) errorCode = "invalid_attachment";
   else if (!errorCode && missingCredentials) errorCode = "missing_credentials";
   else if (!errorCode && dailyCap) errorCode = "rate_limit_exceeded";
@@ -85,7 +140,11 @@ export function safeProviderFailure(
     attachmentRejected || dailyCap
       ? false
       : (structured?.providerRetryable ?? classified.providerRetryable);
-  const retryAfterMs = structured?.retryAfterMs ?? classified.retryAfterMs;
+  const delay = structured?.retryAfterMs ?? classified.retryAfterMs;
+  const retryAfterMs =
+    typeof delay === "number" && Number.isFinite(delay) && delay >= 0
+      ? delay
+      : undefined;
   const normalizedCode = errorCode?.toLowerCase() ?? "";
   const rejectedCredential =
     /^(?:http_40[13]|authentication_error|unauthorized)$/.test(normalizedCode);

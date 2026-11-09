@@ -133,7 +133,7 @@ function quoteTexts(value: unknown): string[] {
 function turnQuoteSources({
   toolResults,
   toolCalls,
-}: AgentLoopFinalResponseGuardContext) {
+}: Pick<AgentLoopFinalResponseGuardContext, "toolResults" | "toolCalls">) {
   const sources: QuoteSource[] = [];
   const sites: { index: number; names: string[] }[] = [];
   const scenarios = new Map<string, ScenarioVersion>();
@@ -440,14 +440,62 @@ function hasUnsupportedNumber(
   remainder = remainder
     .normalize("NFKC")
     .replace(/\b(?:that|this|better|best|right|which|the other) one\b/giu, " ");
+  return containsCafeQuantity(remainder);
+}
+
+export function containsCafeQuantity(text: string) {
+  const plain = text.normalize("NFKC").replace(/\p{Cf}/gu, "");
   return (
-    /[\p{N}\p{Sc}%]/u.test(remainder) ||
-    numberWord.test(remainder) ||
-    writtenDate.test(remainder) ||
-    implicitNumber.test(remainder) ||
-    multiplicativeNumber.test(remainder) ||
-    approximateMeasure.test(remainder)
+    /[\p{N}\p{Sc}%]/u.test(plain) ||
+    numberWord.test(plain) ||
+    writtenDate.test(plain) ||
+    implicitNumber.test(plain) ||
+    multiplicativeNumber.test(plain) ||
+    approximateMeasure.test(plain)
   );
+}
+
+type ActionTextHistory = Pick<
+  AgentLoopFinalResponseGuardContext,
+  "toolResults" | "toolCalls"
+>;
+
+export function cafeActionTextEvidence(history: ActionTextHistory) {
+  const { figures, sites } = turnQuoteSources(history);
+  const evidence = new Set([
+    ...figures.flatMap(({ quotes }) => quotes),
+    ...sites.flatMap(({ names }) => names),
+  ]);
+  function addNamedFields(value: unknown, key?: string) {
+    if (typeof value === "string") {
+      if (
+        key === "label" ||
+        key === "name" ||
+        key === "id" ||
+        key === "url" ||
+        key === "supportingValue" ||
+        key === "retrievedAt"
+      )
+        evidence.add(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) addNamedFields(item, key);
+      return;
+    }
+    const record = object(value);
+    if (record)
+      for (const [key, child] of Object.entries(record))
+        addNamedFields(child, key);
+  }
+  for (const result of history.toolResults) {
+    if (result.isError || !scenarioActions.has(result.name)) continue;
+    const parsed = parseJson(result.content);
+    if (parsed) addNamedFields(parsed);
+    else if (result.name === "list-scenarios")
+      addNamedFields(visibleScenarioHeaders(result.content));
+  }
+  return evidence;
 }
 
 export const guardCafeFigures: AgentLoopFinalResponseGuard = (details) => {
