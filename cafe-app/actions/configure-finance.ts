@@ -5,6 +5,7 @@ import { financeFields } from "../server/lib/cafe/finance.js";
 import {
   scenarioErrors,
   scenarioFinanceEditKey,
+  scenarioWriteMaxResultChars,
   scenarioWriteOutputSchema,
 } from "../server/lib/cafe/scenario-store.js";
 import configureShop from "./configure-shop.js";
@@ -20,7 +21,7 @@ export default defineAction({
       ),
   }),
   outputSchema: scenarioWriteOutputSchema,
-  maxResultChars: 160_000,
+  maxResultChars: scenarioWriteMaxResultChars,
   errors: scenarioErrors,
   run: (input, ctx) => configureShop.run(input, ctx),
 });

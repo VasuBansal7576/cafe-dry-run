@@ -9,6 +9,7 @@ import {
   currentScenarioScope,
   readScenario,
   requireOwner,
+  requireScenarioWriteBudget,
   scenarioConflict,
   scenarioEditKey,
   scenarioErrors,
@@ -17,6 +18,7 @@ import {
   scenarioKey,
   scenarioLabel,
   scenarioScope,
+  scenarioWriteMaxResultChars,
   scenarioWriteOutputSchema,
   scenarioWriteResult,
   toScenario,
@@ -58,7 +60,7 @@ export default defineAction({
       ),
   }),
   outputSchema: scenarioWriteOutputSchema,
-  maxResultChars: 160_000,
+  maxResultChars: scenarioWriteMaxResultChars,
   errors: scenarioErrors,
   run: async (
     {
@@ -73,6 +75,7 @@ export default defineAction({
     ctx,
   ) => {
     const owner = requireOwner(ctx?.userEmail);
+    requireScenarioWriteBudget(ctx?.maxResultChars);
     if (variantFinance && (!variantLabel || financePatch)) {
       return scenarioErrors.fail(
         "Use finance to edit an existing scenario. When copying a variant, send finance or variantFinance, not both.",

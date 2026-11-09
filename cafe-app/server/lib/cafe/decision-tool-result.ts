@@ -1,10 +1,10 @@
 import { z } from "zod";
 
-import { chatFigureBasisSchema } from "./chat-figure-basis.js";
 import { decisionChatOutputSchema } from "./chat-figures.js";
 import { decisionReceiptSchema } from "./decision-receipt.js";
+import { scenarioErrors } from "./scenario-store.js";
 import { serviceRunSchema } from "./service-run.js";
-import { fitsToolResult } from "./tool-result-budget.js";
+import { fitsToolResult, sampleResultId } from "./tool-result-budget.js";
 
 const summarySide = decisionReceiptSchema.shape.a
   .pick({ label: true, financeRevision: true })
@@ -36,7 +36,6 @@ const decisionWriteSummary = decisionSummarySchema.extend({
 });
 const decisionWriteReference = z.object({
   receiptScope: z.literal("reference"),
-  chatFigureBasis: chatFigureBasisSchema,
   receipt: z.object({ id: z.uuid() }),
 });
 export const decisionWriteOutputSchema = z.union([
@@ -44,6 +43,21 @@ export const decisionWriteOutputSchema = z.union([
   decisionWriteReference,
   decisionChatOutputSchema,
 ]);
+
+function savedReceiptReference(id: string) {
+  return { receiptScope: "reference" as const, receipt: { id } };
+}
+
+export function requireDecisionWriteBudget(budget?: number) {
+  if (
+    budget !== undefined &&
+    !fitsToolResult(savedReceiptReference(sampleResultId), budget)
+  )
+    return scenarioErrors.fail(
+      "Tool budget too small to save.",
+      "invalid_scenario",
+    );
+}
 
 export function decisionWriteResult(
   saved: z.output<typeof decisionChatOutputSchema>,
@@ -57,9 +71,5 @@ export function decisionWriteResult(
   if (fitsToolResult(summary, budget)) return summary;
   // The write already succeeded. Return its identity even if the caller's
   // budget cannot fit the quote bundle; do not fail or repeat the write.
-  return {
-    receiptScope: "reference" as const,
-    chatFigureBasis: saved.chatFigureBasis,
-    receipt: { id: saved.receipt.id },
-  };
+  return savedReceiptReference(saved.receipt.id);
 }

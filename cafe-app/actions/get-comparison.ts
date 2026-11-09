@@ -102,7 +102,7 @@ export default defineAction({
     };
     if (fitsToolResult(summary, budget)) return summary;
     return scenarioErrors.fail(
-      "The comparison summary exceeds this agent's tool result limit. Read the decision in the café.",
+      "Tool result limit too small.",
       "invalid_scenario",
     );
   },

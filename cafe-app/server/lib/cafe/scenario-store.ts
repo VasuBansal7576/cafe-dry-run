@@ -16,7 +16,7 @@ import {
   hourlyRateSchema,
   shopSchema,
 } from "./scenario.js";
-import { fitsToolResult } from "./tool-result-budget.js";
+import { fitsToolResult, sampleResultId } from "./tool-result-budget.js";
 
 export const scenarioErrors = defineActionErrors(
   "sign_in_required",
@@ -65,18 +65,66 @@ export const scenarioSchema = z.object({
 });
 export type Scenario = z.infer<typeof scenarioSchema>;
 
+export const scenarioToolSummarySchema = scenarioSchema.omit({
+  shop: true,
+  finance: true,
+  demand: true,
+});
 const scenarioWriteSummary = z.object({
-  scenarioScope: z.enum(["summary", "reference"]),
-  scenario: scenarioSchema.omit({ shop: true, finance: true, demand: true }),
+  scenarioScope: z.literal("summary"),
+  scenario: scenarioToolSummarySchema,
+  changed: z.literal(false).optional(),
+});
+const scenarioWriteIdentity = scenarioSchema.pick({
+  id: true,
+  revision: true,
+  financeRevision: true,
+});
+export const scenarioWriteReferenceSchema = z.object({
+  scenarioScope: z.literal("reference"),
+  scenario: scenarioWriteIdentity,
+  changed: z.literal(false).optional(),
 });
 export const scenarioWriteOutputSchema = z.union([
   scenarioWriteSummary,
+  scenarioWriteReferenceSchema,
   z.object({ scenario: scenarioSchema }),
 ]);
+
+export const scenarioWriteMaxResultChars = 160_000;
+
+export function scenarioWriteReference(
+  { id, revision, financeRevision }: z.infer<typeof scenarioWriteIdentity>,
+  changed?: false,
+) {
+  return {
+    scenarioScope: "reference" as const,
+    scenario: { id, revision, financeRevision },
+    ...(changed === false ? { changed } : {}),
+  };
+}
+
+export function requireScenarioWriteBudget(budget?: number, changed?: false) {
+  if (budget === undefined) return;
+  const reference = scenarioWriteReference(
+    {
+      id: sampleResultId,
+      revision: Number.MAX_SAFE_INTEGER,
+      financeRevision: Number.MAX_SAFE_INTEGER,
+    },
+    changed,
+  );
+  if (!fitsToolResult(reference, budget))
+    return scenarioErrors.fail(
+      "Tool budget too small to save.",
+      "invalid_scenario",
+    );
+}
 
 export function scenarioWriteResult(
   scenario: Scenario,
   budget: number | undefined,
+  changed?: false,
 ) {
   const result = { scenario };
   if (
@@ -87,12 +135,10 @@ export function scenarioWriteResult(
   const summary = scenarioWriteSummary.parse({
     scenarioScope: "summary",
     scenario,
+    ...(changed === false ? { changed } : {}),
   });
   if (fitsToolResult(summary, budget)) return summary;
-  return {
-    scenarioScope: "reference" as const,
-    scenario: { ...summary.scenario, chatFigures: undefined },
-  };
+  return scenarioWriteReference(scenario, changed);
 }
 
 export const scenarioFields = {

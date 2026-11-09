@@ -6,9 +6,9 @@ import createScenario from "../../../actions/create-scenario.js";
 import getSimulation from "../../../actions/get-simulation.js";
 import listScenarios from "../../../actions/list-scenarios.js";
 import runSimulation from "../../../actions/run-simulation.js";
-import setDemand from "../../../actions/set-demand.js";
 import setSpot from "../../../actions/set-spot.js";
 import migrate from "../../plugins/db.js";
+import { setDemand } from "./full-action-fixtures.js";
 
 const owner = {
   caller: "tool",

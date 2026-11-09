@@ -4,6 +4,11 @@ import compareAction from "../../../actions/compare-scenarios.js";
 import runwayAction from "../../../actions/compute-runway.js";
 import financeAction from "../../../actions/configure-finance.js";
 import shopAction from "../../../actions/configure-shop.js";
+import demandAction from "../../../actions/set-demand.js";
+import pedestrianAction, {
+  pedestrianResultSchema,
+} from "../../../actions/set-pedestrian-count.js";
+import tagAction from "../../../actions/tag-source.js";
 import { decisionChatOutputSchema } from "./chat-figures.js";
 import { scenarioSchema } from "./scenario-store.js";
 
@@ -25,3 +30,9 @@ export const compareScenarios = fullResult(
 export const computeRunway = fullResult(runwayAction, decisionChatOutputSchema);
 export const configureFinance = fullResult(financeAction, scenarioOutput);
 export const configureShop = fullResult(shopAction, scenarioOutput);
+export const setDemand = fullResult(demandAction, scenarioOutput);
+export const setPedestrianCount = fullResult(
+  pedestrianAction,
+  pedestrianResultSchema,
+);
+export const tagSource = fullResult(tagAction, scenarioOutput);

@@ -78,7 +78,7 @@ export default defineAction({
     const budget = ctx?.maxResultChars;
     if (budget === undefined || fitsToolResult(result, budget)) return result;
     return scenarioErrors.fail(
-      "The explanation exceeds this agent's tool result limit. Read the decision in the café.",
+      "Tool result limit too small.",
       "invalid_scenario",
     );
   },

@@ -6,6 +6,7 @@ import { saveDecision } from "../server/lib/cafe/decision-store.js";
 import {
   decisionWriteOutputSchema,
   decisionWriteResult,
+  requireDecisionWriteBudget,
 } from "../server/lib/cafe/decision-tool-result.js";
 import { savedCustomerAssumptionSchema } from "../server/lib/cafe/finance.js";
 import {
@@ -36,17 +37,22 @@ export default defineAction({
   outputSchema: decisionWriteOutputSchema,
   maxResultChars: 100_000,
   errors: scenarioErrors,
-  run: async ({ a, b, expectedReceiptId, savedCustomers, ...settings }, ctx) =>
-    decisionWriteResult(
-      withDecisionChatFigures(
-        await saveDecision(requireOwner(ctx?.userEmail), {
-          a,
-          b,
-          settings,
-          ...(expectedReceiptId !== undefined ? { expectedReceiptId } : {}),
-          ...(savedCustomers ? { savedCustomers } : {}),
-        }),
-      ),
+  run: async (
+    { a, b, expectedReceiptId, savedCustomers, ...settings },
+    ctx,
+  ) => {
+    const owner = requireOwner(ctx?.userEmail);
+    requireDecisionWriteBudget(ctx?.maxResultChars);
+    const saved = await saveDecision(owner, {
+      a,
+      b,
+      settings,
+      ...(expectedReceiptId !== undefined ? { expectedReceiptId } : {}),
+      ...(savedCustomers ? { savedCustomers } : {}),
+    });
+    return decisionWriteResult(
+      withDecisionChatFigures(saved),
       ctx?.maxResultChars,
-    ),
+    );
+  },
 });

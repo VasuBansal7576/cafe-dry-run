@@ -10,7 +10,6 @@ import getComparison from "../../../actions/get-comparison.js";
 import getSimulation from "../../../actions/get-simulation.js";
 import listScenarios from "../../../actions/list-scenarios.js";
 import runSimulation from "../../../actions/run-simulation.js";
-import setDemand from "../../../actions/set-demand.js";
 import { getDb } from "../../db/index.js";
 import { decisionRuns, scenarios, serviceRuns } from "../../db/schema.js";
 import migrate from "../../plugins/db.js";
@@ -18,6 +17,7 @@ import {
   compareScenarios,
   computeRunway,
   configureShop,
+  setDemand,
 } from "./full-action-fixtures.js";
 import { illustrative } from "./provenance.js";
 

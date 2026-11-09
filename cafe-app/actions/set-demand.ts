@@ -1,15 +1,17 @@
 import { defineAction } from "@agent-native/core/action";
-import { z } from "zod";
 
 import { illustrative } from "../server/lib/cafe/provenance.js";
 import {
   readScenario,
   requireOwner,
+  requireScenarioWriteBudget,
   saveScenarioInputs,
   scenarioConflict,
   scenarioEditKey,
   scenarioErrors,
-  scenarioSchema,
+  scenarioWriteMaxResultChars,
+  scenarioWriteOutputSchema,
+  scenarioWriteResult,
   validateInput,
 } from "../server/lib/cafe/scenario-store.js";
 import {
@@ -21,7 +23,7 @@ import {
 
 export default defineAction({
   description:
-    "Edit a cafe scenario's tagged low/base/high hourly demand, Saturday opening hours, hourly curve, or observed Saturday footfall and conversion. For a comparison, read get-comparison and edit its arrivalSource ID at the returned revision. Otherwise read list-scenarios.",
+    "Edit a cafe scenario's tagged low/base/high hourly demand, Saturday opening hours, hourly curve, or observed Saturday footfall and conversion. For a comparison, read get-comparison and edit its arrivalSource ID at the returned revision. Otherwise read list-scenarios. A scenarioScope of summary or reference confirms the save and omits the full inputs.",
   schema: scenarioEditKey.extend({
     demand: demandFields
       .partial()
@@ -35,13 +37,15 @@ export default defineAction({
         "Set only the base hourly demand as an illustrative value; prefer demand.hourly when replacing the range or providing provenance.",
       ),
   }),
-  outputSchema: z.object({ scenario: scenarioSchema }),
+  outputSchema: scenarioWriteOutputSchema,
+  maxResultChars: scenarioWriteMaxResultChars,
   errors: scenarioErrors,
   run: async (
     { id, expectedRevision, demand: patch, baseHourlyDemand },
     ctx,
   ) => {
     const owner = requireOwner(ctx?.userEmail);
+    requireScenarioWriteBudget(ctx?.maxResultChars);
     if (
       (baseHourlyDemand === undefined &&
         (!patch || !Object.keys(patch).length)) ||
@@ -89,11 +93,10 @@ export default defineAction({
       );
     }
     const checked = validateInput(demandSchema, demand);
-    return {
-      scenario: await saveScenarioInputs(id, owner, expectedRevision, {
-        demand: checked,
-        baseHourlyDemand: checked.hourly.base.value,
-      }),
-    };
+    const saved = await saveScenarioInputs(id, owner, expectedRevision, {
+      demand: checked,
+      baseHourlyDemand: checked.hourly.base.value,
+    });
+    return scenarioWriteResult(saved, ctx?.maxResultChars);
   },
 });

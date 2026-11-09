@@ -110,7 +110,7 @@ When asked to rerun a saved comparison after a manual edit, read the saved input
 
 If get-comparison returns comparisonSummary, read its decision and arrivalSource for the receipt ID, freshness, quote-ready figures and shared demand revision. For playback records, use get-simulation with playbackPage, then pass the returned run ID and nextOffset for the same stream. Each page is part of the first Saturday, and a null nextOffset marks the end of that stream.
 
-A write result marked receiptScope or scenarioScope as summary or reference confirms the save. Do not repeat the write to obtain details. Use get-comparison or explain-result for the saved receipt's figures, or inspect the scenario in the café for the full inputs.
+A write result marked receiptScope or scenarioScope as summary or reference confirms the save unless changed is false. A reference confirms identity and omits detailed figures. Do not repeat the write to obtain details. Use get-comparison or explain-result for the saved receipt's figures, or inspect the scenario in the café for the full inputs.
 
 Use compute-runway for the selected pair when the founder asks for its cash projection, changes cash inputs, or changes whether to count recovered weekend customers. Pass comparison with current versions a and b and the latest receiptId in that order from get-comparison. Include savedCustomers inside comparison only when changing the assumption. If the service sample is stale, run compare-scenarios with the intended settings first.
 

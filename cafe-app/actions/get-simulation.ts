@@ -248,7 +248,7 @@ export default defineAction({
       return result;
     }
     return scenarioErrors.fail(
-      "The service result exceeds this agent's tool result limit. Read the run in the café.",
+      "Tool result limit too small.",
       "invalid_scenario",
     );
   },

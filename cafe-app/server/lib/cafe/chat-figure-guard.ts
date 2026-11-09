@@ -264,6 +264,11 @@ function turnQuoteSources({
     }
     if (!resultActions.has(name)) continue;
     const payload = resultPayload(parsed, content);
+    if (
+      payload?.receiptScope === "reference" &&
+      (name === "compare-scenarios" || name === "compute-runway")
+    )
+      unknownEdits.push({ index });
     const scope = chatFigureBasisSchema.safeParse(payload?.chatFigureBasis);
     if (!scope.success) continue;
     const basis = scope.data;

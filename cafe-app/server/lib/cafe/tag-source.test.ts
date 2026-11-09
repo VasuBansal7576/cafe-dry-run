@@ -7,10 +7,14 @@ import getComparison from "../../../actions/get-comparison.js";
 import getSimulation from "../../../actions/get-simulation.js";
 import listScenarios from "../../../actions/list-scenarios.js";
 import runSimulation from "../../../actions/run-simulation.js";
-import setPedestrianCount from "../../../actions/set-pedestrian-count.js";
-import tagSource from "../../../actions/tag-source.js";
+import tagSourceAction from "../../../actions/tag-source.js";
 import migrate from "../../plugins/db.js";
-import { computeRunway, configureFinance } from "./full-action-fixtures.js";
+import {
+  computeRunway,
+  configureFinance,
+  setPedestrianCount,
+  tagSource,
+} from "./full-action-fixtures.js";
 
 const founder = {
   caller: "frontend",
@@ -157,15 +161,16 @@ test("tag edits reject unauthorized, missing, incompatible or stale input withou
     { ...publicSource, retrievedAt: "2026-02-30" },
     { ...publicSource, supportingValue: "  " },
   ]) {
-    expect((await actionCallIntent(tagSource, { ...edit, source })).valid).toBe(
-      false,
-    );
+    expect(
+      (await actionCallIntent(tagSourceAction, { ...edit, source })).valid,
+    ).toBe(false);
   }
   expect(
-    (await actionCallIntent(tagSource, { ...edit, value: 90000 })).valid,
+    (await actionCallIntent(tagSourceAction, { ...edit, value: 90000 })).valid,
   ).toBe(false);
   expect(
-    (await actionCallIntent(tagSource, { ...edit, section: "finance" })).valid,
+    (await actionCallIntent(tagSourceAction, { ...edit, section: "finance" }))
+      .valid,
   ).toBe(false);
   await expect(
     tagSource.run({ ...edit, path: "hourly.base.value" }, agent),

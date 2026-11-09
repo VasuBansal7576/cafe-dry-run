@@ -19,8 +19,7 @@ import getComparison from "../../../actions/get-comparison.js";
 import getSimulation from "../../../actions/get-simulation.js";
 import listScenarios from "../../../actions/list-scenarios.js";
 import runSimulation from "../../../actions/run-simulation.js";
-import setDemand from "../../../actions/set-demand.js";
-import setPedestrianCount from "../../../actions/set-pedestrian-count.js";
+import demandAction from "../../../actions/set-demand.js";
 import setSpot from "../../../actions/set-spot.js";
 import migrate from "../../plugins/db.js";
 import { guardCafeFigures } from "./chat-figure-guard.js";
@@ -29,6 +28,8 @@ import {
   computeRunway,
   configureFinance,
   configureShop,
+  setDemand,
+  setPedestrianCount,
 } from "./full-action-fixtures.js";
 import type { Scenario } from "./scenario-store.js";
 
@@ -863,7 +864,7 @@ it("keeps a comparison's rerun inputs and current quotes when the full receipt e
   ).toBeDefined();
   await expect(
     getComparison.run(scope, { ...owner, maxResultChars: 100 }),
-  ).rejects.toThrow(/exceeds this agent's tool result limit/);
+  ).rejects.toThrow(/Tool result limit too small/);
 });
 
 it("reports the saved receipt even when the quote bundle cannot fit the write response", async () => {
@@ -892,10 +893,40 @@ it("reports the saved receipt even when the quote bundle cannot fit the write re
   ).toBeDefined();
   expect(
     await check(`${quote}.`, [
+      tool("get-comparison", read),
+      tool("compare-scenarios", saved),
+    ]),
+  ).toBeDefined();
+  expect(
+    await check(`${quote}.`, [
       tool("compare-scenarios", saved),
       tool("get-comparison", read),
     ]),
   ).toBeUndefined();
+});
+
+it("requires enough room for the save reference before touching a scenario or receipt", async () => {
+  const { scenario: a } = await createScenario.run({}, owner);
+  const { scenario: b } = await configureShop.run(
+    { ...versions(a), variantLabel: "Extra grinder" },
+    owner,
+  );
+  const demand = { ...serviceVersion(a), baseHourlyDemand: 25 };
+  await expect(
+    demandAction.run(demand, { ...other, maxResultChars: 300 }),
+  ).rejects.toMatchObject({ errorCode: "scenario_not_found" });
+  const cramped = { ...owner, maxResultChars: 100 };
+  await expect(demandAction.run(demand, cramped)).rejects.toThrow(
+    /budget too small/,
+  );
+  await expect(
+    compareAction.run({ a: versions(a), b: versions(b), ...settings }, cramped),
+  ).rejects.toThrow(/budget too small/);
+  const { scenarios } = await listScenarios.run({}, owner);
+  expect(scenarios.find(({ id }) => id === a.id)).toEqual(a);
+  expect(
+    (await getComparison.run({ aId: a.id, bId: b.id }, owner)).decision,
+  ).toBeNull();
 });
 
 it("pages exact stored playback at the resolved tool budget and pins continuations to the selected run", async () => {

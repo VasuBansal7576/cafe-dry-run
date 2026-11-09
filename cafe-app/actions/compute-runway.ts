@@ -6,6 +6,7 @@ import { saveDecision } from "../server/lib/cafe/decision-store.js";
 import {
   decisionWriteOutputSchema,
   decisionWriteResult,
+  requireDecisionWriteBudget,
 } from "../server/lib/cafe/decision-tool-result.js";
 import { savedCustomerAssumptionSchema } from "../server/lib/cafe/finance.js";
 import {
@@ -44,6 +45,7 @@ export default defineAction({
   errors: scenarioErrors,
   run: async ({ comparison, ...solo }, ctx) => {
     const owner = requireOwner(ctx?.userEmail);
+    requireDecisionWriteBudget(ctx?.maxResultChars);
     if (comparison) {
       if (Object.values(solo).some((value) => value !== undefined))
         return scenarioErrors.fail(

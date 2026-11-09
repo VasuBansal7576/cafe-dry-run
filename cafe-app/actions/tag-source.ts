@@ -7,13 +7,16 @@ import { sourceSchema, type Source } from "../server/lib/cafe/provenance.js";
 import {
   readScenario,
   requireOwner,
+  requireScenarioWriteBudget,
   saveScenarioInputs,
   scenarioConflict,
   scenarioEditKey,
   scenarioErrors,
   scenarioFinanceEditKey,
   scenarioKey,
-  scenarioSchema,
+  scenarioWriteMaxResultChars,
+  scenarioWriteOutputSchema,
+  scenarioWriteResult,
   validateInput,
 } from "../server/lib/cafe/scenario-store.js";
 import { demandSchema, shopSchema } from "../server/lib/cafe/scenario.js";
@@ -62,7 +65,7 @@ function replaceSource<T>(section: T, path: string, source: Source): T | null {
 
 export default defineAction({
   description:
-    "Change the provenance of one saved numeric café scenario input without changing its value. Read list-scenarios first for the field path and revision. Use expectedRevision for demand or shop, and expectedFinanceRevision for finance. Observed pedestrian counts must remain observed.",
+    "Change the provenance of one saved numeric café scenario input without changing its value. Read list-scenarios first for the field path and revision. Use expectedRevision for demand or shop, and expectedFinanceRevision for finance. Observed pedestrian counts must remain observed. A scenarioScope of summary or reference omits the full inputs; changed:false means the tag was already set.",
   schema: scenarioKey
     .extend({
       section: z.enum(["demand", "shop", "finance"]),
@@ -88,27 +91,25 @@ export default defineAction({
           "Use expectedRevision for demand or shop, and expectedFinanceRevision for finance.",
       },
     ),
-  outputSchema: z.object({ scenario: scenarioSchema }),
+  outputSchema: scenarioWriteOutputSchema,
+  maxResultChars: scenarioWriteMaxResultChars,
   errors: scenarioErrors,
   run: async (edit, ctx) => {
     const { id, path, source, section } = edit;
     const owner = requireOwner(ctx?.userEmail);
+    const budget = ctx?.maxResultChars;
+    requireScenarioWriteBudget(budget, false);
     const current = await readScenario(id, owner);
 
     if (section === "finance") {
       if (current.financeRevision !== edit.expectedFinanceRevision)
         return scenarioConflict();
       const finance = replaceSource(current.finance, path, source);
-      if (!finance) return { scenario: current };
-      const { maxResultChars: _, ...financeContext } = ctx ?? {
-        caller: "tool" as const,
-        userEmail: owner,
-      };
-      const saved = await configureFinance.run(
+      if (!finance) return scenarioWriteResult(current, budget, false);
+      return configureFinance.run(
         { id, expectedFinanceRevision: edit.expectedFinanceRevision, finance },
-        financeContext,
+        ctx,
       );
-      return { scenario: scenarioSchema.parse(saved.scenario) };
     }
 
     if (current.revision !== edit.expectedRevision) return scenarioConflict();
@@ -124,18 +125,17 @@ export default defineAction({
     }
 
     const changed = replaceSource(current[section], path, source);
-    if (!changed) return { scenario: current };
+    if (!changed) return scenarioWriteResult(current, budget, false);
     const patch =
       section === "demand"
         ? { demand: validateInput(demandSchema, changed) }
         : { shop: validateInput(shopSchema, changed) };
-    return {
-      scenario: await saveScenarioInputs(
-        id,
-        owner,
-        edit.expectedRevision,
-        patch,
-      ),
-    };
+    const saved = await saveScenarioInputs(
+      id,
+      owner,
+      edit.expectedRevision,
+      patch,
+    );
+    return scenarioWriteResult(saved, budget);
   },
 });
