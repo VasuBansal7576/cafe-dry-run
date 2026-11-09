@@ -1,5 +1,5 @@
 import { defineAction } from "@agent-native/core/action";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { getDb } from "../server/db/index.js";
@@ -9,13 +9,15 @@ import {
   currentScenarioScope,
   readScenario,
   requireOwner,
-  saveScenarioInputs,
   scenarioConflict,
   scenarioEditKey,
   scenarioErrors,
   scenarioFields,
+  scenarioFinanceEditKey,
+  scenarioKey,
   scenarioLabel,
   scenarioSchema,
+  scenarioScope,
   toScenario,
   validateInput,
 } from "../server/lib/cafe/scenario-store.js";
@@ -23,8 +25,11 @@ import { shopFields, shopSchema } from "../server/lib/cafe/scenario.js";
 
 export default defineAction({
   description:
-    "Edit a cafe scenario's staff shifts, equipment, menu mix, tagged drink prices and ingredient costs, service times or customer patience. To create a variant without altering the original, send variantLabel and the changes. Read list-scenarios for the current revision and financeRevision. Include existing workers when adding one.",
-  schema: scenarioEditKey.extend({
+    "Edit staff shifts, equipment, menu, service times and tagged money inputs, together or separately. A money-only edit leaves service results fresh. To create a variant without altering the original, send variantLabel and both revisions. Read list-scenarios for current revisions. Include existing workers when adding one.",
+  schema: scenarioKey.extend({
+    expectedRevision: scenarioEditKey.shape.expectedRevision
+      .optional()
+      .describe("Required when changing shop fields or copying a variant."),
     shop: shopFields
       .partial()
       .default({})
@@ -34,17 +39,21 @@ export default defineAction({
       .describe(
         "Copy the scenario under this label and apply the patch to the copy only.",
       ),
-    expectedFinanceRevision: z
-      .number()
-      .int()
-      .nonnegative()
+    expectedFinanceRevision:
+      scenarioFinanceEditKey.shape.expectedFinanceRevision
+        .optional()
+        .describe("Required when changing money fields or copying a variant."),
+    finance: financeFields
+      .partial()
       .optional()
-      .describe("Required when copying a variant."),
+      .describe(
+        "Tagged money fields to replace on the scenario or new variant.",
+      ),
     variantFinance: financeFields
       .partial()
       .optional()
       .describe(
-        "Optional tagged money changes when copying, such as equipmentAdditions containing an extra grinder quote.",
+        "Alternative to finance when copying a variant. Do not send both.",
       ),
   }),
   outputSchema: z.object({ scenario: scenarioSchema }),
@@ -56,18 +65,36 @@ export default defineAction({
       shop: patch,
       variantLabel,
       expectedFinanceRevision,
+      finance: financePatch,
       variantFinance,
     },
     ctx,
   ) => {
     const owner = requireOwner(ctx?.userEmail);
-    if (variantLabel) {
-      if (expectedFinanceRevision === undefined) {
-        return scenarioErrors.fail(
-          "Supply the baseline financeRevision to copy a variant.",
-          "invalid_scenario",
-        );
-      }
+    if (variantFinance && (!variantLabel || financePatch)) {
+      return scenarioErrors.fail(
+        "Use finance to edit an existing scenario. When copying a variant, send finance or variantFinance, not both.",
+        "invalid_scenario",
+      );
+    }
+    const changesShop = Object.keys(patch).length > 0;
+    const changesFinance = Object.keys(financePatch ?? {}).length > 0;
+    if ((variantLabel || changesShop) && expectedRevision === undefined) {
+      return scenarioErrors.fail(
+        "Supply the scenario revision to change shop fields or copy a variant.",
+        "invalid_scenario",
+      );
+    }
+    if (
+      (variantLabel || changesFinance) &&
+      expectedFinanceRevision === undefined
+    ) {
+      return scenarioErrors.fail(
+        "Supply the financeRevision to change money fields or copy a variant.",
+        "invalid_scenario",
+      );
+    }
+    if (variantLabel && expectedRevision !== undefined) {
       return getDb().transaction(async (tx) => {
         const [row] = await tx
           .select(scenarioFields)
@@ -107,24 +134,54 @@ export default defineAction({
             shop: validateInput(shopSchema, { ...baseline.shop, ...patch }),
             finance: validateInput(financeSchema, {
               ...baseline.finance,
-              ...variantFinance,
+              ...(financePatch ?? variantFinance),
             }),
           })
           .returning(scenarioFields);
         return { scenario: toScenario(variant!) };
       });
     }
-    if (variantFinance || !Object.keys(patch).length) {
+    if (!changesShop && !changesFinance) {
       return scenarioErrors.fail(
-        "Supply a shop field to change, or give a label to create a variant.",
+        "Supply a shop or money field to change, or a label to create a variant.",
         "invalid_scenario",
       );
     }
     const current = await readScenario(id, owner);
-    if (current.revision !== expectedRevision) return scenarioConflict();
-    const shop = validateInput(shopSchema, { ...current.shop, ...patch });
-    return {
-      scenario: await saveScenarioInputs(id, owner, expectedRevision, { shop }),
-    };
+    if (
+      (changesShop && current.revision !== expectedRevision) ||
+      (changesFinance && current.financeRevision !== expectedFinanceRevision)
+    )
+      return scenarioConflict();
+
+    const shop = changesShop
+      ? validateInput(shopSchema, { ...current.shop, ...patch })
+      : undefined;
+    const finance = changesFinance
+      ? validateInput(financeSchema, { ...current.finance, ...financePatch })
+      : undefined;
+    const [row] = await getDb()
+      .update(scenarios)
+      .set({
+        shop,
+        finance,
+        revision: shop ? sql`${scenarios.revision} + 1` : undefined,
+        financeRevision: finance
+          ? sql`${scenarios.financeRevision} + 1`
+          : undefined,
+      })
+      .where(
+        and(
+          scenarioScope(id, owner),
+          changesShop && expectedRevision !== undefined
+            ? eq(scenarios.revision, expectedRevision)
+            : undefined,
+          changesFinance && expectedFinanceRevision !== undefined
+            ? eq(scenarios.financeRevision, expectedFinanceRevision)
+            : undefined,
+        ),
+      )
+      .returning(scenarioFields);
+    return { scenario: row ? toScenario(row) : scenarioConflict() };
   },
 });

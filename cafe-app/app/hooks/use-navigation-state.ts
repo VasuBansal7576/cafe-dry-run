@@ -13,6 +13,13 @@ import {
 } from "@/lib/chat-paths";
 import { TAB_ID } from "@/lib/tab-id";
 
+const cafeDocuments = [
+  "opening-file",
+  "site-demand",
+  "service-test",
+  "cash-ledger",
+] as const;
+
 export interface NavigationState {
   view?: string;
   path?: string;
@@ -20,21 +27,30 @@ export interface NavigationState {
   threadId?: string;
   scenarioId?: string;
   comparisonScenarioId?: string;
+  hash?: string;
+  document?: (typeof cafeDocuments)[number];
 }
 
 export function useNavigationState() {
   useAgentRouteState<NavigationState>({
     browserTabId: TAB_ID,
     requestSource: TAB_ID,
-    getNavigationState: ({ pathname, searchParams }) => ({
-      ...navigationStateForPath(pathname),
-      ...(pathname === "/cafe" && searchParams.get("scenario")
-        ? { scenarioId: searchParams.get("scenario")! }
-        : {}),
-      ...(pathname === "/cafe" && searchParams.get("compare")
-        ? { comparisonScenarioId: searchParams.get("compare")! }
-        : {}),
-    }),
+    getNavigationState: ({ pathname, hash, searchParams }) => {
+      const navigation = navigationStateForPath(pathname);
+      if (navigation.view !== "cafe") return navigation;
+      const document = cafeDocuments.find(
+        (name) => `#${name}` === (hash || "#opening-file"),
+      );
+      const scenarioId = searchParams.get("scenario");
+      const comparisonScenarioId = searchParams.get("compare");
+      return {
+        ...navigation,
+        hash,
+        ...(document ? { document } : {}),
+        ...(scenarioId ? { scenarioId } : {}),
+        ...(comparisonScenarioId ? { comparisonScenarioId } : {}),
+      };
+    },
     getCommandPath: commandPathForNavigation,
   });
 }

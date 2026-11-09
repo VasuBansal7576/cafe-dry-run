@@ -42,13 +42,13 @@ Follow the project rules in `../AGENTS.md` and behavior specification in `../caf
 | `create-scenario` | Start a private scenario with clearly labeled illustrative inputs. |
 | `set-spot` | Move the selected scenario's pin by snapshot place name or coordinates using its `spotRevision`. Confirm the saved spot with `list-scenarios`. Use nearby places as area context only. |
 | `set-demand` | Edit hourly demand, opening hours or the Saturday curve using the current revision. |
-| `set-pedestrian-count` | Save an observed count and conversion, or clear the count, using the shared demand source revision. |
+| `set-pedestrian-count` | Save an observed count and conversion, or send `pedestrian: null` to clear it. Omit `pedestrian` to read without editing. With no count, read conditional capture rates from a fresh runway or comparison. Pass `comparison: { aId, bId }` for a pair and use its shared arrival source ID and revision. Never treat the illustrative denominators as site footfall. |
 | `tag-source` | Change one tagged numeric input’s source without changing its value; use the field path and applicable revision from `list-scenarios`. Public tags require full source evidence. |
-| `configure-shop` | Replace selected shop fields using the current revision. To change one shift, preserve the other workers and shifts in the replacement list. |
+| `configure-shop` | Replace selected `shop` or `finance` fields. Send the current `expectedRevision` for shop and `expectedFinanceRevision` for finance. Send both to save shop and finance together. To change one shift, preserve the other workers and shifts in the replacement list. |
 | `run-simulation` | Persist a seeded service result for the current revision. Use its metrics and provenance when explaining the result. |
 | `get-simulation` | Read a saved run and its stale status. Request playback only when the arrival and event timeline is needed. |
 
-Use `navigate` to open `/cafe?scenario=<id>`. `view-screen` includes the tab's selected scenario, saved spot, displayed run ID and timeline position. Active playback refreshes the position once per second. A stale result describes the earlier run revision. Simulation numbers come from actions. Explain opens the built-in agent chat.
+Use `navigate` to open `/cafe?scenario=<id>` with `#opening-file`, `#site-demand`, `#service-test`, or `#cash-ledger`. `view-screen` includes the tab's current document, selected scenarios, saved spot, displayed run IDs and timeline position. Active playback refreshes the position once per second. A stale result describes the earlier run revision. Simulation numbers come from actions. Explain opens the built-in agent chat.
 
 | Comparison and cash action | Use |
 | --- | --- |

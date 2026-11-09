@@ -1,20 +1,17 @@
 import { defineAction } from "@agent-native/core/action";
-import {
-  readAppState,
-  readAppStateForCurrentTab,
-} from "@agent-native/core/application-state";
+import { readAppStateForCurrentTab } from "@agent-native/core/application-state";
 import { z } from "zod";
 
 import { findScenario } from "../server/lib/cafe/scenario-store.js";
 
 export default defineAction({
   description:
-    "Read the Chat app's current navigation state. Basic navigation is already included in <current-screen>; use this action only when you need a fresh read.",
+    "Read the current tab's view. In the café, returns the active document hash, selected A and B, the saved site and the displayed run IDs and timeline position.",
   schema: z.object({}),
   http: false,
   readOnly: true,
   run: async (_args, ctx) => {
-    const navigation = await readAppState("navigation");
+    const navigation = await readAppStateForCurrentTab("navigation");
 
     const screen: Record<string, unknown> = {};
     if (navigation) screen.navigation = navigation;

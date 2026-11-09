@@ -660,7 +660,9 @@ export function ComparisonWorkspace({
           </button>
           <form onSubmit={addGrinder} className="cafe-controls">
             <label>
-              Extra grinder price (₹)
+              <span>
+                Extra grinder price (₹) <Stamp tag="estimate" />
+              </span>
               <input
                 required
                 type="number"

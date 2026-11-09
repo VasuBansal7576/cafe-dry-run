@@ -69,6 +69,10 @@ const cash = z.object({
   }),
 });
 
+export const conditionalCaptureSchema = cash
+  .pick({ breakEvenOrdersPerDay: true, illustrativeCaptureRates: true })
+  .extend({ scenarioId: z.string().uuid() });
+
 const side = z.object({
   label: z.string(),
   financeRevision: z.number(),
