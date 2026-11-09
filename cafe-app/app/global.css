@@ -94,17 +94,30 @@
   padding-inline: 0.25rem;
 }
 
-/* Compact toolbars have no gap. Give Chromium's rounded edge hits room. */
-[data-cafe-layout] .agent-sidebar-panel [data-agent-composer-slot="voice-button"] {
-  &:has(+ [data-composer-primary="voice-chat"]),
-  & + [data-composer-primary="voice-chat"] {
+/* Reserve room for the focus outline when the composer swaps actions. */
+[data-cafe-layout] .agent-sidebar-panel [data-agent-composer-slot="toolbar"] {
+  --agentkit-composer-toolbar-control-gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  padding-block: max(6px, var(--agentkit-composer-toolbar-padding-top, 6px))
+    max(6px, var(--agentkit-composer-toolbar-padding-bottom, 6px));
+
+  button {
     min-inline-size: 45px;
     min-block-size: 45px;
   }
 
-  & + [data-composer-primary="voice-chat"] {
-    margin-inline-start: 1px;
+  > [data-agent-composer-slot="stop-slot"] {
+    margin-inline-end: 0;
   }
+}
+
+[data-cafe-toolbar-tooltip]:has(> [data-agent-native-tooltip][data-side="top"]) {
+  translate: 0 var(--cafe-tooltip-above);
+}
+
+[data-cafe-toolbar-tooltip]:has(> [data-agent-native-tooltip][data-side="bottom"]) {
+  translate: 0 var(--cafe-tooltip-below);
 }
 
 [data-cafe-layout] .agent-sidebar-panel .agentkit-editing-row {

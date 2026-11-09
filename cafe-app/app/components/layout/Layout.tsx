@@ -36,6 +36,7 @@ import { Sidebar } from "./Sidebar";
 import { useCafeAgentDock } from "./useCafeAgentDock";
 import { useCafeAgentOverlay } from "./useCafeAgentOverlay";
 import { useCafeAgentTabs } from "./useCafeAgentTabs";
+import { useCafeToolbarTooltip } from "./useCafeToolbarTooltip";
 
 const Header = lazy(() =>
   import("./Header").then((module) => ({ default: module.Header })),
@@ -95,6 +96,7 @@ function LayoutShell({ children }: LayoutProps) {
   const cafeDock = useCafeAgentDock(isCafe);
   useCafeAgentOverlay(cafeDock.shell, isCafe);
   useCafeAgentTabs(cafeDock.shell, isCafe);
+  useCafeToolbarTooltip(cafeDock.shell, isCafe);
   const isChatRoute = isChatPathname(location.pathname);
   // Settings brings its own navigation, header, and agent toggle, so it
   // renders full width.
