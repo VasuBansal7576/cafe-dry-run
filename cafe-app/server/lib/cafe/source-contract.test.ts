@@ -165,6 +165,23 @@ it("allows exact returned map names without authorizing other numbers from the m
   expect(
     await check("56 Secure Customers on Saturdays.", [secureResult]),
   ).toBeDefined();
+  for (const boundary of ["\n\n", "\r\n\r\n", "\u2029"]) {
+    expect(
+      await check(
+        `The pin is at 56 Secure${boundary}Customers can review the site map.`,
+        [secureResult],
+      ),
+    ).toBeUndefined();
+  }
+  expect(
+    await check("The pin is at ＋56 Secure.", [secureResult]),
+  ).toBeDefined();
+  expect(
+    await check("The pin is at ＋ **56 Secure**.", [secureResult]),
+  ).toBeDefined();
+  expect(
+    await check("It is Beginest Harbor 1\nmetres away.", [numberedResult]),
+  ).toBeDefined();
 });
 
 it.each(["invented number", "coincidentally correct number"])(

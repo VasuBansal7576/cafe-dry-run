@@ -414,10 +414,15 @@ function hasUnsupportedNumber(
         "gu",
       ),
       (name: string, offset: number, draft: string) => {
-        const suffix = draft.slice(offset + name.length).normalize("NFKC");
-        return /\p{N}/u.test(name) && adjacentPlaceQuantity.test(suffix)
-          ? name
-          : " ";
+        if (!/\p{N}/u.test(name)) return " ";
+        const prefix = draft.slice(0, offset).normalize("NFKC");
+        const signed = /[+−±-][\p{Zs}\t\p{Cf}*_\x60~]*$/u.test(prefix);
+        const [sameParagraph = ""] = draft
+          .slice(offset + name.length)
+          .normalize("NFKC")
+          .replace(/\r\n?|\u2028/g, "\n")
+          .split(/\n[^\S\n]*\n|\u2029/u, 1);
+        return signed || adjacentPlaceQuantity.test(sameParagraph) ? name : " ";
       },
     );
   }
