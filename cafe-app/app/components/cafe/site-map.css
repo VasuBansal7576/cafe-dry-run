@@ -15,6 +15,34 @@
   margin: 0;
 }
 
+.cafe-site-map [hidden] {
+  display: none;
+}
+
+.cafe-site-view-toggle {
+  justify-self: start;
+}
+
+.cafe-site-photo {
+  padding: 8px;
+  background: var(--cafe-paper);
+  color: var(--cafe-print);
+}
+
+.cafe-site-photo img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.cafe-site-photo figcaption {
+  padding: 8px;
+  background: var(--cafe-paper-shade);
+  font: 650 11px/1.35 var(--cafe-mono);
+  letter-spacing: 0.105em;
+  text-transform: uppercase;
+}
+
 .cafe-site-map h3 {
   font: 500 clamp(27px, 3.5vw, 40px)/1
     var(--cafe-serif, "Iowan Old Style", Baskerville, Georgia, serif);

@@ -11,6 +11,7 @@
   --cafe-muted: #cbc2b4;
   --cafe-rule: #59534c;
   --cafe-paper: #eee2cc;
+  --cafe-paper-shade: #e1d0b2;
   --cafe-print: #29241d;
   --cafe-signal: #ff713b;
   --cafe-signal-ink: #231b15;
@@ -32,6 +33,7 @@
 }
 .cafe-workspace :is(input, select, button) {
   font: inherit;
+  font-size: 13px;
   min-height: 44px;
 }
 .cafe-workspace :is(input, select) {
@@ -232,7 +234,7 @@
   margin-block-start: 5px;
 }
 .cafe-workspace .cafe-source-control {
-  font: 11px var(--cafe-mono);
+  font: 12px var(--cafe-mono);
   color: var(--cafe-muted);
 }
 .cafe-source-detail {
@@ -279,6 +281,7 @@
 .cafe-link,
 .cafe-shared-demand a {
   color: var(--cafe-signal);
+  font-size: 13px;
   text-decoration: underline;
 }
 .cafe-shared-demand a {
@@ -292,6 +295,7 @@
   align-items: center;
   gap: 10px;
   min-height: 44px;
+  font-size: 13px;
   cursor: pointer;
 }
 .cafe-workspace .cafe-checkbox-label input[type="checkbox"] {
@@ -311,6 +315,7 @@
   padding: 11px 0;
   min-height: 44px;
   cursor: pointer;
+  font-size: 13px;
   font-weight: 650;
 }
 .cafe-workspace .cafe-notice {
@@ -490,13 +495,9 @@
   .cafe-station {
     min-height: 76px;
   }
-  .cafe-workspace :is(input, select) {
-    font-size: 16px;
-  }
   .cafe-rail a {
     gap: 4px;
     padding-inline: 4px;
-    font-size: 11px;
     line-height: 1.18;
   }
 }
@@ -829,6 +830,9 @@
   }
   .cafe-receipt h3 {
     font-size: 26px;
+  }
+  .cafe-receipt summary {
+    font-size: inherit;
   }
   .cafe-receipt-main,
   .cafe-receipt-aside,

@@ -110,7 +110,10 @@ export function SiteMap({
 }: SiteMapProps) {
   const instructionId = useId();
   const titleId = useId();
+  const mapId = useId();
+  const photoId = useId();
   const stage = useRef<HTMLDivElement>(null);
+  const [showStorefront, setShowStorefront] = useState(false);
   const [draft, setDraft] = useState<{
     baseline: number;
     spot: Spot;
@@ -193,10 +196,16 @@ export function SiteMap({
     <section className="cafe-site-map" aria-labelledby={titleId}>
       <div className="cafe-site-map-head">
         <div>
-          <p className="cafe-map-stamp">Site plate · Public data</p>
-          <h3 id={titleId}>{siteMap.name}</h3>
+          <p className="cafe-map-stamp">
+            {showStorefront
+              ? "Site plate · Planning example"
+              : "Site plate · Public data"}
+          </p>
+          <h3 id={titleId}>
+            {showStorefront ? "Fictional storefront" : siteMap.name}
+          </h3>
         </div>
-        <label className="cafe-map-preset">
+        <label className="cafe-map-preset" hidden={showStorefront}>
           Preloaded spots
           <select
             value={selectedAnchor?.id ?? ""}
@@ -225,7 +234,27 @@ export function SiteMap({
         </label>
       </div>
 
-      <figure className="cafe-map-plate">
+      <button
+        className="cafe-secondary cafe-site-view-toggle"
+        type="button"
+        aria-controls={`${mapId} ${photoId}`}
+        onClick={() => setShowStorefront((show) => !show)}
+      >
+        {showStorefront ? "Show site map" : "Show storefront photo"}
+      </button>
+
+      <figure id={photoId} className="cafe-site-photo" hidden={!showStorefront}>
+        <img
+          src="/cafe/storefront-original.png"
+          width={1672}
+          height={941}
+          loading="lazy"
+          alt="Vacant fictional storefront with a rust-orange awning"
+        />
+        <figcaption>Illustrative photograph</figcaption>
+      </figure>
+
+      <figure id={mapId} className="cafe-map-plate" hidden={showStorefront}>
         <div
           className="cafe-map-art"
           ref={stage}
@@ -331,7 +360,7 @@ export function SiteMap({
         </figcaption>
       </figure>
 
-      <div className="cafe-map-selection">
+      <div className="cafe-map-selection" hidden={showStorefront}>
         <div aria-live={dragging ? "off" : "polite"} aria-atomic="true">
           <strong>{current.label}</strong>
           <p className="cafe-map-coordinates">
@@ -347,17 +376,17 @@ export function SiteMap({
           {pending ? "Saving…" : dirty ? "Save spot" : "Spot saved"}
         </button>
       </div>
-      <p className="cafe-map-hint" id={instructionId}>
+      <p className="cafe-map-hint" id={instructionId} hidden={showStorefront}>
         Tap the map or drag the pin. Use arrow keys to move it and Enter to
         save.
       </p>
       {error && (
-        <p className="cafe-map-notice" role="alert">
+        <p className="cafe-map-notice" role="alert" hidden={showStorefront}>
           {error}
         </p>
       )}
 
-      <div className="cafe-map-nearby">
+      <div className="cafe-map-nearby" hidden={showStorefront}>
         <h4>Nearby places</h4>
         {covered ? (
           <>
