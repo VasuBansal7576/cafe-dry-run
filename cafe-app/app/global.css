@@ -94,6 +94,19 @@
   padding-inline: 0.25rem;
 }
 
+/* Compact toolbars have no gap. Give Chromium's rounded edge hits room. */
+[data-cafe-layout] .agent-sidebar-panel [data-agent-composer-slot="voice-button"] {
+  &:has(+ [data-composer-primary="voice-chat"]),
+  & + [data-composer-primary="voice-chat"] {
+    min-inline-size: 45px;
+    min-block-size: 45px;
+  }
+
+  & + [data-composer-primary="voice-chat"] {
+    margin-inline-start: 1px;
+  }
+}
+
 [data-cafe-layout] .agent-sidebar-panel .agentkit-editing-row {
   min-block-size: 45px;
 }
