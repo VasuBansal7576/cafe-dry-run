@@ -961,6 +961,8 @@ it("computes matched runway from a current pair without replacing its runs", asy
     owner,
   );
   expect({ ...replayed.receipt, id: fresh.id }).toEqual(fresh);
+  expect(winner.value.chatFigures).toEqual(replayed.chatFigures);
+  expect(Object.keys(winner.value.chatFigures ?? {}).length).toBeGreaterThan(0);
 });
 
 it("uses current paired assumptions and rejects a stale service sample or obsolete switch edit", async () => {
