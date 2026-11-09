@@ -125,16 +125,14 @@ export default function CafeRoute() {
       return section ? [{ name, section }] : [];
     });
     const readPosition = () => {
+      const canvasTop = scrollArea.getBoundingClientRect().top;
       const line =
-        Math.max(
-          rail.getBoundingClientRect().bottom,
-          scrollArea.getBoundingClientRect().top + padding,
-        ) + 8;
+        Math.max(rail.getBoundingClientRect().bottom - canvasTop, padding) + 8;
       let position:
         | { name: CafeDocument; section: Element; top: number }
         | undefined;
       for (const document of documents) {
-        const top = document.section.getBoundingClientRect().top;
+        const top = document.section.getBoundingClientRect().top - canvasTop;
         if (!position || top <= line) position = { ...document, top };
       }
       return position;
@@ -161,7 +159,9 @@ export default function CafeRoute() {
       width = nextWidth;
       if (position && scrollArea.scrollTop > 0) {
         scrollArea.scrollTop +=
-          position.section.getBoundingClientRect().top - position.top;
+          position.section.getBoundingClientRect().top -
+          scrollArea.getBoundingClientRect().top -
+          position.top;
       }
       trackDocument();
     });

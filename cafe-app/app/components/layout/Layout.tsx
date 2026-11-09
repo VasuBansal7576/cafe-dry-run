@@ -33,6 +33,7 @@ import { TAB_ID } from "@/lib/tab-id";
 import { AgentInspector } from "./AgentInspector";
 import { MobileAppBar } from "./MobileAppBar";
 import { Sidebar } from "./Sidebar";
+import { useCafeAgentDock } from "./useCafeAgentDock";
 
 const Header = lazy(() =>
   import("./Header").then((module) => ({ default: module.Header })),
@@ -88,6 +89,8 @@ function LayoutShell({ children }: LayoutProps) {
   const t = useT();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const isCafe = location.pathname === "/cafe";
+  const cafeDock = useCafeAgentDock(isCafe);
   const isChatRoute = isChatPathname(location.pathname);
   // Settings brings its own navigation, header, and agent toggle, so it
   // renders full width.
@@ -168,11 +171,14 @@ function LayoutShell({ children }: LayoutProps) {
     <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
       <HeaderActionsProvider>
         <div
+          ref={cafeDock.shell}
           className="agent-layout-shell chat-layout-shell flex h-screen w-full overflow-hidden bg-background text-foreground"
-          data-cafe-layout={location.pathname === "/cafe" ? "" : undefined}
+          data-cafe-layout={isCafe ? "" : undefined}
+          style={cafeDock.style}
         >
           {settingsOwnsChrome ? null : (
             <div
+              ref={cafeDock.navigation}
               data-collapsed={sidebarCollapsed ? "true" : "false"}
               className="agent-layout-left-drawer hidden md:block"
             >
@@ -211,6 +217,12 @@ function LayoutShell({ children }: LayoutProps) {
             >
               {contentFrame}
             </AgentInspector>
+          )}
+          {isCafe && (
+            <div
+              className="cafe-agent-dock-separator"
+              {...cafeDock.separatorProps}
+            />
           )}
         </div>
       </HeaderActionsProvider>
