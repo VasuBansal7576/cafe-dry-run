@@ -615,6 +615,7 @@
 .cafe-receipt .cafe-stamp {
   border-color: var(--receipt-rule);
   margin-block: 3px;
+  max-inline-size: 100%;
 }
 .cafe-receipt .cafe-notice {
   background: #eee2cc;
@@ -724,7 +725,6 @@
   }
   .cafe-receipt .cafe-stamp {
     letter-spacing: 0;
-    white-space: nowrap;
   }
 }
 @container cafe-canvas (max-width: 555px) {
@@ -863,7 +863,6 @@
     margin-block: 0;
     padding: 1px 3px;
     letter-spacing: 0;
-    white-space: nowrap;
   }
   .cafe-receipt :is(tr, .cafe-receipt-sensitivity, .cafe-cash-chart, footer) {
     break-inside: avoid;
