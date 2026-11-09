@@ -32,7 +32,7 @@ import {
   signedCash,
 } from "./finance-ledger";
 import { Stamp } from "./provenance-stamp";
-import { ShopForm } from "./scenario-inputs";
+import { ShopForm, type ShopRerunFeedback } from "./scenario-inputs";
 import {
   Playback,
   ServiceFigure,
@@ -370,6 +370,7 @@ function PairedWorkspace({
   compare,
   scenarioRequirement,
   rerunAfterShopSave,
+  rerunFeedback,
 }: {
   a: Scenario;
   b: Scenario;
@@ -377,6 +378,7 @@ function PairedWorkspace({
   compare: CompareMutation;
   scenarioRequirement: string | null;
   rerunAfterShopSave: (scenario: Scenario) => void;
+  rerunFeedback?: ShopRerunFeedback | undefined;
 }) {
   const saved = useActionQuery("get-comparison", { aId: a.id, bId: b.id });
   const scope = pairCalculationScope(a.id, b.id);
@@ -589,6 +591,7 @@ function PairedWorkspace({
               scenario={b}
               heading={`B · ${b.label} staff & equipment`}
               onSaved={rerunAfterShopSave}
+              rerunFeedback={rerunFeedback}
             />
           </details>
         </div>
@@ -692,6 +695,7 @@ export function ComparisonWorkspace({
   compare,
   scenarioRequirement,
   rerunAfterShopSave,
+  rerunFeedback,
 }: {
   a: Scenario;
   b?: Scenario | undefined;
@@ -700,6 +704,7 @@ export function ComparisonWorkspace({
   compare: CompareMutation;
   scenarioRequirement: string | null;
   rerunAfterShopSave: (scenario: Scenario) => void;
+  rerunFeedback?: ShopRerunFeedback | undefined;
 }) {
   const copy = useActionMutation("configure-shop", {
     onSuccess: ({ scenario }) => select(scenario.id),
@@ -824,6 +829,7 @@ export function ComparisonWorkspace({
       compare={compare}
       scenarioRequirement={scenarioRequirement}
       rerunAfterShopSave={rerunAfterShopSave}
+      rerunFeedback={rerunFeedback}
     />
   ) : (
     <SingleWorkspace

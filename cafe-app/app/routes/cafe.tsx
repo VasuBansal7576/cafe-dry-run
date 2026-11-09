@@ -3,12 +3,14 @@ import {
   useActionMutation,
   useActionQuery,
 } from "@agent-native/core/client/hooks";
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router";
 
 import {
   checkingRead,
   pairCalculationScope,
+  useCalculationState,
 } from "@/components/cafe/calculation-state";
 import { ComparisonWorkspace } from "@/components/cafe/comparison";
 import { scenarioVersion } from "@/components/cafe/finance-ledger";
@@ -18,6 +20,7 @@ import {
   DemandForm,
   ShopForm,
   sourceLabels,
+  type ShopRerunFeedback,
 } from "@/components/cafe/scenario-inputs";
 import { SiteMap } from "@/components/cafe/site-map";
 import {
@@ -36,6 +39,10 @@ const documentLabels: Record<CafeDocument, string> = {
   "service-test": "Service test",
   "cash-ledger": "Cash ledger",
 };
+
+type ScenarioVersion = ReturnType<typeof scenarioVersion>;
+type PairSelection = { aId: string; bId: string };
+type ShopRerun = { pair: PairSelection; saved: ScenarioVersion };
 
 export default function CafeRoute() {
   const query = useActionQuery("list-scenarios", {});
@@ -60,35 +67,115 @@ export default function CafeRoute() {
   const alternatives =
     query.data?.scenarios.filter(({ id }) => id !== scenario?.id) ?? [];
   const comparison = alternatives.find(({ id }) => id === comparisonId);
+  const aId = scenario?.id;
+  const bId = comparison?.id;
+  const selection = useMemo(
+    () => (aId && bId ? { aId, bId } : null),
+    [aId, bId],
+  );
+  const activePair = useRef<PairSelection | null>(null);
+  const latestRerun = useRef<ShopRerun | null>(null);
+  useLayoutEffect(() => {
+    activePair.current = selection;
+    return () => {
+      activePair.current = null;
+      latestRerun.current = null;
+    };
+  }, [selection]);
   const pair = useActionQuery(
     "get-comparison",
     { aId: scenario?.id ?? "", bId: comparison?.id },
     { enabled: !!scenario && !!comparison },
   );
   const demandScenario = comparison ? pair.data?.arrivalSource : scenario;
+  const scope = pairCalculationScope(aId, bId);
   const compare = useActionMutation("compare-scenarios", {
-    mutationKey: [
-      ...pairCalculationScope(scenario?.id, comparison?.id),
-      "compare-scenarios",
-    ],
+    mutationKey: [...scope, "compare-scenarios"],
+  });
+  const client = useQueryClient();
+  const rerunKey = [...scope, "shop-rerun"];
+  const rerunState = useCalculationState(rerunKey);
+  const rerun = useMutation({
+    mutationKey: rerunKey,
+    mutationFn: async (intent: ShopRerun) => {
+      if (activePair.current !== intent.pair) return;
+      const [scenariosRead, pairRead] = await Promise.all([
+        query.refetch(),
+        pair.refetch(),
+      ]);
+      if (activePair.current !== intent.pair || latestRerun.current !== intent)
+        return;
+      if (
+        !scenariosRead.isSuccess ||
+        !pairRead.isSuccess ||
+        checkingRead(scenariosRead) ||
+        checkingRead(pairRead)
+      )
+        throw new Error("Could not verify the current comparison inputs.");
+
+      const { decision, rerunComparison, arrivalSource } = pairRead.data;
+      if (!decision) return;
+      const rows = scenariosRead.data.scenarios;
+      const source = rows.find(({ id }) => id === arrivalSource?.id);
+      const sides = rerunComparison && [rerunComparison.a, rerunComparison.b];
+      const saved = sides?.find(({ id }) => id === intent.saved.id);
+      if (
+        !rerunComparison ||
+        rerunComparison.a.id !== intent.pair.aId ||
+        rerunComparison.b.id !== intent.pair.bId ||
+        !source ||
+        source.revision !== arrivalSource?.revision ||
+        !saved ||
+        saved.expectedRevision < intent.saved.expectedRevision ||
+        saved.expectedFinanceRevision < intent.saved.expectedFinanceRevision ||
+        sides?.some((version) => {
+          const row = rows.find(({ id }) => id === version.id);
+          return (
+            row?.revision !== version.expectedRevision ||
+            row.financeRevision !== version.expectedFinanceRevision
+          );
+        })
+      )
+        throw new Error("The comparison inputs changed while checking them.");
+      if (!decision.serviceStale && !decision.cashStale) return;
+
+      const writing = ["compare-scenarios", "compute-runway"].some((action) =>
+        client.isMutating({ mutationKey: [...scope, action], exact: true }),
+      );
+      if (writing) throw new Error("Another calculation is still running.");
+      try {
+        await compare.mutateAsync(rerunComparison);
+      } catch {
+        throw new Error("Could not rerun the comparison.");
+      }
+    },
   });
   const scenarioRequirement = checkingRead(query)
     ? "Checking the saved scenarios…"
     : query.isError
       ? "Could not verify the saved scenarios. Retry near the opening file."
       : null;
-  async function rerunAfterShopSave(updated: Scenario) {
-    const decision = pair.data?.decision;
-    if (!scenario || !comparison || !decision) return;
-    const { data } = await query.refetch();
-    const current = (side: Scenario) =>
-      data?.scenarios.find(({ id }) => id === side.id) ??
-      (updated.id === side.id ? updated : side);
-    compare.mutate({
-      a: scenarioVersion(current(scenario)),
-      b: scenarioVersion(current(comparison)),
-      ...decision.receipt.settings,
-    });
+  function rerunAfterShopSave(updated: Scenario) {
+    if (!selection || activePair.current !== selection) return;
+    if (pair.isSuccess && !checkingRead(pair) && !pair.data.decision) return;
+    const intent = { pair: selection, saved: scenarioVersion(updated) };
+    latestRerun.current = intent;
+    rerun.mutate(intent);
+  }
+  function rerunFeedback(id?: string): ShopRerunFeedback | undefined {
+    const intent = rerun.variables;
+    if (!intent || intent.pair !== selection || intent.saved.id !== id) return;
+    if (rerun.isPending) return { status: "pending" };
+    if (rerun.error)
+      return {
+        status: "failed",
+        message: rerun.error.message,
+        retry: () => {
+          if (activePair.current !== intent.pair || rerunState.inFlight()) return;
+          latestRerun.current = intent;
+          rerun.mutate(intent);
+        },
+      };
   }
   function selectScenario(id: string | null, replace = false) {
     const next = new URLSearchParams(params);
@@ -361,7 +448,11 @@ export default function CafeRoute() {
               )}
             </div>
             <div className="cafe-shop-board">
-              <ShopForm scenario={scenario} onSaved={rerunAfterShopSave} />
+              <ShopForm
+                scenario={scenario}
+                onSaved={rerunAfterShopSave}
+                rerunFeedback={rerunFeedback(scenario.id)}
+              />
             </div>
           </section>
           <ComparisonWorkspace
@@ -371,6 +462,7 @@ export default function CafeRoute() {
             compare={compare}
             scenarioRequirement={scenarioRequirement}
             rerunAfterShopSave={rerunAfterShopSave}
+            rerunFeedback={rerunFeedback(comparison?.id)}
             select={(id) => {
               const next = new URLSearchParams(params);
               if (id) next.set("compare", id);

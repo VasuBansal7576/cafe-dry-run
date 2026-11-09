@@ -2,7 +2,7 @@ import {
   actionErrorMessage,
   useActionMutation,
 } from "@agent-native/core/client/hooks";
-import { useEffect, useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 
 import {
@@ -22,6 +22,7 @@ import {
   type ScenarioShop,
 } from "../../../server/lib/cafe/scenario";
 import type { Scenario } from "../../../server/lib/cafe/scenario-store";
+import { useCalculationState } from "./calculation-state";
 
 export const sourceLabels: Record<SourceTag, string> = {
   observed: "Observed",
@@ -437,34 +438,49 @@ export function DemandForm({
   );
 }
 
+export type ShopRerunFeedback =
+  | { status: "pending" }
+  | { status: "failed"; message: string; retry: () => void };
+
 export function ShopForm({
   scenario,
   heading = "Staff & equipment",
   onSaved,
+  rerunFeedback,
 }: {
   scenario: Scenario;
   heading?: string;
   onSaved?: (scenario: Scenario) => void;
+  rerunFeedback?: ShopRerunFeedback | undefined;
 }) {
   const headingId = useId();
+  const saveButton = useRef<HTMLButtonElement>(null);
   const [draft, setDraft] = useState<{
     value: ScenarioShop;
     revision: number;
   } | null>(null);
+  const [confirmed, setConfirmed] = useState<Scenario | null>(null);
+  const mutationKey = ["cafe-shop", "configure-shop", scenario.id];
+  const saving = useCalculationState(mutationKey);
   const update = useActionMutation("configure-shop", {
+    mutationKey,
     onSuccess: ({ scenario: saved }) => {
+      setConfirmed(saved);
       setDraft(null);
-      onSaved?.(saved);
     },
   });
-  const shop = draft?.value ?? scenario.shop;
-  const conflicted = !!draft && draft.revision !== scenario.revision;
+  const current =
+    confirmed?.id === scenario.id && confirmed.revision > scenario.revision
+      ? confirmed
+      : scenario;
+  const shop = draft?.value ?? current.shop;
+  const conflicted = !!draft && draft.revision !== current.revision;
   const shiftForHours = () => ({
-    startsAt: illustrative(scenario.demand.opensAt.value),
-    endsAt: illustrative(scenario.demand.closesAt.value),
+    startsAt: illustrative(current.demand.opensAt.value),
+    endsAt: illustrative(current.demand.closesAt.value),
   });
   function edit(value: ScenarioShop) {
-    setDraft({ value, revision: draft?.revision ?? scenario.revision });
+    setDraft({ value, revision: draft?.revision ?? current.revision });
   }
   function editWorker(
     workerId: string,
@@ -509,16 +525,19 @@ export function ShopForm({
   }
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (!draft || conflicted || update.isPending) return;
-    update.mutate({
-      id: scenario.id,
-      expectedRevision: draft.revision,
-      shop: draft.value,
-    });
+    if (!draft || conflicted || saving.inFlight()) return;
+    update.mutate(
+      { id: scenario.id, expectedRevision: draft.revision, shop: draft.value },
+      { onSuccess: ({ scenario: saved }) => onSaved?.(saved) },
+    );
   }
   return (
-    <form onSubmit={submit} aria-labelledby={headingId}>
-      <fieldset className="cafe-board cafe-form" disabled={update.isPending}>
+    <form
+      className="cafe-board cafe-form"
+      onSubmit={submit}
+      aria-labelledby={headingId}
+    >
+      <fieldset className="cafe-form cafe-shop-fields" disabled={saving.pending}>
         <header>
           <h3 id={headingId}>{heading}</h3>
           <p>Set who works the shift and how they share equipment.</p>
@@ -723,18 +742,40 @@ export function ShopForm({
             </fieldset>
           ))}
         </details>
-        <button
-          className="cafe-primary"
-          disabled={!draft || conflicted || update.isPending}
-        >
-          {update.isPending ? "Saving shop…" : "Save shop"}
-        </button>
-        <FormStatus
-          conflicted={conflicted}
-          error={update.error}
-          onReset={() => setDraft(null)}
-        />
       </fieldset>
+      <button
+        ref={saveButton}
+        className="cafe-primary"
+        aria-disabled={!draft || conflicted || saving.pending}
+      >
+        {saving.pending ? "Saving shop…" : "Save shop"}
+      </button>
+      <FormStatus
+        conflicted={conflicted}
+        error={update.error}
+        onReset={() => setDraft(null)}
+      />
+      {rerunFeedback?.status === "pending" && (
+        <p role="status" className="cafe-notice">
+          Shop saved. Updating the comparison…
+        </p>
+      )}
+      {rerunFeedback?.status === "failed" && (
+        <div role="alert" className="cafe-notice">
+          <p>Shop saved. {rerunFeedback.message}</p>
+          <button
+            type="button"
+            className="cafe-link"
+            onClick={(event) => {
+              if (document.activeElement === event.currentTarget)
+                saveButton.current?.focus({ preventScroll: true });
+              rerunFeedback.retry();
+            }}
+          >
+            Retry comparison
+          </button>
+        </div>
+      )}
     </form>
   );
 }

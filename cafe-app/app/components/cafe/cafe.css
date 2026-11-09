@@ -215,6 +215,12 @@
 .cafe-form > button {
   justify-self: start;
 }
+.cafe-shop-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
 .cafe-form header p,
 .cafe-run-heading p,
 .cafe-form details p {
