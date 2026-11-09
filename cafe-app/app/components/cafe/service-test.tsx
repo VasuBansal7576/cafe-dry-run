@@ -373,7 +373,7 @@ export function Playback({
     state.applied =
       exactResult && restored !== null ? positionKey(restored) : null;
     state.remoteSecond = null;
-    if (restored !== null && (exactResult || !hadBaseline || agentSeek)) {
+    if (restored !== null && (!hadBaseline || agentSeek)) {
       state.remoteSecond = restored;
       clockGeneration.current += 1;
       setTime(restored);
