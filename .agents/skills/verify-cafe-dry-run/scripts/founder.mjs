@@ -806,8 +806,12 @@ export async function runFounder({ context, page, origin, map, record, section, 
   await second.getByRole("heading", { name: "Matched Saturday results" }).waitFor();
   const reverseRuns = [reverseAction.receipt.a.service.id, reverseAction.receipt.b.service.id];
   const reverseSlider = second.getByRole("slider", { name: "Saturday timeline" });
+  await poll("reverse playback ready", () => reverseSlider.isEnabled());
+  await reverseSlider.press("End");
+  assert.equal(Number(await reverseSlider.inputValue()), Number(await reverseSlider.getAttribute("max")), "End seeks to the end of the reverse playback");
   await reverseSlider.press("Home");
   const reverseSecond = Number(await reverseSlider.inputValue());
+  assert.equal(reverseSecond, Number(await reverseSlider.getAttribute("min")), "Home seeks to the start of the reverse playback");
   await second.getByRole("navigation", { name: "Café Dry Run documents" }).locator('a[href="#cash-ledger"]').click();
   await visibleDocument(second, "cash-ledger");
 
