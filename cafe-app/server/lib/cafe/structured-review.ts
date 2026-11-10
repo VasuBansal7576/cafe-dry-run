@@ -9,6 +9,7 @@ import { z } from "zod";
 import {
   COMPARISON_REVIEW_CONTEXT,
   COMPARISON_REVIEW_PROMPT,
+  reviewSuggestionLine,
   reviewSuggestionSchema,
   type ReviewSuggestion,
 } from "../../../shared/cafe/structured-review.js";
@@ -278,13 +279,7 @@ function renderReview(
     "## Recommendation",
     recommendation,
     reversalText[evidence.reversal],
-    ...(suggestion
-      ? [
-          suggestion.enabled
-            ? "I would also test the projection counting recovered weekend customers."
-            : "I would also test the projection excluding recovered weekend customers.",
-        ]
-      : []),
+    ...(suggestion ? [reviewSuggestionLine(suggestion.enabled)] : []),
   ].join("\n\n");
 }
 

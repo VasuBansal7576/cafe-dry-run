@@ -28,3 +28,9 @@ export const reviewSuggestionResultSchema = z.object({
 });
 
 export type ReviewSuggestion = z.infer<typeof reviewSuggestionSchema>;
+
+export function reviewSuggestionLine(enabled: boolean) {
+  return enabled
+    ? "I would also test the projection counting recovered weekend customers."
+    : "I would also test the projection excluding recovered weekend customers.";
+}

@@ -13,6 +13,7 @@ import { Link, useLocation } from "react-router";
 import { Button } from "@/components/ui/button";
 
 import {
+  reviewSuggestionLine,
   reviewSuggestionResultSchema,
   SAVED_CUSTOMERS_REVIEW_WIDGET,
   type ReviewSuggestion,
@@ -21,21 +22,39 @@ import { pairCalculationScope, useCalculationState } from "./calculation-state";
 
 function ReviewSuggestionCard({ context }: ToolRendererProps) {
   const parsed = reviewSuggestionResultSchema.safeParse(context.resultJson);
-  const run = useAgentThreadSelector((thread) => {
-    const callId = context.widgetId?.replace(/:chat-ui$/, "");
-    const runId = callId && thread.tools[callId]?.runId;
-    return runId ? thread.runs[runId]?.status : undefined;
+  const { widgetId } = context;
+  const confirmed = useAgentThreadSelector((thread) => {
+    if (!widgetId || !parsed.success) return false;
+    const messageId = thread.widgetMessageIds[widgetId];
+    const reply = thread.messages.find(({ id }) => id === messageId);
+    if (reply?.role !== "assistant" || reply.status !== "complete")
+      return false;
+    const callId = widgetId.replace(/:chat-ui$/, "");
+    const runId = thread.tools[callId]?.runId;
+    if (runId && thread.runs[runId]?.status !== "completed") return false;
+    const text = reply.parts
+      .map((part) => (part.type === "text" ? part.text : ""))
+      .join("");
+    // Only the final response guard can publish this closing line in a scoped review.
+    if (
+      !text
+        .trimEnd()
+        .endsWith(`\n\n${reviewSuggestionLine(parsed.data.suggestion.enabled)}`)
+    )
+      return false;
+    // A receipt offers at most one distinct change, even if several tool calls chose it.
+    const first = Object.entries(thread.widgetMessageIds).find(
+      ([id, attachedTo]) =>
+        attachedTo === messageId &&
+        thread.widgets[id]?.kind === SAVED_CUSTOMERS_REVIEW_WIDGET,
+    );
+    return first?.[0] === widgetId;
   });
   const busy = useAgentThreadSelector(
     (thread) => thread.activeRunIds.length > 0,
   );
   // The inline activity row and the saved widget use the same renderer.
-  if (
-    context.isActiveTail !== undefined ||
-    !parsed.success ||
-    run === "failed" ||
-    run === "cancelled"
-  )
+  if (context.isActiveTail !== undefined || !parsed.success || !confirmed)
     return null;
   return (
     <SavedCustomersSuggestion suggestion={parsed.data.suggestion} busy={busy} />
