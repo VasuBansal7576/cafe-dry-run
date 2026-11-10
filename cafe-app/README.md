@@ -36,6 +36,15 @@ Full docs: [agent-native.com/docs/template-chat](https://agent-native.com/docs/t
 
 The standard provider configuration remains the default. On macOS, a single local user can opt into a separately authorized Grok CLI profile. This is a structured-text translation of model requests and tool calls; Agent-Native validates and executes the app actions. The bridge invokes Grok 4.5 with high reasoning effort.
 
-Create a private dedicated directory and authorize it directly with the official CLI: `mkdir -p "$CAFE_GROK_PROFILE" && chmod 700 "$CAFE_GROK_PROFILE" && GROK_HOME="$CAFE_GROK_PROFILE" grok login`. Then run `node scripts/local-grok.mjs` from `cafe-app`. The launcher does not create or copy a login. The official CLI is expected at `~/.grok/bin/grok`; set `CAFE_GROK_BINARY` if it is elsewhere. Set `CAFE_GROK_PORT` to change the bridge port, and use a distinct `PORT` and persistent `DATABASE_URL` for each app instance. The launcher creates an ephemeral loopback bearer and a private temporary sandbox directory. Keep the profile private: the CLI may store session information there.
+Create a private dedicated directory and authorize it directly with the official CLI:
+
+```sh
+export CAFE_GROK_PROFILE="$HOME/.local/share/cafe-dry-run/grok-profile"
+mkdir -p "$CAFE_GROK_PROFILE"
+chmod 700 "$CAFE_GROK_PROFILE"
+GROK_HOME="$CAFE_GROK_PROFILE" grok login
+```
+
+Then run `node scripts/local-grok.mjs` from `cafe-app`. The launcher does not create or copy a login. The official CLI is expected at `~/.grok/bin/grok`; set `CAFE_GROK_BINARY` if it is elsewhere. Set `CAFE_GROK_PORT` to change the bridge port, and use a distinct `PORT` and persistent `DATABASE_URL` for each app instance. The launcher creates an ephemeral loopback bearer and a private temporary sandbox directory. Keep the profile private: the CLI may store session information there.
 
 The sandbox blocks process forks, writes outside the dedicated profile and temporary directory, and reads of user homes, temporary directories, mounted volumes and network mounts outside those paths and the CLI binary. It does not restrict network egress or every possible filesystem path. Dynamic system messages are carried as role-tagged structured text beneath a fixed CLI system instruction, rather than through a native multi-message API; this does not provide native role isolation. Model output is buffered until each CLI call completes.
