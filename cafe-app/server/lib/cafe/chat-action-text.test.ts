@@ -4,6 +4,31 @@ import { cafeActionTextAllowed } from "./chat-action-text.js";
 import { cafeActionTextEvidence } from "./chat-figure-guard.js";
 import { safeProviderFailure } from "./chat-provider-failure.js";
 
+it("allows framework attachment identifiers and pagination without authorizing café quantities", () => {
+  const attachment = {
+    path: "attachments/824cb360-8401-4b2d-a6e8-c5bdc928042b/menu-2026.csv",
+    offset: "50000",
+    limit: "50000",
+  };
+  expect(cafeActionTextAllowed("read-attachment", attachment, "", new Set(), new Set([attachment.path]))).toBe(
+    true,
+  );
+  expect(
+    cafeActionTextAllowed("read-attachment", { name: "menu-2026.csv" }, "", new Set(), new Set(["menu-2026.csv"])),
+  ).toBe(true);
+  expect(
+    cafeActionTextAllowed("create-scenario", { label: "Cafe 2026" }, "", new Set()),
+  ).toBe(false);
+  expect(cafeActionTextAllowed("read-attachment", attachment, "", new Set())).toBe(false);
+  expect(cafeActionTextAllowed("read-attachment", attachment, attachment.path, new Set())).toBe(false);
+  expect(cafeActionTextAllowed("read-attachment", { name: "999 customers" }, "", new Set())).toBe(false);
+  expect(cafeActionTextAllowed("read-attachment", { path: "attachments/thread/999-customers" }, "", new Set())).toBe(false);
+  expect(cafeActionTextAllowed("read-attachment", { limit: "999999" }, "", new Set())).toBe(false);
+  expect(
+    cafeActionTextAllowed("read-attachment", { other: "2026" }, "", new Set()),
+  ).toBe(false);
+});
+
 it("requires the entire numeric name to come from the founder or a current action", () => {
   const label = "Cafe 24 / Bay 7";
   const action = {

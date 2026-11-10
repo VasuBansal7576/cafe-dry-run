@@ -46,6 +46,7 @@ export function cafeActionTextAllowed(
   input: unknown,
   founder: string,
   evidence: ReadonlySet<string>,
+  attachmentIdentifiers: ReadonlySet<string> = new Set(),
 ) {
   function allowed(value: unknown, key = "", parent = ""): boolean {
     if (Array.isArray(value))
@@ -55,6 +56,17 @@ export function cafeActionTextAllowed(
         ([field, entry]) =>
           !containsCafeQuantity(field) && allowed(entry, field, key || parent),
       );
+    if (tool === "read-attachment" && (key === "path" || key === "name"))
+      return (
+        typeof value === "string" &&
+        value.length > 0 &&
+        attachmentIdentifiers.has(value)
+      );
+    if (tool === "read-attachment" && (key === "offset" || key === "limit")) {
+      if (typeof value !== "string" || !/^\d{1,15}$/u.test(value)) return false;
+      const number = Number(value);
+      return Number.isSafeInteger(number) && (key === "offset" || (number > 0 && number <= 50000));
+    }
     if (typeof value !== "string" || !containsCafeQuantity(value)) return true;
     if (idKeys.has(key) && uuid.test(value)) return true;
     if (tool === "list-scenarios") {
@@ -123,6 +135,6 @@ export function cafeActionTextCheck() {
     toolCalls: context?.toolCalls ?? [],
     toolResults: context?.toolResults ?? [],
   });
-  return (tool: string, input: unknown) =>
-    cafeActionTextAllowed(tool, input, founder, evidence);
+  return (tool: string, input: unknown, attachmentIdentifiers?: ReadonlySet<string>) =>
+    cafeActionTextAllowed(tool, input, founder, evidence, attachmentIdentifiers);
 }

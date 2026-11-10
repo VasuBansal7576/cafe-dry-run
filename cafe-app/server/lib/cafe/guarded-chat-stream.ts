@@ -10,6 +10,8 @@ import type {
 import Ajv, { type ValidateFunction } from "ajv";
 import addFormats from "ajv-formats";
 import Ajv2020 from "ajv/dist/2020.js";
+import { resourceList } from "@agent-native/core/resources/store";
+import { getRequestRunContext, getRequestUserEmail } from "@agent-native/core/server";
 
 import { cafeActionTextCheck } from "./chat-action-text.js";
 import { safeProviderFailure } from "./chat-provider-failure.js";
@@ -81,6 +83,19 @@ export function holdCafeDrafts(engine: AgentEngine) {
 
 function schemaObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function catalogNameMatches(path: string, name: string) {
+  const basename = path.split("/").pop() ?? "";
+  const match = basename.match(/^([a-z0-9]*[a-z][a-z0-9]*)-(\d+)-(.+)$/u)
+    ?? basename.match(/^()(\d+)-(.+)$/u);
+  const stored = match?.[3] ?? basename;
+  const batch = match?.[1] ?? "";
+  const encoded = batch
+    ? Array.from(name, (char) => /[a-zA-Z0-9.-]/u.test(char) ? char : `_${char.codePointAt(0)!.toString(16)}_`).join("")
+    : /^[a-zA-Z0-9._-]+$/u.test(name) ? name : "";
+  return encoded.length > 0 && encoded.length <= (batch ? 200 : 80)
+    && encoded.toLowerCase() === stored.toLowerCase();
 }
 
 function closeDeclaredFields(schema: unknown, close = true): unknown {
@@ -186,7 +201,7 @@ async function* holdDraft(
     return record;
   }
 
-  function completeTool(call: ToolCall | ToolError) {
+  async function completeTool(call: ToolCall | ToolError) {
     if (!safeToolId.test(call.id)) return;
     const schema = offeredTools.get(call.name);
     const record = claimTool(call.id, call.name);
@@ -196,7 +211,27 @@ async function* holdDraft(
       call.type === "tool-call"
         ? validatedInput(schema, call.input)
         : undefined;
-    if (input === undefined || !acceptsText(call.name, input)) {
+    let attachmentPaths: ReadonlySet<string> | undefined;
+    if (call.name === "read-attachment" && schemaObject(input)) {
+      const threadId = getRequestRunContext()?.threadId;
+      const owner = getRequestUserEmail() || "anonymous";
+      if (threadId && (input.threadId === undefined || input.threadId === threadId)) {
+        try {
+          const paths = await resourceList(owner, `attachments/${threadId}/`, { includeAgentScratch: true });
+          const eligible = paths.map(({ path }) => path).filter((path) => path.startsWith(`attachments/${threadId}/`));
+          const selected = typeof input.path === "string" ? eligible.filter((path) => path === input.path) : eligible;
+          const identifiers: string[] = [];
+          if (typeof input.path === "string" && selected.length) identifiers.push(input.path);
+          if (typeof input.name === "string" && selected.some((path) => catalogNameMatches(path, input.name as string))) identifiers.push(input.name);
+          attachmentPaths = new Set(identifiers);
+        } catch {
+          // Fail closed if the attachment catalog is unavailable.
+        }
+      }
+    }
+    if (input === undefined ||
+        (call.name === "read-attachment" && schemaObject(input) && input.threadId !== undefined && input.threadId !== getRequestRunContext()?.threadId) ||
+        !acceptsText(call.name, input, attachmentPaths)) {
       record.result = {
         type: "tool-call-error",
         id: record.id,
@@ -258,7 +293,7 @@ async function* holdDraft(
         case "tool-call":
         case "tool-call-error": {
           toolAttempted = true;
-          const start = startTool(completeTool(event));
+          const start = startTool(await completeTool(event));
           if (start) yield start;
           break;
         }
@@ -268,7 +303,7 @@ async function* holdDraft(
           for (const part of event.parts) {
             if (part.type === "tool-call") {
               toolAttempted = true;
-              const record = completeTool(part);
+              const record = await completeTool(part);
               const start = startTool(record);
               if (start) yield start;
               if (

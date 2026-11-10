@@ -3,7 +3,22 @@ import type {
   EngineEvent,
   EngineTool,
 } from "@agent-native/core/agent/engine";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+
+const attachmentCatalog = vi.hoisted(() => ({ paths: [] as string[], threadId: "", calls: [] as unknown[][], fail: false }));
+vi.mock("@agent-native/core/resources/store", async (load) => ({
+  ...await load<typeof import("@agent-native/core/resources/store")>(),
+  resourceList: async (...args: unknown[]) => {
+    attachmentCatalog.calls.push(args);
+    if (attachmentCatalog.fail) throw new Error("Unavailable");
+    return attachmentCatalog.paths.map((path) => ({ path }));
+  },
+}));
+vi.mock("@agent-native/core/server", async (load) => ({
+  ...await load<typeof import("@agent-native/core/server")>(),
+  getRequestRunContext: () => attachmentCatalog.threadId ? { threadId: attachmentCatalog.threadId } : undefined,
+  getRequestUserEmail: () => "owner@example.test",
+}));
 
 import { holdCafeDrafts } from "./guarded-chat-stream.js";
 
@@ -15,6 +30,7 @@ function heldStream(
     description: name,
     inputSchema: { type: "object", properties: {} },
   })),
+  messages: Parameters<AgentEngine["stream"]>[0]["messages"] = [],
 ) {
   const engine: AgentEngine = {
     name: "test-engine",
@@ -34,7 +50,7 @@ function heldStream(
   return engine.stream({
     model: engine.defaultModel,
     systemPrompt: "",
-    messages: [],
+    messages,
     tools,
     abortSignal: signal,
   });
@@ -45,6 +61,53 @@ async function collect(stream: AsyncIterable<EngineEvent>) {
   for await (const event of stream) events.push(event);
   return events;
 }
+
+it("forwards framework attachment metadata through the guarded stream", async () => {
+  const input = {
+    path: "attachments/824cb360-8401-4b2d-a6e8-c5bdc928042b/menu-2026.csv",
+    offset: "50000",
+    limit: "50000",
+  };
+  attachmentCatalog.threadId = "824cb360-8401-4b2d-a6e8-c5bdc928042b";
+  attachmentCatalog.paths = [input.path];
+  const tool: EngineTool = {
+    name: "read-attachment",
+    description: "Read an attachment",
+    inputSchema: {
+      type: "object",
+      properties: Object.fromEntries(
+        ["path", "name", "threadId", "offset", "limit"].map((key) => [key, { type: "string" }]),
+      ),
+    },
+  };
+  const events = await collect(heldStream(async function* () {
+    yield { type: "tool-call", id: "attachment", name: tool.name, input };
+    yield { type: "stop", reason: "tool_use" };
+  }, undefined, [tool], [{ role: "user", content: [{ type: "text", text: `<chat-attachment-truncated path="${input.path}">` }] }]));
+  expect(events).toContainEqual({
+    type: "tool-call", id: expect.stringMatching(/^call_/), name: tool.name, input,
+  });
+  expect(attachmentCatalog.calls).toContainEqual([
+    "owner@example.test", `attachments/${attachmentCatalog.threadId}/`, { includeAgentScratch: true },
+  ]);
+  const fabricated = { ...input, path: input.path + "-999-customers" };
+  const rejected = await collect(heldStream(async function* () {
+    yield { type: "tool-call", id: "attachment", name: tool.name, input: fabricated };
+    yield { type: "stop", reason: "tool_use" };
+  }, undefined, [tool], [{ role: "user", content: [{ type: "text", text: `<chat-attachment-truncated path="${input.path}">` }] }]));
+  expect(rejected).toContainEqual(expect.objectContaining({ type: "tool-call-error", input: {} }));
+  expect(JSON.stringify(rejected)).not.toContain("999-customers");
+  attachmentCatalog.fail = true;
+  const unavailable = await collect(heldStream(async function* () {
+    yield { type: "tool-call", id: "attachment", name: tool.name, input };
+    yield { type: "stop", reason: "tool_use" };
+  }, undefined, [tool]));
+  expect(unavailable).toContainEqual(expect.objectContaining({ type: "tool-call-error", input: {} }));
+  attachmentCatalog.threadId = "";
+  attachmentCatalog.paths = [];
+  attachmentCatalog.calls = [];
+  attachmentCatalog.fail = false;
+});
 
 it("preserves live tool progress and signed tool history without publishing draft prose", async () => {
   const tool = {
