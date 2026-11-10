@@ -16,6 +16,7 @@ import {
 import { chatFiguresSchema, withDecisionChatFigures } from "./chat-figures.js";
 import type { DecisionReceipt } from "./decision-receipt.js";
 import { readDecision } from "./decision-store.js";
+import { financeFields } from "./finance.js";
 
 export const REVIEW_ACTION = "review-cafe-comparison";
 export const reviewScopeSchema = z.strictObject({
@@ -53,6 +54,10 @@ const receiptStatus = z.enum([
   "choice-unavailable",
 ]);
 const reversalSchema = z.enum(["reverses", "ties-change", "unchanged"]);
+const equipmentCoverageSchema = financeFields.pick({
+  unpricedEquipment: true,
+  legacyEquipmentCostCoverageUnknown: true,
+});
 const figureKeys = [
   "scenarioA.waitP50",
   "scenarioB.waitP50",
@@ -88,6 +93,7 @@ export const reviewResultSchema = z.discriminatedUnion("status", [
     receiptId: z.uuid(),
     choices: z.array(choiceSchema),
     labels: z.object({ a: z.string(), b: z.string() }),
+    equipmentCoverage: z.object({ a: equipmentCoverageSchema, b: equipmentCoverageSchema }),
     figures: chatFiguresSchema,
     reversal: reversalSchema,
     alternateAssumption: reviewSuggestionSchema.optional(),
@@ -221,6 +227,10 @@ export async function readReviewEvidence(
     receiptId: receipt.id,
     choices: supported,
     labels,
+    equipmentCoverage: {
+      a: equipmentCoverageSchema.parse(a.finance),
+      b: equipmentCoverageSchema.parse(b.finance),
+    },
     figures,
     reversal,
     ...(alternateAssumption ? { alternateAssumption } : {}),
@@ -273,11 +283,24 @@ function renderReview(
     const { text, tag } = evidence.figures[key]!;
     return `- ${text}${tag ? ` (${tag})` : ""}`;
   });
+  const equipmentNames = { grinder: "grinder", groupHead: "group head", steamWand: "steam wand" };
+  const caveats = (["a", "b"] as const).flatMap((side) => {
+    const coverage = evidence.equipmentCoverage[side];
+    return [
+      ...coverage.unpricedEquipment.map((item) =>
+        `${evidence.labels[side]}: the ${equipmentNames[item]} purchase price is unknown and excluded from cash projections.`,
+      ),
+      ...(coverage.legacyEquipmentCostCoverageUnknown
+        ? [`${evidence.labels[side]}: this older record does not establish whether all equipment purchase costs are included.`]
+        : []),
+    ];
+  });
   // The stock transcript follows the end of a new reply.
   return [
     figures.join("\n"),
     "## Recommendation",
     recommendation,
+    ...caveats,
     reversalText[evidence.reversal],
     ...(suggestion ? [reviewSuggestionLine(suggestion.enabled)] : []),
   ].join("\n\n");
