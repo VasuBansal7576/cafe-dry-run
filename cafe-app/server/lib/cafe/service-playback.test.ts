@@ -85,16 +85,27 @@ it("preserves eligibility at the exact last instant a task fits in a shift", () 
   expect(frameAt(saved, 30).currentWait?.blockedBy).toEqual(["staff"]);
 });
 
-it("shows stage and duration without claiming a cause for a legacy run", () => {
-  const saved = playback();
-  const legacy = servicePlaybackSchema.parse({
-    arrivals: saved.arrivals,
-    timeline: saved.timeline,
-    stats: saved.stats,
-  });
+it("uses the archived roster to name staff pressure only while every worker is busy", () => {
+  const { capacity: _capacity, ...archived } = playback();
+  const legacy = servicePlaybackSchema.parse(archived);
   expect(frameAt(legacy, 9).currentWait).toEqual({
     station: "Brew",
     seconds: 7,
+    blockedBy: ["staff"],
+  });
+  expect(frameAt(legacy, 10).currentWait).toEqual({
+    station: "Brew",
+    seconds: 8,
     blockedBy: [],
   });
+
+  const { capacity: _twoWorkerCapacity, ...archivedWithIdleStaff } = playback(
+    "espresso",
+    {
+      ...shop,
+      workers: [worker, { ...worker, id: "second" }],
+    },
+  );
+  const idleStaff = servicePlaybackSchema.parse(archivedWithIdleStaff);
+  expect(frameAt(idleStaff, 9).currentWait?.blockedBy).toEqual([]);
 });
