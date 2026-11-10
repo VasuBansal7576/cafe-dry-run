@@ -1,50 +1,42 @@
-# Chat
+# cafe-app
 
-The minimal agent-native starter app — a clean, ChatGPT-style shell with chat at
-the center, durable threads, standard app navigation, auth, live sync, and
-actions. Start here when you want a real browser app to build on without
-committing to a domain template.
+This is the running [Cafe Dry Run](../README.md) application. The product README lives at the repository root.
 
-**Live app: [chat.agent-native.com](https://chat.agent-native.com?utm_source=github&utm_medium=referral&utm_content=chat-readme)**
+## Develop
 
-Chat is the basic agent-native app starting point. It gives you the app-agent
-loop wired end to end and one example action, so you can add your own UI, data,
-and actions on top.
-
-## Features
-
-- ChatGPT-style shell with a threads list and durable chat history.
-- Auth, live sync, and application state wired out of the box.
-- The action surface the agent and UI share, plus one example action to copy.
-- A minimal, brandable base for any domain app.
-
-## Develop locally
-
-Scaffold your own copy and run it:
+You need Node.js 22.22 or later and pnpm 10.
 
 ```bash
-npx --yes @agent-native/core@latest create my-app --standalone --template chat
-cd my-app
 corepack enable
-pnpm install
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Full docs: [agent-native.com/docs/template-chat](https://agent-native.com/docs/template-chat?utm_source=github&utm_medium=referral&utm_content=chat-readme).
+Open the URL the dev server prints.
 
-### Optional local Grok bridge
+```bash
+pnpm typecheck
+pnpm exec vitest run server/lib/cafe
+pnpm agent-native:doctor
+```
 
-The standard provider configuration remains the default. On macOS, a single local user can opt into a separately authorized Grok CLI profile. This is a structured-text translation of model requests and tool calls; Agent-Native validates and executes the app actions. The bridge invokes Grok 4.5 with high reasoning effort.
+The board, the simulations, and the comparisons run without a model. Live agent chat needs a supported provider.
 
-Create a private dedicated directory and authorize it directly with the official CLI:
+## Optional local Grok bridge
 
-```sh
+On macOS, one local user can point the app at a separately authorized Grok CLI profile. This is a structured-text translation of model requests and tool calls. Agent-Native still validates and executes the app actions. The bridge invokes Grok 4.5 with high reasoning effort.
+
+Create a private directory and authorize it with the official CLI. The launcher does not create or copy a login.
+
+```bash
 export CAFE_GROK_PROFILE="$HOME/.local/share/cafe-dry-run/grok-profile"
 mkdir -p "$CAFE_GROK_PROFILE"
 chmod 700 "$CAFE_GROK_PROFILE"
 GROK_HOME="$CAFE_GROK_PROFILE" "$HOME/.grok/bin/grok" login
 ```
 
-Then run `node scripts/local-grok.mjs` from `cafe-app`. The launcher does not create or copy a login. The official CLI is expected at `~/.grok/bin/grok`; set `CAFE_GROK_BINARY` if it is elsewhere. Set `CAFE_GROK_PORT` to change the bridge port, and use a distinct `PORT` and persistent `DATABASE_URL` for each app instance. The launcher creates an ephemeral loopback bearer and a private temporary sandbox directory. Keep the profile private: the CLI may store session information there.
+Then run `node scripts/local-grok.mjs` from this directory. The official CLI is expected at `~/.grok/bin/grok`. Set `CAFE_GROK_BINARY` if it is elsewhere. Set `CAFE_GROK_PORT` to change the bridge port. Use a distinct `PORT` and a persistent `DATABASE_URL` for each app instance.
 
-The sandbox blocks process forks, writes outside the dedicated profile and temporary directory, and reads of user homes, temporary directories, mounted volumes and network mounts outside those paths and the CLI binary. It does not restrict network egress or every possible filesystem path. Dynamic system messages are carried as role-tagged structured text beneath a fixed CLI system instruction, rather than through a native multi-message API; this does not provide native role isolation. Model output is buffered until each CLI call completes. On provider errors, framework server logs may contain request fields.
+The launcher creates an ephemeral loopback bearer and a private temporary sandbox directory. Keep the profile private. The CLI may store session information there.
+
+The sandbox blocks process forks, writes outside the dedicated profile and temporary directory, and reads of user homes, temporary directories, and mounted volumes outside those paths and the CLI binary. It does not restrict network egress or every filesystem path. Dynamic system messages are carried as role-tagged structured text beneath a fixed CLI system instruction. That is not native role isolation. Model output is buffered until each CLI call completes. On provider errors, framework server logs may contain request fields.
