@@ -29,7 +29,14 @@ function ReviewSuggestionCard({ context }: ToolRendererProps) {
   const busy = useAgentThreadSelector(
     (thread) => thread.activeRunIds.length > 0,
   );
-  if (!parsed.success || run === "failed" || run === "cancelled") return null;
+  // The inline activity row and the saved widget use the same renderer.
+  if (
+    context.isActiveTail !== undefined ||
+    !parsed.success ||
+    run === "failed" ||
+    run === "cancelled"
+  )
+    return null;
   return (
     <SavedCustomersSuggestion suggestion={parsed.data.suggestion} busy={busy} />
   );
