@@ -6,6 +6,7 @@ import { type ReactNode } from "react";
 import { useNavigate } from "react-router";
 
 import { ChatComposerContextProvider } from "@/components/ChatComposerContext";
+import "@/components/cafe/review-suggestion";
 import { chatThreadPath } from "@/lib/chat-paths";
 import { TAB_ID } from "@/lib/tab-id";
 

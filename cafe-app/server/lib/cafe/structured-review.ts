@@ -9,8 +9,11 @@ import { z } from "zod";
 import {
   COMPARISON_REVIEW_CONTEXT,
   COMPARISON_REVIEW_PROMPT,
+  reviewSuggestionSchema,
+  type ReviewSuggestion,
 } from "../../../shared/cafe/structured-review.js";
 import { chatFiguresSchema, withDecisionChatFigures } from "./chat-figures.js";
+import type { DecisionReceipt } from "./decision-receipt.js";
 import { readDecision } from "./decision-store.js";
 
 export const REVIEW_ACTION = "review-cafe-comparison";
@@ -71,6 +74,12 @@ const reversalText = {
 export const reviewInputSchema = z.strictObject({
   operation: z.enum(["inspect", "recommend"]),
   choice: choiceSchema.optional(),
+  suggestion: z
+    .literal("test-recovered-customers")
+    .optional()
+    .describe(
+      "Include only on recommend, when inspect returned alternateAssumption and you recommend testing that setting for this comparison.",
+    ),
 });
 export const reviewResultSchema = z.discriminatedUnion("status", [
   z.object({
@@ -80,11 +89,13 @@ export const reviewResultSchema = z.discriminatedUnion("status", [
     labels: z.object({ a: z.string(), b: z.string() }),
     figures: chatFiguresSchema,
     reversal: reversalSchema,
+    alternateAssumption: reviewSuggestionSchema.optional(),
   }),
   z.object({
     status: z.literal("selected"),
     receiptId: z.uuid(),
     choice: choiceSchema,
+    suggestion: reviewSuggestionSchema.optional(),
   }),
   ...receiptStatus.options.map((status) =>
     z.object({ status: z.literal(status) }),
@@ -129,6 +140,14 @@ function reviewLabel(alias: string, label: string) {
   return conventionalLabels.has(label.toLowerCase())
     ? `${alias} (${label})`
     : alias;
+}
+
+function receiptVersion({ financeRevision, service }: DecisionReceipt["a"]) {
+  return {
+    id: service.scenarioId,
+    expectedRevision: service.scenarioRevision,
+    expectedFinanceRevision: financeRevision,
+  };
 }
 
 export async function readReviewEvidence(
@@ -178,6 +197,24 @@ export async function readReviewEvidence(
   const figures = Object.fromEntries(
     figureKeys.map((key) => [key, checked.data[key]!]),
   );
+  const enabled = !receipt.savedCustomers.enabled;
+  const alternateFigure =
+    figures[
+      enabled
+        ? "bMinusA.monthlyCashSavedCustomersOn"
+        : "bMinusA.monthlyCashSavedCustomersOff"
+    ]!;
+  const alternateAssumption =
+    delta.monthlyCashSavedCustomersOff.value ===
+    delta.monthlyCashSavedCustomersOn.value
+      ? undefined
+      : {
+          a: receiptVersion(a),
+          b: receiptVersion(b),
+          receiptId: receipt.id,
+          enabled,
+          figure: alternateFigure,
+        };
   return {
     status: "evidence",
     receiptId: receipt.id,
@@ -185,6 +222,7 @@ export async function readReviewEvidence(
     labels,
     figures,
     reversal,
+    ...(alternateAssumption ? { alternateAssumption } : {}),
   };
 }
 
@@ -202,25 +240,30 @@ export function reviewOutcomes(
   });
 }
 
-function selectedChoice(
+function selectedReview(
   receiptId: string,
   results: Parameters<typeof reviewOutcomes>[0],
 ) {
   const selection = reviewOutcomes(results)
     .filter(
-      (result) => result.status === "selected" && result.receiptId === receiptId,
+      (result) =>
+        result.status === "selected" && result.receiptId === receiptId,
     )
     .pop();
-  return selection?.status === "selected" ? selection.choice : undefined;
+  return selection?.status === "selected" ? selection : undefined;
 }
 
 export function reviewTerminalSentinel(receiptId: string) {
   // Core 0.226.0 checks for empty content before invoking the final guard.
-  if (selectedChoice(receiptId, getRequestRunContext()?.toolResults ?? []))
+  if (selectedReview(receiptId, getRequestRunContext()?.toolResults ?? []))
     return "Comparison review ready.";
 }
 
-function renderReview(evidence: ReviewEvidence, choice: ReviewChoice) {
+function renderReview(
+  evidence: ReviewEvidence,
+  choice: ReviewChoice,
+  suggestion: ReviewSuggestion | undefined,
+) {
   const reason = choices[choice];
   const recommendation = reason
     ? `I favor ${evidence.labels[reason.scenario]} if ${reason.priority} most.`
@@ -235,6 +278,13 @@ function renderReview(evidence: ReviewEvidence, choice: ReviewChoice) {
     "## Recommendation",
     recommendation,
     reversalText[evidence.reversal],
+    ...(suggestion
+      ? [
+          suggestion.enabled
+            ? "I would also test the projection counting recovered weekend customers."
+            : "I would also test the projection excluding recovered weekend customers.",
+        ]
+      : []),
   ].join("\n\n");
 }
 
@@ -252,15 +302,19 @@ export const guardStructuredReview: AgentLoopFinalResponseGuard = async (
       clearAllText: true,
       maxRetries: 0,
     };
-  const selection = selectedChoice(current.receiptId, details.toolResults);
-  if (!selection || !current.choices.includes(selection))
+  const selection = selectedReview(current.receiptId, details.toolResults);
+  if (!selection || !current.choices.includes(selection.choice))
     return {
       retryMessage: retryText,
       fallbackMessage: unavailableText,
       clearAllText: true,
       maxRetries: 1,
     };
-  const fallbackMessage = renderReview(current, selection);
+  const fallbackMessage = renderReview(
+    current,
+    selection.choice,
+    selection.suggestion,
+  );
   return {
     retryMessage: retryText,
     fallbackMessage,

@@ -13,6 +13,7 @@ import {
   compareScenarios,
   configureFinance,
   configureShop,
+  computeRunway,
 } from "./full-action-fixtures.js";
 import { illustrative } from "./provenance.js";
 import type { Scenario } from "./scenario-store.js";
@@ -114,6 +115,92 @@ it("rejects free-form prose in model recommendation arguments", () => {
       choice: "b-for-cash",
     }).success,
   ).toBe(true);
+});
+
+it("offers a receipt-bound alternate projection and rejects stale or foreign application", async () => {
+  const { scenario: a } = await createScenario.run(
+    { label: "Baseline shop", baseHourlyDemand: 60 },
+    owner,
+  );
+  const { scenario: b } = await configureShop.run(
+    {
+      ...version(a),
+      variantLabel: "Extra barista",
+      shop: {
+        workers: [
+          ...a.shop.workers,
+          {
+            id: "barista-2",
+            name: "Barista 2",
+            shifts: [
+              { startsAt: illustrative(28800), endsAt: illustrative(50400) },
+            ],
+          },
+        ],
+      },
+    },
+    owner,
+  );
+  const comparison = await compareScenarios.run(
+    {
+      a: version(a),
+      b: version(b),
+      seed: 37,
+      runCount: 8,
+      demandLevel: "base",
+      savedCustomers: { enabled: false, tag: "estimate" },
+    },
+    owner,
+  );
+  const { receipt } = comparison;
+  expect(receipt.delta?.monthlyCashSavedCustomersOn.value).not.toEqual(
+    receipt.delta?.monthlyCashSavedCustomersOff.value,
+  );
+  const scope = {
+    kind: "cafe-comparison-review" as const,
+    aId: a.id,
+    bId: b.id,
+    receiptId: receipt.id,
+  };
+  const review = await readReviewEvidence(owner.userEmail, scope);
+  expect(review?.alternateAssumption).toEqual({
+    a: version(a),
+    b: version(b),
+    receiptId: receipt.id,
+    enabled: true,
+    figure: review?.figures["bMinusA.monthlyCashSavedCustomersOn"],
+  });
+  const foreign = { ...owner, userEmail: "review-outsider@example.invalid" };
+  expect(await readReviewEvidence(foreign.userEmail, scope)).toBeNull();
+  const input = {
+    comparison: {
+      a: version(a),
+      b: version(b),
+      receiptId: receipt.id,
+      savedCustomers: { enabled: true, tag: "estimate" as const },
+    },
+  };
+  await expect(computeRunway.run(input, foreign)).rejects.toThrow();
+  const updated = await computeRunway.run(input, owner);
+  expect(updated.receipt.savedCustomers).toEqual(
+    input.comparison.savedCustomers,
+  );
+  expect(updated.receipt.delta?.monthlyCash.value).toBe(
+    receipt.delta?.monthlyCashSavedCustomersOn.value,
+  );
+  expect(updated.receipt.a.service.id).toBe(receipt.a.service.id);
+  expect(updated.receipt.b?.service.id).toBe(receipt.b?.service.id);
+  await expect(computeRunway.run(input, owner)).rejects.toThrow();
+  expect(await readReviewEvidence(owner.userEmail, scope)).toBeNull();
+
+  const reversed = await readReviewEvidence(owner.userEmail, {
+    ...scope,
+    receiptId: updated.receipt.id,
+  });
+  expect(reversed?.alternateAssumption?.enabled).toBe(false);
+  expect(reversed?.alternateAssumption?.figure).toEqual(
+    reversed?.figures["bMinusA.monthlyCashSavedCustomersOff"],
+  );
 });
 
 it("recovers the exact Explain scope without inheriting it into an ordinary follow-up", () => {
