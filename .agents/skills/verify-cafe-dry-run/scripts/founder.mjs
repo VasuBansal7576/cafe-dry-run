@@ -554,6 +554,9 @@ export async function runFounder({ context, page, origin, map, record, section, 
   assert.deepEqual(configured.shop.menu[0].tasks[0].staffSeconds, { value: 36, source: { tag: "estimate" } });
   const finance = page.locator("#cash-ledger").getByRole("form");
   await expand(page, "Money & demand assumptions");
+  await finance.getByText(/Purchase price missing for groupHead/).waitFor();
+  await finance.getByLabel("Quote for groupHead (₹)").fill("12000");
+  await button(finance, "Add estimated quote").click();
   for (const [name, value] of [
     ["Opening cash (₹)", base.cash], ["Rent per month (₹)", base.rent],
     ["Open weekdays per month", base.weekdays], ["Open weekend days per month", base.weekends],
@@ -678,14 +681,34 @@ export async function runFounder({ context, page, origin, map, record, section, 
   assert.equal((await decision(id, barista.id, beforeShift.receipt.id)).serviceStale, true, "The old shift receipt must become stale");
 
   await expand(page, "Create a variant");
-  await page.getByLabel(/Extra grinder price/).fill(String(base.extraGrinder));
   await button(page, "Add grinder variant").click();
   const grinder = await poll("grinder variant", async () => (await scenarios()).find((row) => row.label === "Extra grinder"));
   await poll("grinder selected as B", async () => await pairPicker.inputValue() === grinder.id);
   await compare();
   const versusGrinder = await poll("original versus grinder receipt", () => decision(id, grinder.id));
   assert.deepEqual((await find(id)).shop, configured.shop, "The original shop must stay unchanged");
-  assert.equal(versusGrinder.receipt.b.cash.costs.startup.value - versusGrinder.receipt.a.cash.costs.startup.value, base.extraGrinder);
+  assert.deepEqual(grinder.finance.unpricedEquipment, ["grinder"]);
+  assert.deepEqual(versusGrinder.receipt.b.finance.unpricedEquipment, ["grinder"]);
+  await expand(page, "Money & demand assumptions");
+  await page.getByText(/Purchase price missing for grinder\. Cash projections exclude/).first().waitFor();
+  await receiptPanel.getByText(/purchase price missing for grinder/).waitFor();
+  const financeB = page.getByRole("form", { name: "B · Extra grinder" });
+  await financeB.getByLabel("Quote for grinder (₹)").fill(String(base.extraGrinder));
+  await button(financeB, "Add estimated quote").click();
+  await button(financeB, "Save money inputs").click();
+  const pricedGrinder = await poll("saved grinder quote", async () => {
+    const row = await find(grinder.id);
+    return row.finance.unpricedEquipment.length === 0 && row;
+  });
+  assert.equal(pricedGrinder.finance.equipmentAdditions.at(-1).value, base.extraGrinder);
+  await button(page, "Refresh cash projection").click();
+  const pricedReceipt = await poll("priced grinder receipt", async () => {
+    const row = await decision(id, grinder.id);
+    return row && !row.cashStale && row.receipt.id !== versusGrinder.receipt.id && row;
+  });
+  assert.deepEqual(pricedReceipt.receipt.b.finance.unpricedEquipment, []);
+  assert.equal(pricedReceipt.receipt.b.cash.costs.startup.value - pricedReceipt.receipt.a.cash.costs.startup.value, base.extraGrinder);
+  record("unpriced grinder caveat and saved quote", { grinderId: grinder.id, oldReceipt: versusGrinder.receipt.id, newReceipt: pricedReceipt.receipt.id, quote: base.extraGrinder });
   record("manual shift auto-reruns and shows deltas", {
     baselineId: id, baristaId: barista.id, grinderId: grinder.id, shift,
     oldReceipt: beforeShift.receipt.id, newReceipt: afterShift.receipt.id, delta: afterShift.receipt.delta,
@@ -917,7 +940,7 @@ export async function runFounder({ context, page, origin, map, record, section, 
   assert.equal(combinedResult.revision, beforeCombined.revision + 1);
   assert.equal(combinedResult.financeRevision, beforeCombined.financeRevision + 1);
   assert.deepEqual(combinedResult.shop, { ...beforeCombined.shop, ...combined.shop }, "Combined edit must save the tagged shop patch");
-  assert.deepEqual(combinedResult.finance, { ...beforeCombined.finance, ...combined.finance }, "Combined edit must save the tagged finance patch");
+  assert.deepEqual(combinedResult.finance, { ...beforeCombined.finance, ...combined.finance, unpricedEquipment: [...beforeCombined.finance.unpricedEquipment, "grinder"] }, "Combined edit must save the tagged finance patch and record its unpriced grinder");
   assert.deepEqual(await find(barista.id), combinedResult, "Combined edit must persist both sections");
   await poll("combined action to sync shop and money in the already-open tab", async () =>
     Number(await baristaGrinders.inputValue()) === base.combinedEdit.grinders &&

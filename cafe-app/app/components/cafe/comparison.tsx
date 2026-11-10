@@ -268,6 +268,28 @@ function ComparisonMetrics({
           {cashBaseline.revision}
         </p>
       )}
+      {[a, b].map(
+        (side) =>
+          side.finance.legacyEquipmentCostCoverageUnknown && (
+            <p
+              className="cafe-notice"
+              key={`legacy-${side.service.scenarioId}`}
+            >
+              {side.label}: this older receipt does not establish whether all
+              equipment purchase costs are included.
+            </p>
+          ),
+      )}
+      {[a, b].map(
+        (side) =>
+          side.finance.unpricedEquipment.length > 0 && (
+            <p className="cafe-notice" key={side.label}>
+              {side.label}: purchase price missing for{" "}
+              {side.finance.unpricedEquipment.join(", ")}. Cash projections
+              exclude those purchases.
+            </p>
+          ),
+      )}
       <div
         className="cafe-paired-boards"
         role="group"
@@ -396,9 +418,12 @@ function PairedWorkspace({
       ? "Checking the saved comparison…"
       : "Loading the comparison…"
     : comparisonError
-      ? (actionErrorMessage(saved.error) ?? "Could not verify the saved comparison.")
-      : scenarioRequirement ??
-        (!saved.data?.arrivalSource ? "Shared Saturday demand is unavailable." : null);
+      ? (actionErrorMessage(saved.error) ??
+        "Could not verify the saved comparison.")
+      : (scenarioRequirement ??
+        (!saved.data?.arrivalSource
+          ? "Shared Saturday demand is unavailable."
+          : null));
   const currentPair =
     compare.variables?.a.id === a.id && compare.variables?.b.id === b.id;
   const busy = calculation.pending;
@@ -606,10 +631,10 @@ function PairedWorkspace({
         serviceRequirement={
           comparisonError
             ? "Could not verify the saved comparison. Retry in Service test."
-            : readRequirement ??
+            : (readRequirement ??
               (!decision || decision.serviceStale
                 ? "Run a fresh Saturday comparison to compute paired runway."
-                : null)
+                : null))
         }
         error={switchEdit ? null : compute.error}
         onCompute={() => refresh()}
@@ -654,10 +679,10 @@ function SingleWorkspace({
     ? null
     : !checkingRun && latest.isError
       ? "Could not verify the saved Saturday simulation. Try loading it again in Service test."
-      : scenarioRequirement ??
+      : (scenarioRequirement ??
         (checkingRun
           ? "Checking the saved Saturday simulation…"
-          : "Run a fresh Saturday simulation to compute runway.");
+          : "Run a fresh Saturday simulation to compute runway."));
   return (
     <>
       <ServiceTest
@@ -732,12 +757,14 @@ export function ComparisonWorkspace({
           grinder: illustrative(a.shop.equipment.grinder.value + 1),
         },
       },
-      variantFinance: {
-        equipmentAdditions: [
-          ...a.finance.equipmentAdditions,
-          { value: cost, source: { tag: "estimate" } },
-        ],
-      },
+      ...(grinderQuote !== "" && {
+        variantFinance: {
+          equipmentAdditions: [
+            ...a.finance.equipmentAdditions,
+            { value: cost, source: { tag: "estimate" } },
+          ],
+        },
+      }),
     });
   }
   const controls = (
@@ -774,10 +801,9 @@ export function ComparisonWorkspace({
           <form onSubmit={addGrinder} className="cafe-controls">
             <label>
               <span>
-                Extra grinder price (₹) <Stamp tag="estimate" />
+                Extra grinder price (₹), optional <Stamp tag="estimate" />
               </span>
               <input
-                required
                 type="number"
                 min={0}
                 max={1_000_000_000}
@@ -801,8 +827,8 @@ export function ComparisonWorkspace({
           </form>
         </div>
         <p>
-          The extra barista starts with a full Saturday shift. Enter the price
-          of the extra grinder before creating that variant.
+          The extra barista starts with a full Saturday shift. Without a grinder
+          price, cash projections will exclude that purchase until you add a quote.
         </p>
       </details>
       {copy.error && (

@@ -9,6 +9,7 @@ import listScenarios from "../../../actions/list-scenarios.js";
 import runSimulation from "../../../actions/run-simulation.js";
 import setSpot from "../../../actions/set-spot.js";
 import migrate from "../../plugins/db.js";
+import { financeFields } from "./finance.js";
 import {
   compareScenarios,
   computeRunway,
@@ -94,14 +95,293 @@ const revision = (scenario: Scenario) => ({
   expectedFinanceRevision: scenario.financeRevision,
 });
 
+it("persists an unpriced grinder in scenario and cash receipt until a tagged quote is added", async () => {
+  const { scenario: original } = await createScenario.run(
+    { label: "Price baseline", baseHourlyDemand: 30 },
+    owner,
+  );
+  const { scenario: variant } = await configureShop.run(
+    {
+      ...revision(original),
+      variantLabel: "Unpriced grinder",
+      shop: {
+        equipment: { ...original.shop.equipment, grinder: illustrative(2) },
+      },
+    },
+    owner,
+  );
+  expect(variant.finance.unpricedEquipment).toEqual(["grinder"]);
+  await expect(
+    configureShop.run(
+      {
+        id: variant.id,
+        shop: {},
+        expectedFinanceRevision: variant.financeRevision,
+        finance: { unpricedEquipment: [] },
+      },
+      owner,
+    ),
+  ).rejects.toThrow();
+  const comparison = await compareScenarios.run(
+    {
+      a: revision(original),
+      b: revision(variant),
+      seed: 42,
+      demandLevel: "base",
+      runCount: 1,
+    },
+    owner,
+  );
+  expect(comparison.receipt.b?.finance.unpricedEquipment).toEqual(["grinder"]);
+  expect(
+    (await listScenarios.run({}, owner)).scenarios.find(
+      (row) => row.id === variant.id,
+    )?.finance.unpricedEquipment,
+  ).toEqual(["grinder"]);
+  const { scenario: priced } = await configureShop.run(
+    {
+      id: variant.id,
+      shop: {},
+      expectedFinanceRevision: variant.financeRevision,
+      finance: {
+        unpricedEquipment: [],
+        equipmentAdditions: [{ value: 25000, source: { tag: "estimate" } }],
+      },
+    },
+    owner,
+  );
+  expect(priced.finance.unpricedEquipment).toEqual([]);
+  expect(priced.finance.equipmentAdditions[0]).toEqual({
+    value: 25000,
+    source: { tag: "estimate" },
+  });
+  expect(comparison.receipt.b?.finance.unpricedEquipment).toEqual(["grinder"]);
+});
+
+it("keeps purchase caveats through existing shop edits and quote changes", async () => {
+  expect(
+    financeFields.partial().parse({ rent: illustrative(1) }),
+  ).not.toHaveProperty("unpricedEquipment");
+  const { scenario: original } = await createScenario.run(
+    { label: "Editable equipment", baseHourlyDemand: 30 },
+    owner,
+  );
+  const { scenario: increased } = await configureShop.run(
+    {
+      id: original.id,
+      expectedRevision: original.revision,
+      shop: {
+        equipment: { ...original.shop.equipment, grinder: illustrative(2) },
+      },
+    },
+    owner,
+  );
+  expect(increased.finance.unpricedEquipment).toEqual(["grinder"]);
+  expect(increased.financeRevision).toBe(original.financeRevision + 1);
+  await expect(
+    configureShop.run(
+      {
+        id: increased.id,
+        expectedFinanceRevision: increased.financeRevision,
+        shop: {},
+        finance: { unpricedEquipment: ["steamWand"] },
+      },
+      owner,
+    ),
+  ).rejects.toThrow();
+  const { scenario: copy } = await configureShop.run(
+    {
+      ...revision(increased),
+      variantLabel: "Resolve inherited quote",
+      shop: {},
+      variantFinance: {
+        unpricedEquipment: [],
+        equipmentAdditions: [{ value: 12345, source: { tag: "estimate" } }],
+      },
+    },
+    owner,
+  );
+  expect(copy.finance.unpricedEquipment).toEqual([]);
+  const { scenario: priced } = await configureShop.run(
+    {
+      id: increased.id,
+      expectedFinanceRevision: increased.financeRevision,
+      shop: {},
+      finance: {
+        unpricedEquipment: [],
+        equipmentAdditions: [{ value: 12345, source: { tag: "estimate" } }],
+      },
+    },
+    owner,
+  );
+  await expect(
+    configureShop.run(
+      {
+        id: priced.id,
+        expectedFinanceRevision: priced.financeRevision,
+        shop: {},
+        finance: { equipmentAdditions: [] },
+      },
+      owner,
+    ),
+  ).rejects.toThrow();
+  const { scenario: second } = await configureShop.run(
+    {
+      ...revision(priced),
+      variantLabel: "Remove equipment",
+      shop: {
+        equipment: { ...priced.shop.equipment, grinder: illustrative(3) },
+      },
+    },
+    owner,
+  );
+  expect(second.finance.unpricedEquipment).toEqual(["grinder"]);
+  const { scenario: reduced } = await configureShop.run(
+    {
+      id: second.id,
+      expectedRevision: second.revision,
+      shop: {
+        equipment: { ...second.shop.equipment, grinder: illustrative(2) },
+      },
+    },
+    owner,
+  );
+  expect(reduced.finance.unpricedEquipment).toEqual([]);
+});
+
+it("marks old scenario and receipt equipment coverage unknown in full and compact reads", async () => {
+  const { scenario: a } = await createScenario.run(
+    { label: "Old A", baseHourlyDemand: 30 },
+    owner,
+  );
+  const { scenario: b } = await configureShop.run(
+    {
+      ...revision(a),
+      variantLabel: "Old grinder",
+      shop: { equipment: { ...a.shop.equipment, grinder: illustrative(2) } },
+    },
+    owner,
+  );
+  expect(a.finance.legacyEquipmentCostCoverageUnknown).toBe(false);
+  const result = await compareScenarios.run(
+    {
+      a: revision(a),
+      b: revision(b),
+      seed: 42,
+      demandLevel: "base",
+      runCount: 1,
+    },
+    owner,
+  );
+  await getDbExec().execute({
+    sql: "UPDATE cafe_scenarios SET finance = finance - 'unpricedEquipment' - 'legacyEquipmentCostCoverageUnknown' WHERE id = ?",
+    args: [b.id],
+  });
+  await getDbExec().execute({
+    sql: "UPDATE cafe_decision_runs SET receipt = jsonb_set(receipt, '{b,finance}', (receipt->'b'->'finance') - 'unpricedEquipment' - 'legacyEquipmentCostCoverageUnknown') WHERE id = ?",
+    args: [result.receipt.id],
+  });
+  expect(
+    (await listScenarios.run({}, owner)).scenarios.find((s) => s.id === b.id)
+      ?.finance.legacyEquipmentCostCoverageUnknown,
+  ).toBe(true);
+  const full = await getComparison.run({ aId: a.id, bId: b.id }, owner);
+  expect(full.decision?.receipt.b?.finance).toMatchObject({
+    unpricedEquipment: [],
+    legacyEquipmentCostCoverageUnknown: true,
+  });
+  const compact = await getComparison.run(
+    { aId: a.id, bId: b.id },
+    { ...owner, maxResultChars: 20000 },
+  );
+  expect(compact.comparisonSummary?.decision?.receipt.b?.finance).toMatchObject(
+    { unpricedEquipment: [], legacyEquipmentCostCoverageUnknown: true },
+  );
+  const { scenario: confirmed } = await configureShop.run(
+    {
+      id: b.id,
+      shop: {},
+      expectedFinanceRevision: b.financeRevision,
+      finance: { legacyEquipmentCostCoverageUnknown: false },
+    },
+    owner,
+  );
+  const stale = await getComparison.run({ aId: a.id, bId: b.id }, owner);
+  expect(stale.decision?.cashStale).toBe(true);
+  expect(
+    stale.decision?.receipt.b?.finance.legacyEquipmentCostCoverageUnknown,
+  ).toBe(true);
+  const refreshed = await computeRunway.run(
+    {
+      comparison: {
+        a: revision(a),
+        b: revision(confirmed),
+        receiptId: result.receipt.id,
+      },
+    },
+    owner,
+  );
+  expect(refreshed.receipt.b?.finance.legacyEquipmentCostCoverageUnknown).toBe(
+    false,
+  );
+  expect(refreshed.cashStale).toBe(false);
+});
+
+it("rejects a partial quote for mixed equipment additions without assigning it arbitrarily", async () => {
+  const { scenario: a } = await createScenario.run(
+    { label: "Mixed equipment", baseHourlyDemand: 30 },
+    owner,
+  );
+  const shop = {
+    equipment: {
+      ...a.shop.equipment,
+      grinder: illustrative(2),
+      steamWand: illustrative(2),
+    },
+  };
+  await expect(
+    configureShop.run(
+      {
+        ...revision(a),
+        variantLabel: "Mixed partial",
+        shop,
+        variantFinance: {
+          equipmentAdditions: [{ value: 20000, source: { tag: "estimate" } }],
+        },
+      },
+      owner,
+    ),
+  ).rejects.toThrow();
+  const { scenario: unpriced } = await configureShop.run(
+    { ...revision(a), variantLabel: "Mixed unpriced", shop },
+    owner,
+  );
+  expect(unpriced.finance.unpricedEquipment).toEqual(["grinder", "steamWand"]);
+});
+
 it("copies the selected spot to a new variant without changing the baseline", async () => {
-  const { scenario: original } = await createScenario.run({ label: "Site baseline", baseHourlyDemand: 30 }, owner);
-  const moved = await setSpot.run({ id: original.id, expectedSpotRevision: original.spotRevision, location: { placeName: "Near Indiranagar Metro" } }, owner);
-  const { scenario: variant } = await configureShop.run({ ...revision(original), shop: {}, variantLabel: "Site variant" }, owner);
+  const { scenario: original } = await createScenario.run(
+    { label: "Site baseline", baseHourlyDemand: 30 },
+    owner,
+  );
+  const moved = await setSpot.run(
+    {
+      id: original.id,
+      expectedSpotRevision: original.spotRevision,
+      location: { placeName: "Near Indiranagar Metro" },
+    },
+    owner,
+  );
+  const { scenario: variant } = await configureShop.run(
+    { ...revision(original), shop: {}, variantLabel: "Site variant" },
+    owner,
+  );
   expect(variant.spot).toEqual(moved.spot);
   expect(variant.spotRevision).toBe(0);
   const persisted = await listScenarios.run({}, owner);
-  expect(persisted.scenarios.find((row) => row.id === original.id)?.spot).toEqual(moved.spot);
+  expect(
+    persisted.scenarios.find((row) => row.id === original.id)?.spot,
+  ).toEqual(moved.spot);
 });
 
 it("distinguishes historical assumptions and invalidates linked runs when the shared arrival scenario changes", async () => {

@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { decisionChatOutputSchema } from "./chat-figures.js";
 import { decisionReceiptSchema } from "./decision-receipt.js";
+import { financeFields } from "./finance.js";
 import { scenarioErrors } from "./scenario-store.js";
 import { serviceRunSchema } from "./service-run.js";
 import { fitsToolResult, sampleResultId } from "./tool-result-budget.js";
@@ -9,6 +10,10 @@ import { fitsToolResult, sampleResultId } from "./tool-result-budget.js";
 const summarySide = decisionReceiptSchema.shape.a
   .pick({ label: true, financeRevision: true })
   .extend({
+    finance: financeFields.pick({
+      unpricedEquipment: true,
+      legacyEquipmentCostCoverageUnknown: true,
+    }),
     service: serviceRunSchema.pick({
       id: true,
       scenarioId: true,

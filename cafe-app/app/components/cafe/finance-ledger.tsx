@@ -125,6 +125,7 @@ function FinanceForm({
     onSuccess: () => setDraft(null),
   });
   const heading = useId();
+  const [missingQuote, setMissingQuote] = useState("");
   const current = draft?.value ?? scenario.finance;
   const conflict =
     !!draft && draft.financeRevision !== scenario.financeRevision;
@@ -185,6 +186,76 @@ function FinanceForm({
                   }
                 />
               ))}
+            {label === "Opening cash & startup" &&
+              current.legacyEquipmentCostCoverageUnknown && (
+                <div>
+                  <p>
+                    This older scenario does not record whether all equipment
+                    purchase costs are included. Check the amounts before
+                    relying on its cash projection.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      edit({
+                        ...current,
+                        legacyEquipmentCostCoverageUnknown: false,
+                      })
+                    }
+                  >
+                    All relevant equipment purchase costs are included
+                  </button>
+                </div>
+              )}
+            {label === "Opening cash & startup" &&
+              current.unpricedEquipment.length > 0 && (
+                <div>
+                  <p>
+                    Purchase price missing for{" "}
+                    {current.unpricedEquipment.join(", ")}. Cash projections
+                    exclude these purchases.
+                  </p>
+                  <label>
+                    Quote for {current.unpricedEquipment[0]} (₹)
+                    <input
+                      type="number"
+                      min="0"
+                      max="1000000000"
+                      step="any"
+                      value={missingQuote}
+                      onChange={(event) =>
+                        setMissingQuote(event.currentTarget.value)
+                      }
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={
+                      missingQuote === "" ||
+                      !Number.isFinite(Number(missingQuote)) ||
+                      Number(missingQuote) < 0 ||
+                      Number(missingQuote) > 1000000000 ||
+                      current.equipmentAdditions.length >= 20
+                    }
+                    onClick={() => {
+                      edit({
+                        ...current,
+                        equipmentAdditions: [
+                          ...current.equipmentAdditions,
+                          {
+                            value: Number(missingQuote),
+                            source: { tag: "estimate" },
+                          },
+                        ],
+                        unpricedEquipment: current.unpricedEquipment.slice(1),
+                      });
+                      setMissingQuote("");
+                    }}
+                  >
+                    Add estimated quote
+                  </button>
+                </div>
+              )}
           </fieldset>
         ))}
         <fieldset className="cafe-subboard">
@@ -606,6 +677,28 @@ function Receipt({ decision }: { decision: StoredDecision }) {
           </p>
         )}
         {historical && <p>Historical receipt</p>}
+        {[a, ...(b ? [b] : [])].map(
+          (side) =>
+            side.finance.legacyEquipmentCostCoverageUnknown && (
+              <p
+                className="cafe-notice"
+                key={`legacy-${side.service.scenarioId}`}
+              >
+                {side.label}: this older receipt does not establish whether all
+                equipment purchase costs are included.
+              </p>
+            ),
+        )}
+        {[a, ...(b ? [b] : [])].map(
+          (side) =>
+            side.finance.unpricedEquipment.length > 0 && (
+              <p className="cafe-notice" key={side.label}>
+                {side.label}: purchase price missing for{" "}
+                {side.finance.unpricedEquipment.join(", ")}. This projection
+                excludes those purchases.
+              </p>
+            ),
+        )}
         <table>
           <thead>
             <tr>
@@ -883,9 +976,7 @@ export function FinanceLedger({
               ? "Refresh cash projection"
               : "Compute runway"}
         </button>
-        {serviceRequirement && (
-          <p id={requirementId}>{serviceRequirement}</p>
-        )}
+        {serviceRequirement && <p id={requirementId}>{serviceRequirement}</p>}
         {error && (
           <p className="cafe-notice" role="alert">
             {actionErrorMessage(error) ?? "Could not calculate runway."}

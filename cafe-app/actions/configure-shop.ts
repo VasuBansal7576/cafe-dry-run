@@ -4,7 +4,11 @@ import { z } from "zod";
 
 import { getDb } from "../server/db/index.js";
 import { scenarios } from "../server/db/schema.js";
-import { financeFields, financeSchema } from "../server/lib/cafe/finance.js";
+import {
+  financeFields,
+  financeSchema,
+  type ScenarioFinance,
+} from "../server/lib/cafe/finance.js";
 import {
   currentScenarioScope,
   readScenario,
@@ -23,8 +27,82 @@ import {
   scenarioWriteResult,
   toScenario,
   validateInput,
+  type Scenario,
 } from "../server/lib/cafe/scenario-store.js";
 import { shopFields, shopSchema } from "../server/lib/cafe/scenario.js";
+
+const equipmentKinds = ["grinder", "groupHead", "steamWand"] as const;
+
+type FinancePatch = {
+  [K in keyof ScenarioFinance]?: ScenarioFinance[K] | undefined;
+};
+type ShopPatch = {
+  [K in keyof Scenario["shop"]]?: Scenario["shop"][K] | undefined;
+};
+
+function reconcileFinance(
+  current: Scenario,
+  shopPatch: ShopPatch,
+  patch?: FinancePatch,
+) {
+  const quotes =
+    patch?.equipmentAdditions ?? current.finance.equipmentAdditions;
+  if (quotes.length < current.finance.equipmentAdditions.length) {
+    return scenarioErrors.fail(
+      "Existing equipment quotes cannot be removed. Edit their amount and source instead.",
+      "invalid_scenario",
+    );
+  }
+  const addedEquipment: ScenarioFinance["unpricedEquipment"] = [];
+  let remaining = [...current.finance.unpricedEquipment];
+  for (const kind of equipmentKinds) {
+    const difference =
+      (shopPatch.equipment?.[kind].value ??
+        current.shop.equipment[kind].value) -
+      current.shop.equipment[kind].value;
+    if (difference > 0)
+      addedEquipment.push(...Array.from({ length: difference }, () => kind));
+    for (let i = 0; i < -difference; i++) {
+      const index = remaining.indexOf(kind);
+      if (index !== -1) remaining.splice(index, 1);
+    }
+  }
+  const requested = patch?.unpricedEquipment ?? remaining;
+  const unmatched = [...remaining];
+  for (const kind of requested) {
+    const index = unmatched.indexOf(kind);
+    if (index === -1)
+      return scenarioErrors.fail(
+        "Unpriced equipment cannot be relabelled. Add a quote or remove the equipment.",
+        "invalid_scenario",
+      );
+    unmatched.splice(index, 1);
+  }
+  const newQuotes = quotes.length - current.finance.equipmentAdditions.length;
+  if (unmatched.length > newQuotes)
+    return scenarioErrors.fail(
+      "Add a quote for each unpriced equipment purchase before removing it.",
+      "invalid_scenario",
+    );
+  const quotesForNewEquipment = newQuotes - unmatched.length;
+  if (
+    new Set(addedEquipment).size > 1 &&
+    quotesForNewEquipment > 0 &&
+    quotesForNewEquipment < addedEquipment.length
+  )
+    return scenarioErrors.fail(
+      "Add each equipment kind separately when only some new purchases have quotes, so the missing prices are identified correctly.",
+      "invalid_scenario",
+    );
+  return validateInput(financeSchema, {
+    ...current.finance,
+    ...patch,
+    unpricedEquipment: [
+      ...requested,
+      ...addedEquipment.slice(quotesForNewEquipment),
+    ],
+  });
+}
 
 export default defineAction({
   description:
@@ -109,6 +187,11 @@ export default defineAction({
         if (!row || row.financeRevision !== expectedFinanceRevision)
           return scenarioConflict();
         const baseline = toScenario(row);
+        const finance = reconcileFinance(
+          baseline,
+          patch,
+          financePatch ?? variantFinance,
+        );
         const [existing] = await tx
           .select({ id: scenarios.id })
           .from(scenarios)
@@ -137,10 +220,7 @@ export default defineAction({
             baseHourlyDemand: baseline.baseHourlyDemand,
             demand: baseline.demand,
             shop: validateInput(shopSchema, { ...baseline.shop, ...patch }),
-            finance: validateInput(financeSchema, {
-              ...baseline.finance,
-              ...(financePatch ?? variantFinance),
-            }),
+            finance,
           })
           .returning(scenarioFields);
         return toScenario(variant!);
@@ -163,9 +243,12 @@ export default defineAction({
     const shop = changesShop
       ? validateInput(shopSchema, { ...current.shop, ...patch })
       : undefined;
-    const finance = changesFinance
-      ? validateInput(financeSchema, { ...current.finance, ...financePatch })
-      : undefined;
+    const reconciledFinance = reconcileFinance(current, patch, financePatch);
+    const financeChanged =
+      changesFinance ||
+      JSON.stringify(reconciledFinance.unpricedEquipment) !==
+        JSON.stringify(current.finance.unpricedEquipment);
+    const finance = financeChanged ? reconciledFinance : undefined;
     const [row] = await getDb()
       .update(scenarios)
       .set({
@@ -182,8 +265,8 @@ export default defineAction({
           changesShop && expectedRevision !== undefined
             ? eq(scenarios.revision, expectedRevision)
             : undefined,
-          changesFinance && expectedFinanceRevision !== undefined
-            ? eq(scenarios.financeRevision, expectedFinanceRevision)
+          financeChanged
+            ? eq(scenarios.financeRevision, current.financeRevision)
             : undefined,
         ),
       )

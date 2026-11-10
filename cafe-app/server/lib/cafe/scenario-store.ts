@@ -162,7 +162,12 @@ type ScenarioRow = Omit<Scenario, "demand" | "shop" | "finance"> &
 export function toScenario(row: ScenarioRow): Scenario {
   const demand = row.demand ?? defaultDemand(row.baseHourlyDemand);
   const shop = row.shop ?? defaultShop();
-  const finance = { ...defaultFinance(), ...row.finance };
+  const finance = {
+    ...defaultFinance(),
+    ...row.finance,
+    legacyEquipmentCostCoverageUnknown:
+      row.finance?.legacyEquipmentCostCoverageUnknown ?? true,
+  };
   return {
     ...row,
     chatFigures: scenarioChatFigures({

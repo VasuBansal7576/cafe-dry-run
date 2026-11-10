@@ -16,6 +16,7 @@ import {
 import { calculateDecision, type DecisionParameters } from "./decision.js";
 import {
   defaultSavedCustomers,
+  financeSchema,
   type SavedCustomerAssumption,
 } from "./finance.js";
 import {
@@ -57,6 +58,14 @@ type Version = z.infer<typeof scenarioVersionKey>;
 function restoreReceiptArrivalSources(
   receipt: DecisionReceipt,
 ): DecisionReceipt {
+  receipt = {
+    ...receipt,
+    a: { ...receipt.a, finance: financeSchema.parse(receipt.a.finance) },
+    b: receipt.b && {
+      ...receipt.b,
+      finance: financeSchema.parse(receipt.b.finance),
+    },
+  };
   if (receipt.a.service.summary.arrivalProvenance !== undefined) return receipt;
   // Earlier receipts used the sample source for their expected daily total.
   const arrivalProvenance =

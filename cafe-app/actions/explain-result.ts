@@ -48,6 +48,9 @@ export default defineAction({
       sharedCashBaseline: receipt.cashBaseline,
       scenarioA: {
         label: receipt.a.label,
+        unpricedEquipment: receipt.a.finance.unpricedEquipment,
+        legacyEquipmentCostCoverageUnknown:
+          receipt.a.finance.legacyEquipmentCostCoverageUnknown,
         serviceRun: receipt.a.service.id,
         bottleneck: receipt.a.service.summary.stats.bottleneck,
         breakEvenOrdersPerOpenDay: receipt.a.cash.breakEvenOrdersPerDay,
@@ -57,6 +60,9 @@ export default defineAction({
       },
       scenarioB: receipt.b && {
         label: receipt.b.label,
+        unpricedEquipment: receipt.b.finance.unpricedEquipment,
+        legacyEquipmentCostCoverageUnknown:
+          receipt.b.finance.legacyEquipmentCostCoverageUnknown,
         serviceRun: receipt.b.service.id,
         bottleneck: receipt.b.service.summary.stats.bottleneck,
         breakEvenOrdersPerOpenDay: receipt.b.cash.breakEvenOrdersPerDay,

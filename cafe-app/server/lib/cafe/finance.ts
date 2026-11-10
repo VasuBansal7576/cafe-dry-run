@@ -18,6 +18,17 @@ export const financeFields = z.object({
     .describe(
       "Additional one-time equipment quotes in INR. Preserve existing quotes when adding a purchase.",
     ),
+  unpricedEquipment: z
+    .array(z.enum(["grinder", "groupHead", "steamWand"]))
+    .max(20)
+    .describe(
+      "Equipment purchases excluded from startup costs because their price is unknown. Remove an item only when adding its quote.",
+    ),
+  legacyEquipmentCostCoverageUnknown: z
+    .boolean()
+    .describe(
+      "Older records lack equipment purchase tracking. Set false only when the founder confirms all relevant equipment costs are included.",
+    ),
   averagePrice: money.describe(
     "Legacy blended sales price per order in INR. Used only for drinks without a price and ingredient cost.",
   ),
@@ -35,23 +46,29 @@ export const financeFields = z.object({
   ),
 });
 
-export const financeSchema = financeFields.superRefine((input, ctx) => {
-  const { low, base, high } = input.weekdayDemand;
-  if (low.value > base.value || base.value > high.value) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["weekdayDemand"],
-      message: "Weekday demand must satisfy low ≤ base ≤ high.",
-    });
-  }
-  if (input.weekdaysPerMonth.value + input.weekendsPerMonth.value > 31) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["weekendsPerMonth"],
-      message: "Total open days cannot exceed 31 per month.",
-    });
-  }
-});
+export const financeSchema = financeFields
+  .extend({
+    unpricedEquipment: financeFields.shape.unpricedEquipment.default([]),
+    legacyEquipmentCostCoverageUnknown:
+      financeFields.shape.legacyEquipmentCostCoverageUnknown.default(true),
+  })
+  .superRefine((input, ctx) => {
+    const { low, base, high } = input.weekdayDemand;
+    if (low.value > base.value || base.value > high.value) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["weekdayDemand"],
+        message: "Weekday demand must satisfy low ≤ base ≤ high.",
+      });
+    }
+    if (input.weekdaysPerMonth.value + input.weekendsPerMonth.value > 31) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["weekendsPerMonth"],
+        message: "Total open days cannot exceed 31 per month.",
+      });
+    }
+  });
 
 export type ScenarioFinance = z.infer<typeof financeSchema>;
 
@@ -63,6 +80,8 @@ export function defaultFinance(): ScenarioFinance {
     fitOut: illustrative(175_000),
     equipmentUpfront: illustrative(75_000),
     equipmentAdditions: [],
+    unpricedEquipment: [],
+    legacyEquipmentCostCoverageUnknown: false,
     averagePrice: illustrative(160),
     averageIngredientCost: illustrative(55),
     hourlyWage: illustrative(150),
