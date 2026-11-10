@@ -56,6 +56,7 @@ Quote each fresh result's `chatFigures.text` exactly as its own sentence or line
 
 | Comparison and cash action | Use |
 | --- | --- |
+| `create-barista-variant` | Copy the baseline with current service and finance revisions and add a barista for the full opening hours. |
 | `configure-shop` with `variantLabel` | Copy the baseline and change the copy only. Send its current service and finance revisions. The grinder's startup quote belongs in its financial inputs. |
 | `configure-finance` | Edit tagged prices, ingredients, cash, wages, startup, recurring, and weekday assumptions. A money edit invalidates cash but leaves service playback fresh. |
 | `compare-scenarios` | Run A and B against the same records from their nearest shared ancestor, or from A when they are unrelated. Both shops must serve the drinks in the shared mix. The saved-customer assumption applies to the pair in either order. Pass it only to change it. |

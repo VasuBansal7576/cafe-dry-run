@@ -30,6 +30,7 @@ export const cafeChatTools = [
   "set-pedestrian-count",
   "tag-source",
   "configure-shop",
+  "create-barista-variant",
   "configure-finance",
   "compare-scenarios",
   "get-comparison",

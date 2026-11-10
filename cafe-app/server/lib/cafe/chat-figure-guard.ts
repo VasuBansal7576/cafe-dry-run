@@ -30,6 +30,7 @@ const revisionWrites = new Set([
 const scenarioActions = new Set([
   "list-scenarios",
   "create-scenario",
+  "create-barista-variant",
   ...revisionWrites,
 ]);
 const siteActions = new Set(["set-spot", "view-screen"]);

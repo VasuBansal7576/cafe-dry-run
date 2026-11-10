@@ -708,33 +708,22 @@ export function ComparisonWorkspace({
   rerunAfterShopSave: (scenario: Scenario) => void;
   rerunFeedback?: ShopRerunFeedback | undefined;
 }) {
-  const copy = useActionMutation("configure-shop", {
+  const copy = useActionMutation("create-barista-variant", {
+    onSuccess: ({ scenario }) => select(scenario.id),
+  });
+  const grinderCopy = useActionMutation("configure-shop", {
     onSuccess: ({ scenario }) => select(scenario.id),
   });
   const [grinderQuote, setGrinderQuote] = useState("");
   function addBarista() {
-    let index = 1;
-    while (a.shop.workers.some(({ id }) => id === `barista-${index}`)) index++;
     copy.mutate({
       ...scenarioVersion(a),
-      variantLabel:
-        a.shop.workers.length === 1 ? "Two baristas" : "Extra barista",
-      shop: {
-        workers: [
-          ...a.shop.workers,
-          {
-            id: `barista-${index}`,
-            name: `Barista ${index}`,
-            shifts: [{ startsAt: a.demand.opensAt, endsAt: a.demand.closesAt }],
-          },
-        ],
-      },
     });
   }
   function addGrinder(event: FormEvent) {
     event.preventDefault();
     const cost = Number(grinderQuote);
-    copy.mutate({
+    grinderCopy.mutate({
       ...scenarioVersion(a),
       variantLabel: "Extra grinder",
       shop: {
@@ -777,7 +766,7 @@ export function ComparisonWorkspace({
           <button
             type="button"
             className="cafe-secondary"
-            disabled={copy.isPending || a.shop.workers.length >= 20}
+            disabled={copy.isPending || grinderCopy.isPending || a.shop.workers.length >= 20}
             onClick={addBarista}
           >
             Add barista variant
@@ -801,6 +790,7 @@ export function ComparisonWorkspace({
             <button
               className="cafe-secondary"
               disabled={
+                grinderCopy.isPending ||
                 copy.isPending ||
                 a.shop.equipment.grinder.value >= 20 ||
                 a.finance.equipmentAdditions.length >= 20
@@ -818,6 +808,11 @@ export function ComparisonWorkspace({
       {copy.error && (
         <p className="cafe-notice" role="alert">
           {actionErrorMessage(copy.error) ?? "Could not create a variant."}
+        </p>
+      )}
+      {grinderCopy.error && (
+        <p className="cafe-notice" role="alert">
+          {actionErrorMessage(grinderCopy.error) ?? "Could not create a variant."}
         </p>
       )}
     </div>
