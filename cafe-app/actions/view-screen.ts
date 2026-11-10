@@ -1,5 +1,7 @@
 import { defineAction } from "@agent-native/core/action";
 import { readAppStateForCurrentTab } from "@agent-native/core/application-state";
+import { getConfiguredAppBasePath } from "@agent-native/core/server";
+import { resolveAccess } from "@agent-native/core/sharing";
 import { z } from "zod";
 
 import { currentPlaybackBounds } from "../server/lib/cafe/playback-position.js";
@@ -8,6 +10,33 @@ import {
   playbackFrame,
   playbackStateSchema,
 } from "../shared/cafe/playback-position.js";
+import {
+  cafeDocuments,
+  screenPaths,
+  type ScreenView,
+} from "../shared/screen-navigation.js";
+
+const documentHash = z.literal([
+  "",
+  ...cafeDocuments.map((name) => `#${name}` as const),
+]);
+const scenarioIdSchema = z.uuid();
+const navigationState = z.object({
+  view: z.enum(Object.keys(screenPaths) as ScreenView[]),
+  scenarioId: scenarioIdSchema.optional().catch(undefined),
+  comparisonScenarioId: z.unknown().optional(),
+  document: z.enum(cafeDocuments).optional().catch(undefined),
+  hash: documentHash.optional().catch(undefined),
+  threadId: z
+    .string()
+    .regex(/^[a-z\d_-]{1,128}$/i)
+    .optional()
+    .catch(undefined),
+});
+
+function screenPath(path: string) {
+  return { path, publicPath: `${getConfiguredAppBasePath()}${path}` };
+}
 
 export default defineAction({
   description:
@@ -16,45 +45,72 @@ export default defineAction({
   http: false,
   readOnly: true,
   run: async (_args, ctx) => {
-    const navigation = await readAppStateForCurrentTab("navigation");
+    const parsed = navigationState.safeParse(
+      await readAppStateForCurrentTab("navigation"),
+    );
+    if (!parsed.success)
+      return "No application state found. Is the app running?";
 
-    const screen: Record<string, unknown> = {};
-    if (navigation) screen.navigation = navigation;
-    if (
-      navigation &&
-      typeof navigation === "object" &&
-      "view" in navigation &&
-      navigation.view === "cafe"
-    ) {
+    const { view, scenarioId, comparisonScenarioId, threadId, hash } =
+      parsed.data;
+    const owner = ctx?.userEmail;
+    if (view !== "cafe") {
       if (
-        ctx?.userEmail &&
-        "scenarioId" in navigation &&
-        typeof navigation.scenarioId === "string"
+        view === "chat" &&
+        threadId &&
+        owner &&
+        (await resolveAccess(
+          "chat_thread",
+          threadId,
+          {
+            userEmail: owner,
+            ...(ctx.orgId ? { orgId: ctx.orgId } : {}),
+          },
+          { skipResourceBody: true },
+        ))
       ) {
-        const scenario = await findScenario(
-          navigation.scenarioId,
-          ctx.userEmail,
-        );
-        if (scenario) {
-          screen.site = {
-            spot: scenario.spot,
-            spotRevision: scenario.spotRevision,
-          };
-        }
+        return {
+          navigation: { view, ...screenPath(`/chat/${threadId}`), threadId },
+        };
       }
+      return { navigation: { view, ...screenPath(screenPaths[view]) } };
+    }
+
+    const requestedB = scenarioIdSchema.safeParse(comparisonScenarioId);
+    const [scenario, comparison] =
+      owner && scenarioId
+        ? await Promise.all([
+            findScenario(scenarioId, owner),
+            requestedB.success && requestedB.data !== scenarioId
+              ? findScenario(requestedB.data, owner)
+              : undefined,
+          ])
+        : [];
+    const bId = scenario && comparison?.id;
+    const document = scenario ? parsed.data.document : "opening-file";
+    const screen = {
+      navigation: {
+        view,
+        ...screenPath(screenPaths.cafe),
+        ...(scenario ? { scenarioId: scenario.id } : {}),
+        ...(bId ? { comparisonScenarioId: bId } : {}),
+        ...(document
+          ? { document, documentHash: `#${document}` as const }
+          : {}),
+        ...(hash !== undefined ? { hash } : {}),
+      },
+      ...(scenario
+        ? { site: { spot: scenario.spot, spotRevision: scenario.spotRevision } }
+        : {}),
+    };
+    if (owner && scenario && (comparisonScenarioId === undefined || bId)) {
       const stored = playbackStateSchema.safeParse(
         await readAppStateForCurrentTab("cafe-playback"),
       );
-      const owner = ctx?.userEmail;
       if (
-        owner &&
         stored.success &&
-        "scenarioId" in navigation &&
-        stored.data.scenarioId === navigation.scenarioId &&
-        stored.data.comparisonScenarioId ===
-          ("comparisonScenarioId" in navigation
-            ? navigation.comparisonScenarioId
-            : undefined)
+        stored.data.scenarioId === scenario.id &&
+        stored.data.comparisonScenarioId === bId
       ) {
         const {
           seekId: _,
@@ -69,19 +125,19 @@ export default defineAction({
           playback.second >= bounds.start &&
           playback.second <= bounds.end
         ) {
-          screen.playback = {
-            ...playback,
-            ...playbackFrame(stored.data, bounds.end, Date.now()),
+          return {
+            ...screen,
+            playback: {
+              ...playback,
+              ...playbackFrame(stored.data, bounds.end, Date.now()),
+            },
+            ...(playback.historical
+              ? { playbackStatus: "stale" as const }
+              : {}),
           };
-          if (playback.historical) screen.playbackStatus = "stale";
         }
       }
-      if (!screen.playback) screen.playbackStatus = "unavailable";
     }
-
-    if (Object.keys(screen).length === 0) {
-      return "No application state found. Is the app running?";
-    }
-    return screen;
+    return { ...screen, playbackStatus: "unavailable" as const };
   },
 });

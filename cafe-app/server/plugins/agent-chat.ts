@@ -26,6 +26,19 @@ import {
   validateConversationReferences,
 } from "../lib/composer-references.js";
 
+const screenActionName = "view-screen";
+const actions = loadActionsFromStaticRegistry(actionsRegistry);
+const screenAction = actions[screenActionName];
+if (!screenAction)
+  throw new Error("Café chat requires the view-screen action.");
+// A scoped review has its own receipt context. Keeping this entry prevents Core from reading raw navigation as a fallback.
+actions[screenActionName] = {
+  ...screenAction,
+  run: async (args, ctx) =>
+    currentReviewScope() ? "(no output)" : screenAction.run(args, ctx),
+  agentDiscoveryAvailable: () => !currentReviewScope(),
+};
+
 const comparisonReviewRequests = new WeakMap<
   object,
   {
@@ -52,7 +65,10 @@ export default createAgentChatPlugin({
           status: 400,
           message: "Invalid comparison review scope.",
         });
-      return { actionScope: scope.data, allowedActionNames: [REVIEW_ACTION] };
+      return {
+        actionScope: scope.data,
+        allowedActionNames: [REVIEW_ACTION, screenActionName],
+      };
     }
     return {
       allowedActionNames: availableActionNames.filter(isCafeChatActionAllowed),
@@ -90,7 +106,7 @@ export default createAgentChatPlugin({
       },
     };
   },
-  actions: loadActionsFromStaticRegistry(actionsRegistry),
+  actions,
   mcp: { connectorCatalog: [], appApprovalPage: true },
   initialToolNames: cafeChatTools,
   finalResponseGuard: (details) =>

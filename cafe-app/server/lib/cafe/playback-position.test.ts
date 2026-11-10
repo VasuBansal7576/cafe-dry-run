@@ -4,6 +4,7 @@ import type { ActionRunContext } from "@agent-native/core/action";
 import { appStateGet, appStatePut } from "@agent-native/core/application-state";
 import { closeDbExec, getDbExec } from "@agent-native/core/db";
 import { runWithRequestContext } from "@agent-native/core/server";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 
 import compareScenarios from "../../../actions/compare-scenarios.js";
@@ -23,6 +24,8 @@ import {
   precisePlaybackClock,
   updateRunningPlaybackPreview,
 } from "../../../shared/cafe/playback-position.js";
+import { getDb } from "../../db/index.js";
+import { scenarios } from "../../db/schema.js";
 import migrate from "../../plugins/db.js";
 
 const owner = {
@@ -184,6 +187,91 @@ it("an explicit pause settles a running anchor that has already reached the end"
     runId: anchor.runId,
     second: 36_100,
   });
+});
+
+it("projects the visible café selection without exposing raw tab state", async () => {
+  const { scenario: own } = await createScenario.run(
+    { baseHourlyDemand: 20 },
+    owner,
+  );
+  const { scenario: foreign } = await createScenario.run(
+    { baseHourlyDemand: 20 },
+    other,
+  );
+  const requested = {
+    view: "cafe",
+    path: `/cafe?scenario=${foreign.id}&payload=not-a-screen-field`,
+    publicPath: "//outside.invalid/context",
+    scenarioId: own.id,
+    comparisonScenarioId: foreign.id,
+    document: "service-test",
+    documentHash: "#untrusted-document",
+    hash: "#opening-file",
+    payload: { arbitrary: "not-a-screen-field" },
+  };
+  await appStatePut(owner.userEmail, "navigation:projection", requested);
+  const screen = () => inTab("projection", () => viewScreen.run({}, owner));
+  expect(await screen()).toEqual({
+    navigation: {
+      view: "cafe",
+      path: "/cafe",
+      publicPath: "/cafe",
+      scenarioId: own.id,
+      document: "service-test",
+      documentHash: "#service-test",
+      hash: "#opening-file",
+    },
+    site: { spot: own.spot, spotRevision: own.spotRevision },
+    playbackStatus: "unavailable",
+  });
+
+  const { scenario: removed } = await createScenario.run(
+    { baseHourlyDemand: 20 },
+    owner,
+  );
+  await getDb().delete(scenarios).where(eq(scenarios.id, removed.id));
+  for (const scenarioId of [
+    foreign.id,
+    removed.id,
+    crypto.randomUUID(),
+    "malformed",
+    undefined,
+  ]) {
+    await appStatePut(owner.userEmail, "navigation:projection", {
+      ...requested,
+      scenarioId,
+      comparisonScenarioId: own.id,
+      document: "site-demand",
+      hash: "#untrusted-fragment",
+    });
+    expect(await screen()).toEqual({
+      navigation: {
+        view: "cafe",
+        path: "/cafe",
+        publicPath: "/cafe",
+        document: "opening-file",
+        documentHash: "#opening-file",
+      },
+      playbackStatus: "unavailable",
+    });
+  }
+
+  await appStatePut(owner.userEmail, "navigation:projection", {
+    ...requested,
+    view: "home",
+    path: "/home?payload=not-a-screen-field",
+  });
+  expect(await screen()).toEqual({
+    navigation: { view: "home", path: "/home", publicPath: "/home" },
+  });
+
+  await appStatePut(owner.userEmail, "navigation:projection", {
+    ...requested,
+    view: "not-a-screen",
+  });
+  expect(await screen()).toBe(
+    "No application state found. Is the app running?",
+  );
 });
 
 it("shares the solo position per tab and keeps a late browser update from undoing an agent seek", async () => {
@@ -508,10 +596,9 @@ it("advances a real running clock without writes and rejects stale commands afte
   await delay(180);
   const read = await inTab(tab, () => viewScreen.run({}, owner));
   expect(read).toMatchObject({ playback: { playing: true, speed: 600 } });
-  if (typeof read === "string") throw new Error("Expected a playback frame");
-  expect((read.playback as { second: number }).second).toBeGreaterThanOrEqual(
-    30090,
-  );
+  if (typeof read === "string" || !("playback" in read))
+    throw new Error("Expected a playback frame");
+  expect(read.playback.second).toBeGreaterThanOrEqual(30090);
   expect(await appStateGet(owner.userEmail, key)).toEqual(before);
 
   const observedSeekId = before!.seekId as string;

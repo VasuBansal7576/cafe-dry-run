@@ -1,15 +1,10 @@
+import { cafeDocuments, type CafeDocument } from "@shared/screen-navigation";
 import { createContext, useCallback, useContext, useState } from "react";
 import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { useLocation } from "react-router";
 
-export const cafeDocuments = [
-  "opening-file",
-  "site-demand",
-  "service-test",
-  "cash-ledger",
-] as const;
+export { cafeDocuments, type CafeDocument };
 
-export type CafeDocument = (typeof cafeDocuments)[number];
 type ScrollDocument = { locationKey: string; document: CafeDocument };
 
 const CafeDocumentContext = createContext<

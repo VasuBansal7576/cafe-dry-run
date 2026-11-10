@@ -3,6 +3,7 @@ import {
   appPathFromLocalRoute,
 } from "@agent-native/core/client/api-path";
 import { useAgentRouteState } from "@agent-native/core/client/navigation";
+import { screenPaths, type ScreenView } from "@shared/screen-navigation";
 import { useLocation } from "react-router";
 
 import {
@@ -127,7 +128,7 @@ export function navigationStateForPath(pathname: string): NavigationState {
   };
 }
 
-function viewForPath(pathname: string): string {
+function viewForPath(pathname: string): ScreenView {
   if (isChatPathname(pathname)) return "chat";
   if (pathname === HOME_PATH) return "home";
   if (pathname === "/cafe") return "cafe";
@@ -143,29 +144,11 @@ function viewForPath(pathname: string): string {
 }
 
 function pathForView(view?: string): string {
-  switch (view) {
-    case "chat":
-    case "ask":
-      return NEW_CHAT_PATH;
-    case "home":
-      return HOME_PATH;
-    case "cafe":
-      return "/cafe";
-    case "database":
-      return "/database";
-    case "extensions":
-      return "/extensions";
-    case "observability":
-      return "/observability";
-    case "agent":
-      return "/settings/agent";
-    case "settings":
-      return "/settings";
-    case "team":
-      return "/settings/organization";
-    default:
-      return HOME_PATH;
-  }
+  if (view === "ask") return NEW_CHAT_PATH;
+  if (view === "team") return "/settings/organization";
+  return view && Object.prototype.hasOwnProperty.call(screenPaths, view)
+    ? screenPaths[view as ScreenView]
+    : HOME_PATH;
 }
 
 export function pathForCommand(command: any): string {
