@@ -180,10 +180,32 @@ export function FormStatus({
   return (
     error && (
       <p role="alert" className="cafe-notice">
-        {actionErrorMessage(error) ?? "Could not save the scenario."}
+        {/^Invalid action parameters/i.test(actionErrorMessage(error) ?? "")
+          ? "Those values couldn't be saved. Check that closing is after opening and every number is within its allowed range. The board still shows the last saved scenario."
+          : (actionErrorMessage(error) ?? "Could not save the scenario.")}
       </p>
     )
   );
+}
+
+function demandProblems(demand: DemandDraft): string[] {
+  const problems: string[] = [];
+  if (!demand.pedestrian) {
+    const levels = demandLevels.map((level) => demand.hourly[level].value);
+    if (levels.some((v) => !Number.isInteger(v) || v < 0 || v > 1000))
+      problems.push(
+        "Customers per hour must be whole numbers from 0 to 1,000. Larger crowds need more than one café model.",
+      );
+    else if (levels[0]! > levels[1]! || levels[1]! > levels[2]!)
+      problems.push("Keep low ≤ base ≤ high customers per hour.");
+  }
+  if (demand.opensAt.value >= demand.closesAt.value)
+    problems.push(
+      "Closing time must be after opening time on the same Saturday (for example opens 07:00, closes 21:00).",
+    );
+  if (demand.hourlyMultipliers.some(({ value }) => !(value >= 0 && value <= 5)))
+    problems.push("Arrival curve multipliers must be between 0 and 5.");
+  return problems;
 }
 
 type PedestrianCount = NonNullable<ScenarioDemand["pedestrian"]>;
@@ -232,9 +254,10 @@ export function DemandForm({
     );
     edit(changed);
   }
+  const problems = draft ? demandProblems(draft.value) : [];
   function submit(event: FormEvent) {
     event.preventDefault();
-    if (!draft || conflicted || update.isPending) return;
+    if (!draft || conflicted || update.isPending || problems.length) return;
     const { pedestrian, ...fields } = draft.value;
     if (pedestrian && !pedestrian.count) return;
     update.mutate({
@@ -251,7 +274,7 @@ export function DemandForm({
     });
   }
   return (
-    <form onSubmit={submit} aria-labelledby="demand-heading">
+    <form onSubmit={submit} noValidate aria-labelledby="demand-heading">
       <fieldset className="cafe-board cafe-form" disabled={update.isPending}>
         <header>
           <h3 id="demand-heading">
@@ -426,13 +449,39 @@ export function DemandForm({
         </details>
         <button
           className="cafe-primary"
-          disabled={!draft || conflicted || missingCount || update.isPending}
+          disabled={
+            !draft ||
+            conflicted ||
+            missingCount ||
+            update.isPending ||
+            problems.length > 0
+          }
         >
           {update.isPending ? "Saving demand…" : "Save demand"}
         </button>
+        {problems.length > 0 && (
+          <div role="alert" className="cafe-notice">
+            <p>Demand not saved:</p>
+            <ul>
+              {problems.map((problem) => (
+                <li key={problem}>{problem}</li>
+              ))}
+            </ul>
+            <p>
+              Service test and cash still use the saved demand (base{" "}
+              {base.value} customers per hour) until you fix this and save.
+            </p>
+          </div>
+        )}
+        {draft && !problems.length && !conflicted && !update.isPending && (
+          <p className="cafe-notice">
+            Unsaved changes. Service test and cash use the saved demand until
+            you press Save demand.
+          </p>
+        )}
         <FormStatus
           conflicted={conflicted}
-          error={update.error}
+          error={update.isPending ? null : update.error}
           onReset={() => setDraft(null)}
         />
       </fieldset>

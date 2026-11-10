@@ -647,11 +647,28 @@ export const guardCafeFigures: AgentLoopFinalResponseGuard = (details) => {
   });
   if (!unsupported) return;
 
+  // Fall back to the verified quotes themselves, never to unchecked model text.
+  const verified = [
+    ...new Set(
+      figures
+        .slice()
+        .reverse()
+        .flatMap(({ quotes }) => quotes)
+        .map((quote) => quote.trim())
+        .filter(Boolean),
+    ),
+  ].slice(0, 8);
+  const verifiedFallback = verified.length
+    ? "Done. These are the verified results from the actions I just ran:\n\n" +
+      verified
+        .map((quote) => "- " + quote.replace(/[.\s]+$/u, "") + ".")
+        .join("\n")
+    : "I couldn't verify the figures in my reply against the action results. The recorded results are in the tool output above.";
+
   return {
     retryMessage:
       "The draft contains a number or numeric wording outside a figure returned by a successful, still-current action this turn. Copy each entire chatFigures.text value verbatim on its own line or as its own sentence. Include the scenario, metric, sign, decimal places, currency and units. Saved input quotes are in scenario.chatFigures. Do not calculate, round, convert, abbreviate, spell out, or infer numbers. If the needed quote is missing, call a fresh action or omit the number and explain qualitatively. Keep your own recommendation and the reversing assumption.",
-    fallbackMessage:
-      "I couldn't verify the figures in my reply against the action results. The recorded results are in the tool output above.",
+    fallbackMessage: verifiedFallback,
     clearAllText: true,
     maxRetries: 1,
   };
