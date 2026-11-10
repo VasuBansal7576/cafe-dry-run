@@ -23,7 +23,7 @@ const q = JSON.stringify;
 const policy = `(version 1)\n(allow default)\n(deny process-fork)\n(deny file-read* (subpath "/Users") (subpath "/private/tmp") (subpath "/private/var/folders") (subpath "/Volumes") (subpath "/Network"))\n(deny file-write*)\n(allow file-read* (literal ${q(binary)}) (literal ${q(realBinary)}) (subpath ${q(profile)}) (subpath ${q(cwd)}))\n(allow file-write* (subpath ${q(profile)}) (subpath ${q(cwd)}))\n`;
 writeFileSync(sandbox,policy,{mode:0o600,flag:'wx'});
 const token = randomBytes(32).toString('hex');
-const env = {...process.env, CAFE_GROK_PROFILE:profile, CAFE_GROK_CWD:cwd, CAFE_GROK_SANDBOX:sandbox, CAFE_GROK_BINARY:binary, CAFE_GROK_PORT:String(port), CAFE_GROK_TOKEN:token, OPENAI_API_KEY:token, OPENAI_BASE_URL:`http://127.0.0.1:${port}/v1`, AGENT_ENGINE:'ai-sdk:openai', AGENT_MODEL:'grok-4.5'};
+const env = {...process.env, CAFE_GROK_PROFILE:profile, CAFE_GROK_CWD:cwd, CAFE_GROK_SANDBOX:sandbox, CAFE_GROK_BINARY:binary, CAFE_GROK_PORT:String(port), CAFE_GROK_TOKEN:token, OPENAI_API_KEY:token, OPENAI_BASE_URL:`http://127.0.0.1:${port}/v1`, AGENT_ENGINE:'ai-sdk:openai', AGENT_MODEL:'grok-4.5', VITE_CAFE_LOCAL_GROK:'1'};
 const options = {cwd:app,env,stdio:'inherit',detached:true};
 const bridge = spawn(process.execPath,['scripts/grok-bridge.mjs'],options);
 let bridgeExited = false;

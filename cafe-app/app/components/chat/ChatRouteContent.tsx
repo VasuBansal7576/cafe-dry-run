@@ -105,6 +105,7 @@ import {
   writeFailedChatHandoff,
 } from "@/lib/chat-paths";
 import { TAB_ID } from "@/lib/tab-id";
+import { localGrokComposerProps } from "@/lib/local-grok-model";
 
 // Module scope on purpose: CoreAgentKitRoot memoizes the client on its options, so
 // a new callback each render would rebuild the client and drop the stream.
@@ -1500,6 +1501,7 @@ function ChatCanvas({
           voiceEnabled: true,
           includeDefaultSlashCommands: false,
           includeDefaultSlashSkills: false,
+          ...localGrokComposerProps,
         }}
       />
     </>

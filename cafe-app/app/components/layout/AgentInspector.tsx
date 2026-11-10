@@ -9,6 +9,7 @@ import { ChatComposerContextProvider } from "@/components/ChatComposerContext";
 import "@/components/cafe/review-suggestion";
 import { chatThreadPath } from "@/lib/chat-paths";
 import { TAB_ID } from "@/lib/tab-id";
+import { localGrokMode, localGrokModels } from "@/lib/local-grok-model";
 
 interface AgentInspectorProps {
   children: ReactNode;
@@ -32,6 +33,9 @@ export function AgentInspector({
 
   return (
     <AgentSidebar
+      {...(localGrokMode
+        ? { availableModels: localGrokModels, modelListLoading: false }
+        : {})}
       composerContextProvider={ChatComposerContextProvider}
       position="right"
       chatViewTransition

@@ -38,6 +38,7 @@ import {
   type ChatRouteState,
 } from "@/lib/chat-paths";
 import { TAB_ID } from "@/lib/tab-id";
+import { localGrokComposerProps } from "@/lib/local-grok-model";
 
 const DOCS_URL = "https://www.agent-native.com/docs";
 const GITHUB_URL = "https://github.com/BuilderIO/agent-native";
@@ -125,6 +126,7 @@ function HomeAgentComposerInput({
 
   return (
     <AgentKitComposer
+      {...localGrokComposerProps}
       threadId={threadId}
       requireAgentEngine
       placeholder={t("chat.composerPlaceholder")}
