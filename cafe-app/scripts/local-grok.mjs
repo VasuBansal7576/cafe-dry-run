@@ -2,14 +2,15 @@ import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { realpathSync, statSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve, join } from 'node:path';
+import { dirname, resolve, join, relative, isAbsolute } from 'node:path';
 import { tmpdir } from 'node:os';
 
 if (process.platform !== 'darwin' || !process.env.CAFE_GROK_PROFILE) throw new Error('Set CAFE_GROK_PROFILE to a private, separately authorized Grok profile on macOS.');
 const profile = realpathSync(process.env.CAFE_GROK_PROFILE);
-let defaultProfile;
-try { defaultProfile = realpathSync(join(process.env.HOME ?? '/', '.grok')); } catch {}
-if (!statSync(profile).isDirectory() || (statSync(profile).mode & 0o077) !== 0 || profile === realpathSync(process.env.HOME ?? '/') || profile === defaultProfile) throw new Error('The Grok profile must be a private dedicated directory.');
+let defaultProfile = join(realpathSync(process.env.HOME ?? '/'), '.grok');
+try { defaultProfile = realpathSync(defaultProfile); } catch {}
+const contains = (parent, child) => { const path = relative(parent,child); return path === '' || (!path.startsWith('..' + '/') && path !== '..' && !isAbsolute(path)); };
+if (!statSync(profile).isDirectory() || (statSync(profile).mode & 0o077) !== 0 || profile === realpathSync(process.env.HOME ?? '/') || (defaultProfile && (contains(profile,defaultProfile) || contains(defaultProfile,profile)))) throw new Error('The Grok profile must be a private dedicated directory.');
 const binary = process.env.CAFE_GROK_BINARY ?? join(process.env.HOME ?? '', '.grok/bin/grok');
 const realBinary = realpathSync(binary);
 const port = Number(process.env.CAFE_GROK_PORT ?? '8612');
