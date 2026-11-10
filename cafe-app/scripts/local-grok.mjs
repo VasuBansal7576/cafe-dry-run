@@ -5,14 +5,20 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join, relative, isAbsolute } from 'node:path';
 import { tmpdir } from 'node:os';
 
+// guard:allow-env-credential — local profile directory path, not a user credential
 if (process.platform !== 'darwin' || !process.env.CAFE_GROK_PROFILE) throw new Error('Set CAFE_GROK_PROFILE to a private, separately authorized Grok profile on macOS.');
+// guard:allow-env-credential — local profile directory path, not a user credential
 const profile = realpathSync(process.env.CAFE_GROK_PROFILE);
+// guard:allow-env-credential — local home directory path, not a user credential
 let defaultProfile = join(realpathSync(process.env.HOME ?? '/'), '.grok');
 try { defaultProfile = realpathSync(defaultProfile); } catch {}
 const contains = (parent, child) => { const path = relative(parent,child); return path === '' || (!path.startsWith('..' + '/') && path !== '..' && !isAbsolute(path)); };
+// guard:allow-env-credential — local home directory path, not a user credential
 if (!statSync(profile).isDirectory() || (statSync(profile).mode & 0o077) !== 0 || profile === realpathSync(process.env.HOME ?? '/') || (defaultProfile && (contains(profile,defaultProfile) || contains(defaultProfile,profile)))) throw new Error('The Grok profile must be a private dedicated directory.');
+// guard:allow-env-credential — local executable and home directory paths, not user credentials
 const binary = process.env.CAFE_GROK_BINARY ?? join(process.env.HOME ?? '', '.grok/bin/grok');
 const realBinary = realpathSync(binary);
+// guard:allow-env-credential — local bridge port, not a user credential
 const port = Number(process.env.CAFE_GROK_PORT ?? '8612');
 const appPort = Number(process.env.PORT ?? '8080');
 if (![port,appPort].every(n=>Number.isInteger(n)&&n>=1024&&n<=65535) || port === appPort) throw new Error('Choose distinct valid app and bridge ports.');
