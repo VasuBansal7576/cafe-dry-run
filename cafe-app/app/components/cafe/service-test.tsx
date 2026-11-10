@@ -682,6 +682,11 @@ function StationBoard({
   const waitingFor = wait?.blockedBy
     .map((resource) => waitLabels[resource])
     .join(" and ");
+  const waitDetail = playback.capacity
+    ? waitingFor && `Waiting for ${waitingFor}.`
+    : waitingFor
+      ? "Shared staff capacity contributes to this wait. Other capacity details are unavailable."
+      : "Capacity details are unavailable for this saved run.";
   return (
     <section
       className="cafe-station-board"
@@ -719,7 +724,7 @@ function StationBoard({
         <ServiceFigure
           value={
             wait
-              ? `${wait.station} has the longest current wait · ${displayWait(wait.seconds)}${waitingFor ? `. Waiting for ${waitingFor}.` : ""}`
+              ? `${wait.station} has the longest current wait · ${displayWait(wait.seconds)}${waitDetail ? `. ${waitDetail}` : ""}`
               : "No orders waiting at this time."
           }
           tag={tag}

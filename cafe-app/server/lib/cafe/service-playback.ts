@@ -39,7 +39,7 @@ export function frameAt(playback: ServiceRun["playback"], time: number) {
         ticket.active = false;
         break;
       case "task_started":
-        if (capacity && event.workerReleasedAt > time) {
+        if (event.workerReleasedAt > time) {
           busyWorkers.add(event.workerId);
         }
         if (capacity && event.machineId && event.endsAt > time) {
@@ -97,6 +97,16 @@ export function frameAt(playback: ServiceRun["playback"], time: number) {
       ) {
         blockedBy.push(machine);
       }
+    }
+  } else if (oldest && busyWorkers.size > 0) {
+    const workers = playback.stats.utilization.filter(
+      ({ kind }) => kind === "worker",
+    );
+    if (
+      workers.length === busyWorkers.size &&
+      workers.every(({ id }) => busyWorkers.has(id))
+    ) {
+      blockedBy.push("staff");
     }
   }
 
