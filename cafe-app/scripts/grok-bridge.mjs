@@ -13,6 +13,7 @@ const validToken = (header) => {
 };
 let active = 0;
 const server = createServer(async (req, res) => {
+  if (req.method === 'GET' && req.url === '/health' && validToken(req.headers.authorization)) { res.writeHead(204).end(); return; }
   if (req.method !== 'POST' || req.url !== '/v1/chat/completions' || !validToken(req.headers.authorization)) { res.writeHead(404).end(); return; }
   if (active >= 2) { res.writeHead(429).end(); return; }
   active++;
