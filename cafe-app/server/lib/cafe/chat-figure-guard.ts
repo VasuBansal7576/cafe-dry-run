@@ -657,7 +657,19 @@ export const guardCafeFigures: AgentLoopFinalResponseGuard = (details) => {
         .map((quote) => quote.trim())
         .filter(Boolean),
     ),
-  ].slice(0, 8);
+  ]
+    .map((quote, order) => ({
+      quote,
+      order,
+      rank: /break-even|runway|cash|₹|median wait/iu.test(quote)
+        ? 0
+        : /wait|served|lost/iu.test(quote)
+          ? 1
+          : 2,
+    }))
+    .sort((a, b) => a.rank - b.rank || a.order - b.order)
+    .slice(0, 6)
+    .map(({ quote }) => quote);
   const verifiedFallback = verified.length
     ? "Done. These are the verified results from the actions I just ran:\n\n" +
       verified
