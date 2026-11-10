@@ -327,9 +327,10 @@ async function boardCounts(board, tag) {
   ])));
 }
 
-async function checkPlayback(page, runs, labels) {
+async function checkPlayback(page, origin, runs, labels) {
   const slider = page.getByRole("slider", { name: "Saturday timeline" });
   await slider.waitFor();
+  await poll("Saturday timeline ready", () => slider.isEnabled());
   assert.equal(await slider.count(), 1, "Both boards must share one timeline");
   const start = Number(await slider.getAttribute("min"));
   const end = Number(await slider.getAttribute("max"));
@@ -340,10 +341,37 @@ async function checkPlayback(page, runs, labels) {
   await select(page, "Playback speed").selectOption("600");
   await button(page, "Play Saturday").press("Enter");
   await poll("playhead to advance", async () => Number(await slider.inputValue()) > start + 1);
-  await button(page, "Pause").press("Enter");
-  const stoppedAt = await slider.inputValue();
+  const readPlayhead = () => slider.evaluate((input) => ({
+    second: Number(input.value),
+    clock: input.getAttribute("aria-valuetext"),
+  }));
+  const [pauseResponse, preview] = await Promise.all([
+    page.waitForResponse((response) => {
+      const request = response.request();
+      if (request.method() !== "POST" || !request.url().endsWith("/actions/set-playback-controls")) return false;
+      const { playing, runId } = request.postDataJSON();
+      return playing === false && runId === runs[0].id;
+    }),
+    (async () => {
+      await button(page, "Pause").press("Enter");
+      return readPlayhead();
+    })(),
+  ]);
+  assert(pauseResponse.ok(), "Pause must succeed through the native action");
+  const { applied, playback } = await pauseResponse.json();
+  assert.equal(applied, true, "Pause must apply to the current playback");
+  assert.equal(playback?.runId, runs[0].id, "Pause must return the active run's saved clock");
+  assert.equal(playback.startedAtMs, undefined, "The saved playback clock must stop");
+  const stopped = await poll("the exact paused frame from the server", async () => {
+    const frame = await readPlayhead();
+    return frame.second === playback.second && /^\d{2}:\d{2}:\d{2}$/.test(frame.clock) && frame;
+  });
+  const tab = await tabState(page, origin);
+  const saved = (await tab.read(tab.playbackKey))[tab.playbackKey];
+  assert.deepEqual(saved, playback, "The current tab must store the paused clock returned by the action");
   await delay(250);
-  assert.equal(await slider.inputValue(), stoppedAt, "Pause must stop playhead movement");
+  assert.deepEqual(await readPlayhead(), stopped, "Pause must stop playhead movement");
+  assert(await button(page, stopped.second < end ? "Play Saturday" : "Replay Saturday").isVisible(), "The paused control must offer play or replay");
   const events = runs[0].playback.timeline;
   function meaningfulFrame(second) {
     const a = timelineCounts(events, second);
@@ -379,7 +407,7 @@ async function checkPlayback(page, runs, labels) {
   await slider.press("Home");
   for (let jump = 0; jump < jumps; jump += 1) await slider.press("PageUp");
   assert.equal(Number(await slider.inputValue()), second, "Keyboard seek must be repeatable");
-  return { second, frames, reducedMotion: await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches) };
+  return { second, frames, pause: { preview, stopped }, reducedMotion: await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches) };
 }
 
 async function visibleDeltas(page, delta) {
@@ -570,7 +598,7 @@ export async function runFounder({ context, page, origin, map, record, section, 
   await expand(page, "Staff & equipment utilization");
   await results.getByText("Barista 1", { exact: false }).last().waitFor();
   for (const figure of await results.locator(".cafe-resource-list dd").all()) await assertStamp(figure, first.summary.provenance);
-  const soloFrame = await checkPlayback(page, [first], ["Saturday board"]);
+  const soloFrame = await checkPlayback(page, origin, [first], ["Saturday board"]);
   assert.equal((await solo()).id, first.id, "Replaying the same inputs must return the same saved run ID");
   const repeated = await service(id);
   assert.deepEqual(repeated, first, "Identical seed and scenario must reproduce full playback and metrics");
@@ -690,7 +718,7 @@ export async function runFounder({ context, page, origin, map, record, section, 
   assert.deepEqual(runA.playback.arrivals, runB.playback.arrivals, "Both runs must store identical ordered arrival IDs, times and drinks");
   assert.equal(runA.playback.arrivals.length, weekend.base.arrivals);
   capture("matched-arrivals.json", { receiptId: direct.receipt.id, runs: [runA, runB].map(({ id, playback }) => ({ id, arrivals: playback.arrivals })) });
-  const pairedFrame = await checkPlayback(page, [runA, runB], ["A · Two baristas", "B · Extra grinder"]);
+  const pairedFrame = await checkPlayback(page, origin, [runA, runB], ["A · Two baristas", "B · Extra grinder"]);
   const pairedMetrics = page.getByRole("group", { name: "Metrics across all simulated Saturdays" });
   for (const [label, run] of [["A · Two baristas", runA], ["B · Extra grinder", runB]]) {
     const side = pairedMetrics.getByRole("region", { name: label });
